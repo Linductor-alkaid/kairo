@@ -135,6 +135,12 @@ protected:
      */
     bool try_submit_priority_impl(int priority, std::function<void()> task) override;
 
+    bool try_submit_priority_with_timeout_meta_impl(
+        int priority,
+        std::function<void()> task,
+        std::function<void(std::exception_ptr)> on_timeout,
+        const TaskSchedulingMeta& meta) override;
+
     bool try_submit_priority_with_timeout_impl(
         int priority,
         std::function<void()> task,

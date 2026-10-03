@@ -185,6 +185,10 @@ public:
     bool try_submit_priority(int priority,
                              std::function<void()> task,
                              std::function<void(std::exception_ptr)> on_timeout);
+    bool try_submit_priority(int priority,
+                             std::function<void()> task,
+                             std::function<void(std::exception_ptr)> on_timeout,
+                             const TaskSchedulingMeta& meta);
 
     /**
      * @brief 批量提交任务

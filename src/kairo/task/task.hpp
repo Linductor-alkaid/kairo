@@ -24,6 +24,8 @@ inline void move_task_fields(Task& dst, Task&& src) noexcept {
     dst.dependencies = std::move(src.dependencies);
     dst.cancelled.store(src.cancelled.load(std::memory_order_acquire),
                         std::memory_order_release);
+    dst.qos = src.qos;
+    dst.deadline_ns = src.deadline_ns;
 }
 
 /**
@@ -41,6 +43,8 @@ inline void copy_task_fields(Task& dst, const Task& src) {
     dst.dependencies = src.dependencies;
     dst.cancelled.store(src.cancelled.load(std::memory_order_acquire),
                         std::memory_order_release);
+    dst.qos = src.qos;
+    dst.deadline_ns = src.deadline_ns;
 }
 
 /**

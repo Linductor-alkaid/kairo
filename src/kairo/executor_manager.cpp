@@ -130,6 +130,9 @@ bool ExecutorManager::initialize_async_executor(const ExecutorConfig& config) {
 #endif
     }
 
+    // 记录默认池绑核集合（0.6.0：调度器 affinity 检查的能力维度）
+    default_async_bound_cpus_ = pool_config.cpu_affinity;
+
     // 创建 ThreadPoolExecutor
     auto executor = std::make_shared<ThreadPoolExecutor>("default", pool_config);
     executor->set_task_monitor(&statistics_collector_->get_task_monitor());
@@ -575,6 +578,7 @@ std::vector<ExecutorCapability> ExecutorManager::get_executor_capabilities() con
             capability.running = status.is_running;
             capability.pending_work = status.active_tasks + status.queue_size;
         }
+        capability.bound_cpus = default_async_bound_cpus_;
         capabilities.push_back(std::move(capability));
     }
 
@@ -593,6 +597,12 @@ std::vector<ExecutorCapability> ExecutorManager::get_executor_capabilities() con
                 capability.running = status.is_running && status.last_error_message.empty();
                 capability.pending_work = status.queue_size + status.active_kernels;
                 capability.capacity_hint = status.queue_capacity;
+                capability.gpu_device = status.device_id;
+                capability.gpu_memory_total_bytes = status.memory_total_bytes;
+                capability.gpu_memory_free_bytes =
+                    status.memory_total_bytes > status.memory_used_bytes
+                        ? status.memory_total_bytes - status.memory_used_bytes
+                        : 0;
             }
             capabilities.push_back(std::move(capability));
         }

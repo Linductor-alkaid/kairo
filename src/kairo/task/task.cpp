@@ -19,6 +19,17 @@ bool operator<(const Task& lhs, const Task& rhs) {
     if (lhs.priority != rhs.priority) {
         return static_cast<int>(lhs.priority) < static_cast<int>(rhs.priority);
     }
+    // 同优先级内 EDF（earliest deadline first，0.6.0 Scheduling
+    // Runtime）：声明了 deadline 的任务按 deadline 升序排在无 deadline
+    // 任务之前；两者都无 deadline 时保持提交时间 FIFO。
+    const bool lhs_has_deadline = lhs.deadline_ns != 0;
+    const bool rhs_has_deadline = rhs.deadline_ns != 0;
+    if (lhs_has_deadline != rhs_has_deadline) {
+        return rhs_has_deadline;  // 有 deadline 的一方优先
+    }
+    if (lhs_has_deadline && lhs.deadline_ns != rhs.deadline_ns) {
+        return lhs.deadline_ns > rhs.deadline_ns;
+    }
     // 同优先级，提交时间早的优先（submit_time_ns 小的优先）
     return lhs.submit_time_ns > rhs.submit_time_ns;
 }

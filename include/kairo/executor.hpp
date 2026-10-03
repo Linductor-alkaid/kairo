@@ -4,6 +4,7 @@
 #include "types.hpp"
 #include "task_options.hpp"
 #include "task_router.hpp"
+#include "scheduler.hpp"
 #include "task_cancellation.hpp"
 #include "timer.hpp"
 #include "serial_execution_context.hpp"
@@ -49,6 +50,18 @@ namespace monitor { class ExecutorMonitor; }
  */
 class Executor {
 public:
+
+    /**
+     * @brief 注入自定义调度器（0.6.0 Scheduling Runtime）。
+     *
+     * 接管 submit_auto 路由决策（准入约束 + 投递位置）。传入 nullptr
+     * 恢复 DefaultScheduler。须在首次提交前调用。
+     */
+    void set_scheduler(std::unique_ptr<IScheduler> scheduler);
+
+    /** @brief 当前调度器（用于只读检查；不转移所有权）。 */
+    IScheduler* get_scheduler() const noexcept { return task_scheduler_.get(); }
+
     /**
      * @brief 获取单例实例
      * 
@@ -181,6 +194,12 @@ public:
      */
     template<typename F, typename... Args>
     auto submit_priority(int priority, F&& f, Args&&... args)
+        -> std::future<typename std::invoke_result<F, Args...>::type>;
+
+    // submit_priority 的共享实现（meta 非空时经协议传递调度元数据）
+    template<typename F, typename... Args>
+    auto submit_priority_scheduled(
+        int priority, std::optional<TaskSchedulingMeta> meta, F&& f, Args&&... args)
         -> std::future<typename std::invoke_result<F, Args...>::type>;
 
     /**
@@ -1073,6 +1092,10 @@ private:
 
     // GPU 调度器
     gpu::GpuScheduler scheduler_;
+
+    // 0.6.0 Scheduling Runtime：可注入调度器（默认 DefaultScheduler）。
+    // set_scheduler() 须在首次提交前调用；运行中替换需调用方自行同步。
+    std::unique_ptr<IScheduler> task_scheduler_;
 };
 
 // 模板方法实现
@@ -2200,6 +2223,16 @@ auto Executor::submit_tracked_with_hook(
 template<typename F, typename... Args>
 auto Executor::submit_priority(int priority, F&& f, Args&&... args)
     -> std::future<typename std::invoke_result<F, Args...>::type> {
+    return submit_priority_scheduled(priority, std::nullopt,
+                                     std::forward<F>(f), std::forward<Args>(args)...);
+}
+
+// submit_priority 的共享实现；meta 存在时经调度协议写入 Task
+//（EDF 排序 + QoS 观测，0.6.0 Scheduling Runtime）。
+template<typename F, typename... Args>
+auto Executor::submit_priority_scheduled(
+    int priority, std::optional<TaskSchedulingMeta> meta, F&& f, Args&&... args)
+    -> std::future<typename std::invoke_result<F, Args...>::type> {
     using return_type = typename std::invoke_result<F, Args...>::type;
 
     auto executor = manager_->get_default_async_executor_snapshot();
@@ -2289,8 +2322,17 @@ auto Executor::submit_priority(int priority, F&& f, Args&&... args)
         }
     };
 
-    if (!executor->try_submit_priority_task(
-            priority, std::move(task_wrapper), std::move(on_timeout))) {
+    bool accepted = false;
+    if (meta) {
+        accepted = executor->try_submit_priority_task(
+            priority, task_wrapper,
+            std::function<void(std::exception_ptr)>(on_timeout), *meta);
+    } else {
+        accepted = executor->try_submit_priority_task(
+            priority, task_wrapper,
+            std::function<void(std::exception_ptr)>(on_timeout));
+    }
+    if (!accepted) {
         auto exception = std::make_exception_ptr(
             std::runtime_error("Async executor rejected priority task submission"));
         bool expected = false;
@@ -2824,6 +2866,10 @@ template<typename Function>
 auto Executor::submit_auto(TaskBuilder<Function> task)
     -> std::future<typename std::invoke_result<Function&>::type> {
     const auto& options = task.options();
+    // 0.6.0 QoS：未显式设置 priority 时按 QoS 类别映射默认排队优先级
+    const int effective_priority = static_cast<int>(
+        options.priority_set ? options.priority
+                             : default_priority_for_qos(options.qos));
     const auto decision = route_task(options, false);
     record_routing_decision(decision);
     if (decision.reason == RoutingReason::Rejected) {
@@ -2833,7 +2879,39 @@ auto Executor::submit_auto(TaskBuilder<Function> task)
         promise.set_exception(std::make_exception_ptr(std::runtime_error(message)));
         return promise.get_future();
     }
-    return submit_priority(static_cast<int>(options.priority), std::move(task).function());
+
+    TaskSchedulingMeta meta;
+    meta.qos = options.qos;
+    const std::string deadline_task_id =
+        options.name.empty() ? "submit_auto" : options.name;
+    using return_type = typename std::invoke_result<Function&>::type;
+    std::function<return_type()> function = std::move(task).function();
+    if (options.deadline) {
+        meta.deadline_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            options.deadline->time_since_epoch()).count();
+        // deadline miss 观测：开始执行时已错过 → DeadlineMissed 诊断；
+        // 契约是不中断已开始执行的任务，因此原任务仍会运行。
+        function = [this, deadline_ns = meta.deadline_ns, deadline_task_id,
+                    function = std::move(function)]() mutable -> return_type {
+            const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            if (now_ns > deadline_ns) {
+                ExecutorFailureEvent event;
+                event.kind = FailureKind::DeadlineMissed;
+                event.executor_name = "default";
+                event.task_id = deadline_task_id;
+                event.message = "task started after declared deadline";
+                record_failure(std::move(event));
+            }
+            if constexpr (std::is_void_v<return_type>) {
+                function();
+            } else {
+                return function();
+            }
+        };
+    }
+    return submit_priority_scheduled(effective_priority, std::move(meta),
+                                     std::move(function));
 }
 
 template<typename CpuFunction, typename GpuFunction>

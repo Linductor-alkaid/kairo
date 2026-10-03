@@ -28,6 +28,8 @@ const char* failure_kind_to_string(FailureKind kind) {
     case FailureKind::GpuFailure: return "GpuFailure";
     case FailureKind::WaitTimeout: return "WaitTimeout";
     case FailureKind::TuningFallback: return "TuningFallback";
+    case FailureKind::CapacityExhausted: return "CapacityExhausted";
+    case FailureKind::DeadlineMissed: return "DeadlineMissed";
     default: return "Unknown";
     }
 }

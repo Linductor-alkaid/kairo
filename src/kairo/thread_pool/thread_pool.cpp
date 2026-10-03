@@ -1080,6 +1080,15 @@ bool ThreadPool::try_submit_priority(
     int priority,
     std::function<void()> task,
     std::function<void(std::exception_ptr)> on_timeout) {
+    return try_submit_priority(priority, std::move(task), std::move(on_timeout),
+                               TaskSchedulingMeta{});
+}
+
+bool ThreadPool::try_submit_priority(
+    int priority,
+    std::function<void()> task,
+    std::function<void(std::exception_ptr)> on_timeout,
+    const TaskSchedulingMeta& meta) {
     TaskPriority task_priority = TaskPriority::NORMAL;
     if (priority <= 0) {
         task_priority = TaskPriority::LOW;
@@ -1106,6 +1115,8 @@ bool ThreadPool::try_submit_priority(
     executor_task.submit_time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()
     ).count();
+    executor_task.deadline_ns = meta.deadline_ns;  // 0.6.0: EDF 排序输入
+    executor_task.qos = meta.qos;
     // CR-022: timeout_ms 在锁内从 config_ 读取（见下方临界区）。
 
     auto* monitor = monitor_.load(std::memory_order_acquire);

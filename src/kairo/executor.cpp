@@ -157,7 +157,8 @@ Executor::Executor(ExecutorManager& manager)
     , owned_manager_(nullptr)
     , cancellation_registry_(std::make_unique<TaskCancellationRegistry>())
     , timers_(std::make_shared<detail::TimerScheduler>())
-    , task_dependencies_(std::make_unique<TaskDependencyManager>()) {
+    , task_dependencies_(std::make_unique<TaskDependencyManager>())
+    , task_scheduler_(std::make_unique<DefaultScheduler>()) {
     configure_timer_scheduler_hooks();
     monitor_ = std::make_unique<monitor::ExecutorMonitor>(
         *manager_, lifecycle_state_,
@@ -176,7 +177,8 @@ Executor::Executor()
     , owned_manager_(std::make_unique<ExecutorManager>())
     , cancellation_registry_(std::make_unique<TaskCancellationRegistry>())
     , timers_(std::make_shared<detail::TimerScheduler>())
-    , task_dependencies_(std::make_unique<TaskDependencyManager>()) {
+    , task_dependencies_(std::make_unique<TaskDependencyManager>())
+    , task_scheduler_(std::make_unique<DefaultScheduler>()) {
     manager_ = owned_manager_.get();
     configure_timer_scheduler_hooks();
     monitor_ = std::make_unique<monitor::ExecutorMonitor>(
@@ -1669,10 +1671,22 @@ RoutingDecision Executor::route_task(const TaskOptions& options,
     // 不会读取能力表——此前每次 submit_auto 仍全量锁 5 把注册表采能力，是
     // submit_auto 相对 submit 慢 65-70% 的主要构成。惰性采集：仅在
     // CpuOrGpu 意图（真正消费能力表）时才执行。
-    return task_router_.route(
+    // CR-106 惰性采集：仅在真正消费能力表的路径（CpuOrGpu / affinity
+    // 相交性检查）才执行采集，其余保持纯策略判定。
+    const bool needs_capabilities =
+        cpu_gpu_task || !options.affinity.cpus.empty();
+    return task_scheduler_->route(
         TaskRouter::Request{options, cpu_gpu_task, gpu_selected},
-        cpu_gpu_task ? manager_->get_executor_capabilities()
-                     : std::vector<ExecutorCapability>{});
+        needs_capabilities ? manager_->get_executor_capabilities()
+                           : std::vector<ExecutorCapability>{});
+}
+
+void Executor::set_scheduler(std::unique_ptr<IScheduler> scheduler) {
+    if (scheduler) {
+        task_scheduler_ = std::move(scheduler);
+    } else {
+        task_scheduler_ = std::make_unique<DefaultScheduler>();
+    }
 }
 
 void Executor::record_routing_decision(RoutingDecision decision) {
@@ -1746,6 +1760,9 @@ void Executor::record_failure(ExecutorFailureEvent event) {
             break;
         case FailureKind::CapacityExhausted:
             ++failure_status_.capacity_exhausted_count;
+            break;
+        case FailureKind::DeadlineMissed:
+            ++failure_status_.deadline_missed_count;
             break;
         default:
             break;

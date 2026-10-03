@@ -354,7 +354,36 @@ if (!admission.accepted) {
 - `get_last_routing_decision()`、`get_recent_routing_decisions()` 与 `set_routing_callback()` 提供独立的路由解释；`ExecutorFailureEvent` 仍用于实际拒绝和执行失败。
 - `get_executor_capabilities()` 返回所有已注册后端的建议性状态快照，只用于显示/预检；实际投递仍可能因并发 stop 或满队列被拒绝。
 
-### 3.8 延迟与周期任务
+### 3.8 Scheduling Runtime（deadline / QoS / affinity / resource）
+
+0.6.0 起调度决策由可注入的 `IScheduler`（`include/kairo/scheduler.hpp`）
+产出，默认实现 `DefaultScheduler` 在意图路由之上叠加调度模型约束。
+设计见 [docs/design/scheduling_runtime.md](design/scheduling_runtime.md)。
+
+```cpp
+auto decision_done = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+auto task = kairo::task([] { return compute(); })
+    .name("inference")
+    .qos(kairo::QosClass::Interactive)          // 未显式 priority 时映射排队优先级
+    .deadline(decision_done)                     // 同优先级内 EDF；错过记 DeadlineMissed
+    .affinity(kairo::AffinityHint{{0, 1}})       // advisory；不匹配进诊断 detail
+    .resources(kairo::ResourceRequirements{.memory_bytes = 1u << 28,
+                                           .gpu_device = 0});
+auto result = ex.submit_auto(task);
+```
+
+| 模型 | 语义 | 违约行为 |
+|------|------|----------|
+| `deadline` | 同优先级内 EDF 排序；开始执行时已错过记录 `FailureKind::DeadlineMissed`（`deadline_missed_count`），任务仍执行 | 提交时已过期 → 拒绝（`RoutingReason::Rejected`） |
+| `qos` | `BestEffort/Standard/Interactive/HardRealtime` 映射默认排队优先级（LOW/NORMAL/HIGH/CRITICAL）；显式 `priority()` 优先 | 严格优先级无 aging（CR-024）：BestEffort 可被饿死 |
+| `affinity` | per-task advisory；与后端 `bound_cpus` 不相交时写入 `RoutingDecision.detail` 警告，不拒绝 | 不重新绑定 OS 线程 |
+| `resources` | GPU `device`/`memory_bytes` 声明与能力快照核对 | device 不符 → `BackendUnavailable`；内存不足 → `CapacityPressure` |
+
+自定义调度器：`ex.set_scheduler(std::make_unique<MyScheduler>())`
+（须在首次提交前调用；`nullptr` 恢复默认）。调度器只产出决策，
+投递仍由 Executor 按既有后端协议执行。
+
+### 3.9 延迟与周期任务
 
 > ⚠️ **API 范围提示**：`submit_delayed`、`submit_periodic` **仅在 `Executor` Facade 类中提供**，**不属于** `IAsyncExecutor`、`IExecutor` 或 `ThreadPool` 的接口。用户直接对底层 `ThreadPool` 实例调用这些方法会编译失败。延迟与周期任务统一由 Facade 内部的 `ExecutorManager` 调度，底层 `ThreadPool` 不感知任务时间维度。
 

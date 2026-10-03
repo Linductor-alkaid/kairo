@@ -315,6 +315,8 @@ public:
     void record_in_flight_task_terminal(const std::string& task_id);
 
 private:
+    // 0.6.0：默认池的绑核集合（能力快照 affinity 维度）
+    std::vector<int> default_async_bound_cpus_;
     void bump_state_epoch() noexcept;
     bool is_executor_name_registered_locked(const std::string& name) const;
     void finish_default_async_shutdown_drain();

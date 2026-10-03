@@ -1,5 +1,6 @@
 #pragma once
 
+#include "scheduling.hpp"
 #include "task_cancellation.hpp"
 
 #include <cstddef>
@@ -181,7 +182,8 @@ enum class FailureKind {
     GpuFailure,        // GPU 执行失败
     WaitTimeout,       // 等待完成超时
     TuningFallback,    // 平台调优失败并安全回退
-    CapacityExhausted  // 总量有界 admission 拒绝（max_in_flight_tasks 耗尽）
+    CapacityExhausted, // 总量有界 admission 拒绝（max_in_flight_tasks 耗尽）
+    DeadlineMissed     // 任务开始执行时已超过声明的 deadline（仍会执行）
 };
 
 /**
@@ -209,6 +211,7 @@ struct ExecutorFailureStatus {
     uint64_t wait_timeout_count = 0;
     uint64_t tuning_fallback_count = 0;
     uint64_t capacity_exhausted_count = 0;  // max_in_flight_tasks 拒绝数
+    uint64_t deadline_missed_count = 0;     // 开始执行时已错过声明 deadline 的任务数
     uint64_t total_count = 0;
 };
 
@@ -263,6 +266,11 @@ struct Task {
     int64_t timeout_ms = 0;                       // 超时时间（毫秒），0表示不超时
     std::vector<std::string> dependencies;       // 依赖任务ID
     std::atomic<bool> cancelled{false};           // 取消标志
+
+    // ---- 0.6.0 Scheduling Runtime：per-task 调度元数据 ----
+    // （affinity/resource 消费在路由层，保留于 TaskOptions，不进 Task）
+    QosClass qos = QosClass::Standard;            // 服务质量类别
+    int64_t deadline_ns = 0;                      // 绝对 deadline（steady 纳秒）；0 = 无
 };
 
 /**

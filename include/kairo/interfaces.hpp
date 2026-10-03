@@ -284,6 +284,25 @@ public:
     }
 
     /**
+     * @brief 提交携带调度元数据的优先级任务（0.6.0 Scheduling Runtime）。
+     *
+     * meta 支撑默认池内 EDF 排序与 QoS 观测；后端不感知时默认实现
+     * 退化为普通优先级提交（元数据被忽略，不改变接受语义）。
+     */
+    bool try_submit_priority_task(
+        int priority,
+        std::function<void()> task,
+        std::function<void(std::exception_ptr)> on_timeout,
+        TaskSchedulingMeta meta) {
+        try {
+            return try_submit_priority_with_timeout_meta_impl(
+                priority, std::move(task), std::move(on_timeout), meta);
+        } catch (...) {
+            return false;
+        }
+    }
+
+    /**
      * @brief 批量提交任务
      *
      * 批量提交多个任务，内部优化减少锁竞争。
@@ -463,6 +482,17 @@ protected:
         std::function<void(std::exception_ptr)> on_timeout) {
         (void)on_timeout;
         return try_submit_priority_impl(priority, std::move(task));
+    }
+
+    /** @brief 带 TaskSchedulingMeta 的优先级提交实现；默认忽略 meta。 */
+    virtual bool try_submit_priority_with_timeout_meta_impl(
+        int priority,
+        std::function<void()> task,
+        std::function<void(std::exception_ptr)> on_timeout,
+        const TaskSchedulingMeta& meta) {
+        (void)meta;
+        return try_submit_priority_with_timeout_impl(
+            priority, std::move(task), std::move(on_timeout));
     }
 
     /**

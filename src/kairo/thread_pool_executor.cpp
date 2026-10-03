@@ -222,6 +222,24 @@ bool ThreadPoolExecutor::try_submit_priority_impl(int priority, std::function<vo
     return thread_pool->try_submit_priority(priority, std::move(task));
 }
 
+bool ThreadPoolExecutor::try_submit_priority_with_timeout_meta_impl(
+    int priority,
+    std::function<void()> task,
+    std::function<void(std::exception_ptr)> on_timeout,
+    const TaskSchedulingMeta& meta) {
+    std::shared_ptr<ThreadPool> thread_pool;
+    {
+        std::lock_guard<std::mutex> lock(thread_pool_mutex_);
+        thread_pool = thread_pool_;
+    }
+    if (!thread_pool) {
+        return false;
+    }
+
+    return thread_pool->try_submit_priority(priority, std::move(task),
+                                            std::move(on_timeout), meta);
+}
+
 bool ThreadPoolExecutor::try_submit_priority_with_timeout_impl(
     int priority,
     std::function<void()> task,

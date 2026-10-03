@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.hpp"
+#include "scheduling.hpp"
 #include "gpu/gpu_scheduler.hpp"
 
 #include <chrono>
@@ -66,16 +67,23 @@ enum class RoutingReason : uint8_t {
 /**
  * @brief 自动路由的不可变输入选项。
  *
- * `deadline` 仅供路由与诊断使用，不表示中断已开始执行的任务，也不改变
- * ThreadPoolConfig::task_timeout_ms 的软超时语义。
+ * `deadline` 是真实调度输入：同优先级内按 EDF 排序，执行时已错过将记录
+ * DeadlineMissed 诊断（不表示中断已开始执行的任务，也不改变
+ * ThreadPoolConfig::task_timeout_ms 的软超时语义）。
+ * `qos` 未显式设置 priority 时决定默认排队优先级；`affinity`/`resources`
+ * 是声明式约束，由调度器在路由/准入时与后端能力核对。
  */
 struct TaskOptions {
     std::string name;
     TaskPriority priority = TaskPriority::NORMAL;
+    bool priority_set = false;  // 显式设置过 priority 时 QoS 不再映射默认值
     ExecutionIntent intent = ExecutionIntent::Auto;
     std::optional<std::string> preferred_executor;
     FallbackPolicy fallback = FallbackPolicy::NoFallback;
     std::optional<std::chrono::steady_clock::time_point> deadline;
+    QosClass qos = QosClass::Standard;
+    AffinityHint affinity;
+    ResourceRequirements resources;
 };
 
 /** @brief A routable executor's advisory capability snapshot. */
@@ -89,6 +97,12 @@ struct ExecutorCapability {
     bool supports_gpu_kernel = false;
     size_t pending_work = 0;
     size_t capacity_hint = 0;
+
+    // ---- 0.6.0 Scheduling Runtime：调度模型检查用的能力维度 ----
+    std::vector<int> bound_cpus;        // worker 绑核集合；空 = 未知/未约束
+    int gpu_device = -1;                // GPU 设备 ID；非 GPU 后端为 -1
+    size_t gpu_memory_total_bytes = 0;  // GPU 总内存；0 = 未知
+    size_t gpu_memory_free_bytes = 0;   // GPU 当前可用内存；0 = 未知
 };
 
 /** @brief Explanation of one automatic routing decision. */
@@ -131,6 +145,7 @@ public:
 
     TaskBuilder& priority(TaskPriority value) noexcept {
         options_.priority = value;
+        options_.priority_set = true;
         return *this;
     }
 
@@ -151,6 +166,21 @@ public:
 
     TaskBuilder& deadline(std::chrono::steady_clock::time_point value) noexcept {
         options_.deadline = value;
+        return *this;
+    }
+
+    TaskBuilder& qos(QosClass value) noexcept {
+        options_.qos = value;
+        return *this;
+    }
+
+    TaskBuilder& affinity(AffinityHint value) noexcept {
+        options_.affinity = std::move(value);
+        return *this;
+    }
+
+    TaskBuilder& resources(ResourceRequirements value) noexcept {
+        options_.resources = value;
         return *this;
     }
 
@@ -178,6 +208,21 @@ private:
     Function function_;
     TaskOptions options_;
 };
+
+/** @brief QoS 类别对应的默认排队优先级（用户未显式设 priority 时生效）。 */
+inline TaskPriority default_priority_for_qos(QosClass qos) noexcept {
+    switch (qos) {
+    case QosClass::BestEffort:
+        return TaskPriority::LOW;
+    case QosClass::Interactive:
+        return TaskPriority::HIGH;
+    case QosClass::HardRealtime:
+        return TaskPriority::CRITICAL;
+    case QosClass::Standard:
+    default:
+        return TaskPriority::NORMAL;
+    }
+}
 
 /**
  * @brief 创建可配置自动路由意图的 callable 包装。
@@ -209,7 +254,16 @@ public:
 
     CpuGpuTask& priority(TaskPriority value) noexcept {
         options_.priority = value;
+        options_.priority_set = true;
         gpu_config_.priority = static_cast<int>(value);
+        return *this;
+    }
+
+    CpuGpuTask& qos(QosClass value) noexcept {
+        options_.qos = value;
+        if (!options_.priority_set) {
+            gpu_config_.priority = static_cast<int>(default_priority_for_qos(value));
+        }
         return *this;
     }
 
@@ -225,6 +279,16 @@ public:
 
     CpuGpuTask& deadline(std::chrono::steady_clock::time_point value) noexcept {
         options_.deadline = value;
+        return *this;
+    }
+
+    CpuGpuTask& affinity(AffinityHint value) noexcept {
+        options_.affinity = std::move(value);
+        return *this;
+    }
+
+    CpuGpuTask& resources(ResourceRequirements value) noexcept {
+        options_.resources = value;
         return *this;
     }
 
