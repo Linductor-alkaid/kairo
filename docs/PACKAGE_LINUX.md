@@ -1,6 +1,6 @@
 # Linux 打包指南
 
-本文档说明如何在 Linux 平台上将 executor 库打包成静态库和动态库，用于发行。
+本文档说明如何在 Linux 平台上将 kairo 库打包成静态库和动态库，用于发行。
 
 ---
 
@@ -85,9 +85,9 @@
 # 配置
 cmake -B build_static \
     -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTOR_BUILD_SHARED=OFF \
-    -DEXECUTOR_BUILD_TESTS=OFF \
-    -DEXECUTOR_BUILD_EXAMPLES=OFF \
+    -DKAIRO_BUILD_SHARED=OFF \
+    -DKAIRO_BUILD_TESTS=OFF \
+    -DKAIRO_BUILD_EXAMPLES=OFF \
     -DCMAKE_INSTALL_PREFIX=build_static/install
 
 # 构建
@@ -103,9 +103,9 @@ cmake --install build_static
 # 配置
 cmake -B build_shared \
     -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTOR_BUILD_SHARED=ON \
-    -DEXECUTOR_BUILD_TESTS=OFF \
-    -DEXECUTOR_BUILD_EXAMPLES=OFF \
+    -DKAIRO_BUILD_SHARED=ON \
+    -DKAIRO_BUILD_TESTS=OFF \
+    -DKAIRO_BUILD_EXAMPLES=OFF \
     -DCMAKE_INSTALL_PREFIX=build_shared/install
 
 # 构建
@@ -122,21 +122,21 @@ cmake --install build_shared
 打包后的目录结构如下：
 
 ```
-executor-0.5.0-linux-x86_64/
+kairo-0.5.0-linux-x86_64/
 ├── static/                    # 静态库
 │   ├── lib/
-│   │   ├── libexecutor.a      # 静态库文件
+│   │   ├── libkairo.a      # 静态库文件
 │   │   └── cmake/
-│   │       └── executor/      # CMake 配置文件
+│   │       └── kairo/      # CMake 配置文件
 │   └── include/
-│       └── executor/          # 头文件
+│       └── kairo/          # 头文件
 ├── shared/                    # 动态库
 │   ├── lib/
-│   │   ├── libexecutor.so     # 动态库文件（运行时）
+│   │   ├── libkairo.so     # 动态库文件（运行时）
 │   │   └── cmake/
-│   │       └── executor/      # CMake 配置文件
+│   │       └── kairo/      # CMake 配置文件
 │   └── include/
-│       └── executor/          # 头文件
+│       └── kairo/          # 头文件
 ├── README.md
 ├── LICENSE
 ├── CHANGELOG.md
@@ -153,14 +153,14 @@ executor-0.5.0-linux-x86_64/
 2. 在 CMake 配置时设置路径：
 
 ```bash
-cmake -B build -DCMAKE_PREFIX_PATH=path/to/executor-0.5.0-linux-x86_64/static
+cmake -B build -DCMAKE_PREFIX_PATH=path/to/kairo-0.5.0-linux-x86_64/static
 ```
 
 3. 在项目的 `CMakeLists.txt` 中：
 
 ```cmake
-find_package(executor REQUIRED)
-target_link_libraries(your_target PRIVATE executor::executor)
+find_package(kairo REQUIRED)
+target_link_libraries(your_target PRIVATE kairo::kairo)
 ```
 
 ### 使用动态库
@@ -169,27 +169,27 @@ target_link_libraries(your_target PRIVATE executor::executor)
 2. 在 CMake 配置时设置路径：
 
 ```bash
-cmake -B build -DCMAKE_PREFIX_PATH=path/to/executor-0.5.0-linux-x86_64/shared
+cmake -B build -DCMAKE_PREFIX_PATH=path/to/kairo-0.5.0-linux-x86_64/shared
 ```
 
 3. 在项目的 `CMakeLists.txt` 中：
 
 ```cmake
-find_package(executor REQUIRED)
-target_link_libraries(your_target PRIVATE executor::executor)
+find_package(kairo REQUIRED)
+target_link_libraries(your_target PRIVATE kairo::kairo)
 ```
 
-4. **重要**: 确保 `libexecutor.so` 在运行时可用：
-   - 将 `libexecutor.so` 复制到系统库目录（如 `/usr/local/lib`）
-   - 或将包含 `libexecutor.so` 的目录添加到 `LD_LIBRARY_PATH` 环境变量
+4. **重要**: 确保 `libkairo.so` 在运行时可用：
+   - 将 `libkairo.so` 复制到系统库目录（如 `/usr/local/lib`）
+   - 或将包含 `libkairo.so` 的目录添加到 `LD_LIBRARY_PATH` 环境变量
    - 或使用 `rpath` 在链接时指定库路径
 
 ```bash
 # 方法 1: 设置 LD_LIBRARY_PATH
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/executor-0.5.0-linux-x86_64/shared/lib
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/kairo-0.5.0-linux-x86_64/shared/lib
 
 # 方法 2: 安装到系统目录
-sudo cp /path/to/executor-0.5.0-linux-x86_64/shared/lib/libexecutor.so* /usr/local/lib/
+sudo cp /path/to/kairo-0.5.0-linux-x86_64/shared/lib/libkairo.so* /usr/local/lib/
 sudo ldconfig
 ```
 
@@ -226,16 +226,16 @@ A: 脚本会自动检测当前系统架构。如果需要交叉编译，需要�
 cmake -B build_static \
     -DCMAKE_TOOLCHAIN_FILE=/path/to/toolchain.cmake \
     -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTOR_BUILD_SHARED=OFF
+    -DKAIRO_BUILD_SHARED=OFF
 ```
 
 ### Q: 构建失败，提示找不到 CMake？
 
 A: 确保 CMake 已安装并在 PATH 环境变量中。可以运行 `cmake --version` 验证。
 
-### Q: 使用动态库时提示找不到 libexecutor.so？
+### Q: 使用动态库时提示找不到 libkairo.so？
 
-A: 确保 `libexecutor.so` 在以下位置之一：
+A: 确保 `libkairo.so` 在以下位置之一：
 - 系统库目录（如 `/usr/local/lib`，需要运行 `ldconfig`）
 - `LD_LIBRARY_PATH` 环境变量中的目录
 - 可执行文件所在目录（如果使用相对路径）
@@ -243,7 +243,7 @@ A: 确保 `libexecutor.so` 在以下位置之一：
 可以使用 `ldd` 命令检查可执行文件的库依赖：
 
 ```bash
-ldd your_executable | grep executor
+ldd your_executable | grep kairo
 ```
 
 ### Q: 如何同时构建 Debug 和 Release 版本？
@@ -263,14 +263,14 @@ A: 分别运行两次构建：
 A: 解压 tar.gz 文件查看：
 
 ```bash
-tar -tzf dist/executor-0.5.0-linux-x86_64.tar.gz
+tar -tzf dist/kairo-0.5.0-linux-x86_64.tar.gz
 ```
 
 或解压到临时目录：
 
 ```bash
 mkdir -p /tmp/package_test
-tar -xzf dist/executor-0.5.0-linux-x86_64.tar.gz -C /tmp/package_test
+tar -xzf dist/kairo-0.5.0-linux-x86_64.tar.gz -C /tmp/package_test
 tree /tmp/package_test
 ```
 
@@ -281,22 +281,22 @@ tree /tmp/package_test
 构建完成后，可以验证关键文件：
 
 ### 静态库
-- `build_linux/static/install/lib/libexecutor.a` - 静态库文件
-- `build_linux/static/install/include/executor/` - 头文件目录
+- `build_linux/static/install/lib/libkairo.a` - 静态库文件
+- `build_linux/static/install/include/kairo/` - 头文件目录
 
 ### 动态库
-- `build_linux/shared/install/lib/libexecutor.so` - 动态库文件
-- `build_linux/shared/install/include/executor/` - 头文件目录
+- `build_linux/shared/install/lib/libkairo.so` - 动态库文件
+- `build_linux/shared/install/include/kairo/` - 头文件目录
 
 可以使用以下命令验证库文件：
 
 ```bash
 # 查看静态库内容
-ar -t build_linux/static/install/lib/libexecutor.a
+ar -t build_linux/static/install/lib/libkairo.a
 
 # 查看动态库信息
-ldd build_linux/shared/install/lib/libexecutor.so
-readelf -d build_linux/shared/install/lib/libexecutor.so
+ldd build_linux/shared/install/lib/libkairo.so
+readelf -d build_linux/shared/install/lib/libkairo.so
 ```
 
 ---

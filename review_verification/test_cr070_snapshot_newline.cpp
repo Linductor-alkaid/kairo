@@ -2,16 +2,16 @@
 // Builds an ExecutorSnapshot with a RealtimeExecutorStatus entry whose boolean
 // fields are all true, formats it, and scans for lines where a bool value is
 // immediately followed by the next key (regex-ish check: "=(true|false)[A-Za-z_]").
-#include "executor/monitor/executor_snapshot_formatter.hpp"
-#include "executor/types.hpp"
+#include "kairo/monitor/executor_snapshot_formatter.hpp"
+#include "kairo/types.hpp"
 
 #include <iostream>
 #include <regex>
 #include <string>
 #include <vector>
 
-using namespace executor;
-using namespace executor::monitor;
+using namespace kairo;
+using namespace kairo::monitor;
 
 int main() {
     ExecutorSnapshot snapshot;

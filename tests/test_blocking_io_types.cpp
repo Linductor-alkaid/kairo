@@ -1,8 +1,8 @@
 #include <iostream>
 
-#include <executor/blocking_io.hpp>
+#include <kairo/blocking_io.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 int main() {
     BlockingIoConfig config;

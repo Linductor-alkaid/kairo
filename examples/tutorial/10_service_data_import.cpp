@@ -6,11 +6,11 @@
 #include <string>
 #include <vector>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 int main() {
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
     config.queue_capacity = 32;
@@ -19,8 +19,8 @@ int main() {
     }
 
     std::atomic<int> failure_callbacks{0};
-    executor.set_failure_callback([&](const executor::ExecutorFailureEvent& event) noexcept {
-        if (event.kind == executor::FailureKind::TaskException) {
+    executor.set_failure_callback([&](const kairo::ExecutorFailureEvent& event) noexcept {
+        if (event.kind == kairo::FailureKind::TaskException) {
             ++failure_callbacks;
         }
     });

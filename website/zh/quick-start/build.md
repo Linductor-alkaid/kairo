@@ -1,6 +1,6 @@
 ---
 title: 构建与安装
-description: 从源码构建 Executor，并把教程示例加入构建。
+description: 从源码构建 Kairo，并把教程示例加入构建。
 ---
 
 # 构建与安装
@@ -14,7 +14,7 @@ description: 从源码构建 Executor，并把教程示例加入构建。
 在仓库根目录执行：
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DEXECUTOR_BUILD_EXAMPLES=ON -DEXECUTOR_ENABLE_GPU=OFF
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DKAIRO_BUILD_EXAMPLES=ON -DKAIRO_ENABLE_GPU=OFF
 cmake --build build
 ```
 
@@ -25,17 +25,17 @@ export ANDROID_NDK_HOME=/path/to/android-ndk-r26c
 scripts/build_android.sh --abi arm64-v8a --api 21
 ```
 
-Android 构建、AGP 接入和 `c++_shared` 打包见 [PACKAGE_ANDROID.md](https://github.com/Linductor-alkaid/executor/blob/master/docs/PACKAGE_ANDROID.md)。首次路径不要求 CUDA、OpenCL 或实时权限。
+Android 构建、AGP 接入和 `c++_shared` 打包见 [PACKAGE_ANDROID.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/PACKAGE_ANDROID.md)。首次路径不要求 CUDA、OpenCL 或实时权限。
 
 ## 加入自己的工程
 
 未安装时，将仓库作为子目录加入项目：
 
 ```cmake
-set(EXECUTOR_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(EXECUTOR_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(KAIRO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(KAIRO_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory(path/to/executor)
-target_link_libraries(myapp PRIVATE executor::executor)
+target_link_libraries(myapp PRIVATE kairo::executor)
 ```
 
 安装后，配置消费者工程时提供安装前缀：
@@ -48,11 +48,11 @@ cmake -B build-consumer -DCMAKE_PREFIX_PATH=/opt/executor
 消费者 `CMakeLists.txt` 使用：
 
 ```cmake
-find_package(executor REQUIRED)
-target_link_libraries(myapp PRIVATE executor::executor)
+find_package(kairo REQUIRED)
+target_link_libraries(myapp PRIVATE kairo::executor)
 ```
 
-完整安装和打包说明见 [`docs/BUILD.md`](https://github.com/Linductor-alkaid/executor/blob/master/docs/BUILD.md)。
+完整安装和打包说明见 [`docs/BUILD.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md)。
 
 ## 验证教程示例
 
@@ -71,7 +71,7 @@ ctest --test-dir build -L tutorial --output-on-failure
 
 ## 常见错误
 
-- 忘记 `-DEXECUTOR_BUILD_EXAMPLES=ON`：教程可执行文件不会生成。
+- 忘记 `-DKAIRO_BUILD_EXAMPLES=ON`：教程可执行文件不会生成。
 - 把 GPU 依赖带入首次构建：首个教程不需要 GPU，先显式设为 `OFF` 可减少环境差异。
 - 使用多配置 Windows 生成器时：在构建和 CTest 命令中补充 `--config Release`。
 - 只构建不运行：下一页用输出确认 `future.get()` 的行为。

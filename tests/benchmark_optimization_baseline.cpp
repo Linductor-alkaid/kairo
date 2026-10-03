@@ -3,14 +3,14 @@
  * Measures current performance of optimization targets
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <chrono>
 #include <iostream>
 #include <iomanip>
 #include <vector>
 #include <atomic>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 struct BenchResult {

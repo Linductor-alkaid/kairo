@@ -41,7 +41,7 @@ endforeach()
 file(APPEND "${probe}" "\nint main() { return 0; }\n")
 
 execute_process(
-    # 消费者契约：-I<prefix>/include 后 #include <executor/...> 可用
+    # 消费者契约：-I<prefix>/include 后 #include <kairo/...> 可用
     COMMAND "${CXX_COMPILER}" -std=c++20 -fsyntax-only
             "-I${prefix}/include" "${probe}"
     RESULT_VARIABLE compile_result

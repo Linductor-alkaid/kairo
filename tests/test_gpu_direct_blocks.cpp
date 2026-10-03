@@ -3,13 +3,13 @@
 
 #include <gtest/gtest.h>
 
-#include "executor/gpu/gpu_memory_manager.hpp"
+#include "kairo/gpu/gpu_memory_manager.hpp"
 
 // Keep this test independent of CUDA availability: it exercises allocator bookkeeping with
 // host callbacks and includes the implementation when the production GPU source is excluded.
-#include "executor/gpu/gpu_memory_manager.cpp"
+#include "kairo/gpu/gpu_memory_manager.cpp"
 
-namespace executor::gpu {
+namespace kairo::gpu {
 namespace {
 
 TEST(GpuMemoryManagerTest, DirectOverflowBlocksAreNotCoalesced) {
@@ -61,4 +61,4 @@ TEST(GpuMemoryManagerTest, DirectOverflowBlocksAreNotCoalesced) {
 }
 
 }  // namespace
-}  // namespace executor::gpu
+}  // namespace kairo::gpu

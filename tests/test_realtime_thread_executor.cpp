@@ -12,14 +12,14 @@
 #include <system_error>
 
 // 包含 RealtimeThreadExecutor 的头文件
-#include <executor/config.hpp>
-#include <executor/types.hpp>
-#include <executor/interfaces.hpp>
+#include <kairo/config.hpp>
+#include <kairo/types.hpp>
+#include <kairo/interfaces.hpp>
 #define private public
-#include "executor/realtime_thread_executor.hpp"
+#include "kairo/realtime_thread_executor.hpp"
 #undef private
 
-using namespace executor;
+using namespace kairo;
 
 static_assert(std::atomic<int64_t>::is_always_lock_free,
               "RealtimeThreadExecutor statistics require lock-free int64_t atomics");

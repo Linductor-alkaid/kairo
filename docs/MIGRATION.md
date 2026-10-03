@@ -1,6 +1,6 @@
 # 迁移指南
 
-本文档说明不同 executor 版本之间的迁移方式。若你从旧版本升级，请按对应版本节的说明操作。
+本文档说明不同 kairo 版本之间的迁移方式。若你从旧版本升级，请按对应版本节的说明操作。
 
 ---
 
@@ -26,8 +26,8 @@
   完整清单见 `CHANGELOG.md` 0.5.3 小节。
 
 迁移动作：无需改代码。构建侧注意两点（源自评审 Phase 3）：打包脚本版本
-默认值改从 `project(VERSION)` 提取（新增生成的 `executor/version.hpp` 可
-直接 include 获取版本）；`EXECUTOR_ENABLE_SANITIZERS` 不再控制 TSAN
+默认值改从 `project(VERSION)` 提取（新增生成的 `kairo/version.hpp` 可
+直接 include 获取版本）；`KAIRO_ENABLE_SANITIZERS` 不再控制 TSAN
 （独立开关，且与 ASAN 显式同开在配置期报错）。
 
 ---
@@ -95,14 +95,14 @@ schema 2 → 3，以及若干可观察行为变化。Android CPU-only 交叉编�
 原来在任务体内手写"检查 deadline / 检查取消标志 / 提前 return"的模式，可以迁移到：
 
 ```cpp
-auto submission = executor.submit_cancellable(
-    [](executor::StopToken token) {
+auto submission = kairo.submit_cancellable(
+    [](kairo::StopToken token) {
         while (!token.stop_requested() /* && 还有工作 */) {
             // 每步工作之间轮询 token
         }
         return result;
     });
-// 需要停止时：executor.request_task_cancel(submission.handle);
+// 需要停止时：kairo.request_task_cancel(submission.handle);
 ```
 
 适用边界：任务自身能在工作步之间主动检查停止状态。阻塞在无 wakeup 机制调用上
@@ -151,7 +151,7 @@ worker 的 `run(StopToken)` + `wakeup()` 契约，或让阻塞调用本身可超
 `RuntimeBaseline` 的有界 admission boundary），可改为原生配置：
 
 ```cpp
-executor::ExecutorConfig config;
+kairo::ExecutorConfig config;
 config.max_in_flight_tasks = /* 原 max_in_flight */;
 ```
 
@@ -251,8 +251,8 @@ config.max_in_flight_tasks = /* 原 max_in_flight */;
 
 ### 推荐迁移路径
 
-1. 将长期循环封装为 `IBlockingIoWorker`：把主体放入 `run(executor::StopToken)`，实现不抛异常且可重复调用的 `wakeup()`。
-2. 保证停止可达：`wakeup()` 要直接解除等待；不能直接唤醒时使用有限 timeout，并在每次返回后检查 `executor::StopToken`。不要依赖 stop token 自动中断外部库调用。桌面平台上该类型等价于 `std::stop_token`，现有 override 保持源码与 ABI 兼容。
+1. 将长期循环封装为 `IBlockingIoWorker`：把主体放入 `run(kairo::StopToken)`，实现不抛异常且可重复调用的 `wakeup()`。
+2. 保证停止可达：`wakeup()` 要直接解除等待；不能直接唤醒时使用有限 timeout，并在每次返回后检查 `kairo::StopToken`。不要依赖 stop token 自动中断外部库调用。桌面平台上该类型等价于 `std::stop_token`，现有 override 保持源码与 ABI 兼容。
 3. 用 `register_blocking_io_worker_ex()` 注册，再用 `start_blocking_io_worker_ex()` 启动；将 `ExecutorResult` 的拒绝原因写入调用方日志或诊断。
 4. 用 `stop_blocking_io_worker()` 或 `Executor::shutdown()` 收敛生命周期。不要 detach worker，也不要在 `shutdown(false)` 时假定 I/O worker 会继续运行。
 
@@ -260,17 +260,17 @@ config.max_in_flight_tasks = /* 原 max_in_flight */;
 
 - 有限、可排队的工作仍应使用线程池；不要为短任务创建 I/O worker。
 - 固定周期控制回调仍应使用 `RealtimeThreadExecutor`；不要在 `cycle_callback` 内等待长期 I/O。
-- 协议解析、设备重连、数据新鲜度、命令语义和安全动作不属于 `executor`，由调用方独立设计和验证。
+- 协议解析、设备重连、数据新鲜度、命令语义和安全动作不属于 `kairo`，由调用方独立设计和验证。
 
 ---
 
 ## 从 0.2.3 升级到 0.3.0
 
-0.3.0 重点新增通信与并发辅助 facade，把常见跨线程通信、实时周期消费、快照读取和任务时序控制提升到 `Executor` / `executor::comm` 公开层。已有手写同步代码可以继续工作；新代码建议优先迁移到下列组件，以获得统一生命周期、背压和诊断统计。
+0.3.0 重点新增通信与并发辅助 facade，把常见跨线程通信、实时周期消费、快照读取和任务时序控制提升到 `Executor` / `kairo::comm` 公开层。已有手写同步代码可以继续工作；新代码建议优先迁移到下列组件，以获得统一生命周期、背压和诊断统计。
 
 ### 推荐迁移到通信与并发辅助 facade
 
-阶段 7 新增 `executor::comm`，用于替代常见的手写共享变量、mutex、condition_variable、底层无锁队列和 promise/future 链。综合示例见 [examples/comm_robot_pipeline.cpp](../examples/comm_robot_pipeline.cpp)，它模拟传感器采集、规划、实时控制和状态监控流水线。
+阶段 7 新增 `kairo::comm`，用于替代常见的手写共享变量、mutex、condition_variable、底层无锁队列和 promise/future 链。综合示例见 [examples/comm_robot_pipeline.cpp](../examples/comm_robot_pipeline.cpp)，它模拟传感器采集、规划、实时控制和状态监控流水线。
 
 迁移建议：
 
@@ -296,7 +296,7 @@ config.max_in_flight_tasks = /* 原 max_in_flight */;
 
 ### 破坏性变更
 
-**无。** 0.3.0 保持 0.2.3 公开 API 兼容；通信 facade、任务图 facade、统计和场景示例均为向后兼容扩展。旧的共享变量、手写锁、底层队列和 promise/future 链仍可继续使用，但新代码推荐逐步迁移到 `executor::comm` 和 `Executor` facade。
+**无。** 0.3.0 保持 0.2.3 公开 API 兼容；通信 facade、任务图 facade、统计和场景示例均为向后兼容扩展。旧的共享变量、手写锁、底层队列和 promise/future 链仍可继续使用，但新代码推荐逐步迁移到 `kairo::comm` 和 `Executor` facade。
 
 ---
 

@@ -15,7 +15,7 @@
 // 此前该模式 ~31% 概率在析构/退出时 UAF 段错误（TSAN heap-use-after-free
 // 证实：drain 的 record_submit_rejected / monitor 触碰已释放 facade）。
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <gtest/gtest.h>
 
@@ -36,9 +36,9 @@ constexpr auto kSettleLimit = std::chrono::seconds{10};
 // 应当"立即"就绪的路径（提交拒绝/容量拒绝）的收紧上限。
 constexpr auto kPromptLimit = std::chrono::seconds{2};
 
-executor::ExecutorConfig pool_config(std::size_t workers,
+kairo::ExecutorConfig pool_config(std::size_t workers,
                                      std::size_t queue_capacity = 64) {
-    executor::ExecutorConfig config;
+    kairo::ExecutorConfig config;
     config.min_threads = workers;
     config.max_threads = workers;
     config.queue_capacity = queue_capacity;
@@ -53,7 +53,7 @@ public:
     Gate(const Gate&) = delete;
     Gate& operator=(const Gate&) = delete;
 
-    executor::TaskSubmission<int> spawn_on(executor::Executor& executor) {
+    kairo::TaskSubmission<int> spawn_on(kairo::Executor& executor) {
         auto entered = std::make_shared<std::promise<void>>();
         entered_ = entered->get_future();
         auto release = release_;
@@ -90,9 +90,9 @@ bool settles_within(std::future<void>& future,
 }
 
 // 从快照中读取任务的 lifecycle 状态；任务不在快照中返回 false。
-bool lifecycle_state_of(executor::Executor& executor,
-                        const executor::TaskHandle& handle,
-                        executor::TaskLifecycleState& state) {
+bool lifecycle_state_of(kairo::Executor& executor,
+                        const kairo::TaskHandle& handle,
+                        kairo::TaskLifecycleState& state) {
     const auto snapshot = executor.get_snapshot();
     for (const auto& task : snapshot.in_flight_tasks) {
         if (task.task_id == handle.id()) {
@@ -106,12 +106,12 @@ bool lifecycle_state_of(executor::Executor& executor,
 // 1a：宽依赖（1 依赖 8 前置）。前置未全部成功前 callable 不执行
 // （DependencyBlocked 驻留），全部成功后执行且结果正确。
 TEST(DependencyDrivenSchedulingTest, WideDependencyRunsOnlyAfterAllPrereqsSucceed) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(pool_config(8)));
 
     constexpr std::size_t kPrereqs = 8;
     std::vector<Gate> gates(kPrereqs);
-    std::vector<executor::TaskSubmission<int>> upstreams;
+    std::vector<kairo::TaskSubmission<int>> upstreams;
     for (auto& gate : gates) {
         upstreams.push_back(gate.spawn_on(executor));
     }
@@ -120,7 +120,7 @@ TEST(DependencyDrivenSchedulingTest, WideDependencyRunsOnlyAfterAllPrereqsSuccee
     }
 
     std::atomic<bool> ran{false};
-    std::vector<executor::TaskHandle> handles;
+    std::vector<kairo::TaskHandle> handles;
     handles.reserve(kPrereqs);
     for (const auto& upstream : upstreams) {
         handles.push_back(upstream.handle);
@@ -132,9 +132,9 @@ TEST(DependencyDrivenSchedulingTest, WideDependencyRunsOnlyAfterAllPrereqsSuccee
         });
 
     // 全部前置被门阻塞：dependent 必须 parked（DependencyBlocked），未运行。
-    executor::TaskLifecycleState state{};
+    kairo::TaskLifecycleState state{};
     ASSERT_TRUE(lifecycle_state_of(executor, dependent.handle, state));
-    EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
     EXPECT_FALSE(ran.load(std::memory_order_acquire));
 
     // 只放行前 7 个：仍缺最后一个，dependent 继续驻留、不运行。
@@ -146,7 +146,7 @@ TEST(DependencyDrivenSchedulingTest, WideDependencyRunsOnlyAfterAllPrereqsSuccee
         EXPECT_EQ(upstreams[i].future.get(), 0);
     }
     EXPECT_TRUE(lifecycle_state_of(executor, dependent.handle, state));
-    EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
     EXPECT_FALSE(ran.load(std::memory_order_acquire));
 
     // 放行最后一个：级联出队，dependent 执行并得到正确结果。
@@ -162,7 +162,7 @@ TEST(DependencyDrivenSchedulingTest, WideDependencyRunsOnlyAfterAllPrereqsSuccee
 
 // 1b：深链（链长 16，worker=2）。submit_after 链全部按序完成。
 TEST(DependencyDrivenSchedulingTest, DeepChainCompletesInOrderOnTwoWorkers) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(pool_config(2)));
 
     constexpr int kChainLength = 16;
@@ -174,7 +174,7 @@ TEST(DependencyDrivenSchedulingTest, DeepChainCompletesInOrderOnTwoWorkers) {
         return 1;
     });
 
-    executor::TaskHandle previous = first.handle;
+    kairo::TaskHandle previous = first.handle;
     for (int value = 2; value <= kChainLength; ++value) {
         auto next = executor.submit_after_with_handle(
             previous, [&sequence, value] {
@@ -200,7 +200,7 @@ TEST(DependencyDrivenSchedulingTest, DeepChainCompletesInOrderOnTwoWorkers) {
 
 // 1c：菱形 A → (B, C) → D。D 依赖 B、C 两者。
 TEST(DependencyDrivenSchedulingTest, DiamondDependentWaitsForBothBranches) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(pool_config(2)));
 
     Gate gate;
@@ -219,15 +219,15 @@ TEST(DependencyDrivenSchedulingTest, DiamondDependentWaitsForBothBranches) {
         return 3;
     });
     auto d = executor.submit_after_with_handle(
-        std::vector<executor::TaskHandle>{b.handle, c.handle}, [&order] {
+        std::vector<kairo::TaskHandle>{b.handle, c.handle}, [&order] {
             EXPECT_EQ(order.load(std::memory_order_acquire), 2);
             return 4;
         });
 
     // A 仍被门阻塞：B、C、D 均未执行，D 处于 DependencyBlocked。
-    executor::TaskLifecycleState state{};
+    kairo::TaskLifecycleState state{};
     ASSERT_TRUE(lifecycle_state_of(executor, d.handle, state));
-    EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
 
     gate.release();
     ASSERT_TRUE(settles_within(a.future));
@@ -247,7 +247,7 @@ TEST(DependencyDrivenSchedulingTest, DiamondDependentWaitsForBothBranches) {
 // D1/D2 submit_after(X1/X2)。parked 实现下放行门后全部任务在时限内完成
 // （旧实现 D1/D2 若占用 worker 等待 X1/X2 将挂死）。
 TEST(DependencyDrivenSchedulingTest, ParkedDependentsDoNotStarveWorkerPool) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(pool_config(2)));
 
     Gate blocker_a;
@@ -278,11 +278,11 @@ TEST(DependencyDrivenSchedulingTest, ParkedDependentsDoNotStarveWorkerPool) {
     });
 
     // 依赖未就绪：D1/D2 不入队（DependencyBlocked 驻留），不吃 worker。
-    executor::TaskLifecycleState state{};
+    kairo::TaskLifecycleState state{};
     ASSERT_TRUE(lifecycle_state_of(executor, d1.handle, state));
-    EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
     ASSERT_TRUE(lifecycle_state_of(executor, d2.handle, state));
-    EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
     EXPECT_EQ(plain_ran.load(std::memory_order_acquire), 0);
     EXPECT_EQ(dependent_ran.load(std::memory_order_acquire), 0);
 
@@ -308,7 +308,7 @@ TEST(DependencyDrivenSchedulingTest, ParkedDependentsDoNotStarveWorkerPool) {
 // 就绪并带依赖失败语义；B、C 的 callable 确实未运行。
 TEST(DependencyDrivenSchedulingTest,
      FailureCascadeSettlesDependentsWithoutRunningThem) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(pool_config(2)));
 
     auto failing = executor.submit_with_handle([]() -> int {
@@ -348,7 +348,7 @@ TEST(DependencyDrivenSchedulingTest,
         std::string message;
         try {
             (void)b.future.get();
-        } catch (const executor::TaskCancelled& error) {
+        } catch (const kairo::TaskCancelled& error) {
             cancelled = true;
             message = error.what();
         } catch (const std::runtime_error& error) {
@@ -368,7 +368,7 @@ TEST(DependencyDrivenSchedulingTest,
         bool cancelled = false;
         try {
             (void)c.future.get();
-        } catch (const executor::TaskCancelled&) {
+        } catch (const kairo::TaskCancelled&) {
             cancelled = true;
         } catch (const std::runtime_error&) {
             runtime_failure = true;
@@ -388,7 +388,7 @@ TEST(DependencyDrivenSchedulingTest,
 
 // 4：提交时依赖已满足 → 与普通提交一致（立即入队执行、结果正确）。
 TEST(DependencyDrivenSchedulingTest, SatisfiedDependenciesBehaveLikePlainSubmit) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(pool_config(2)));
 
     auto a = executor.submit_with_handle([] { return 5; });
@@ -399,7 +399,7 @@ TEST(DependencyDrivenSchedulingTest, SatisfiedDependenciesBehaveLikePlainSubmit)
     EXPECT_EQ(b.future.get(), 7);
 
     auto multi = executor.submit_after(
-        std::vector<executor::TaskHandle>{a.handle, b.handle},
+        std::vector<kairo::TaskHandle>{a.handle, b.handle},
         [] { return 12; });
     auto single = executor.submit_after(a.handle, [] { return 6; });
 
@@ -415,7 +415,7 @@ TEST(DependencyDrivenSchedulingTest, SatisfiedDependenciesBehaveLikePlainSubmit)
 // 5a：when_all 作为上游。when_all({A,B}) 未收敛前 dependent 驻留，
 // 收敛后执行。
 TEST(DependencyDrivenSchedulingTest, WhenAllUpstreamGatesDependentUntilResolved) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(pool_config(4)));
 
     Gate gate;
@@ -434,9 +434,9 @@ TEST(DependencyDrivenSchedulingTest, WhenAllUpstreamGatesDependentUntilResolved)
     });
 
     // A 仍被门阻塞：when_all 未收敛，D 驻留。
-    executor::TaskLifecycleState state{};
+    kairo::TaskLifecycleState state{};
     ASSERT_TRUE(lifecycle_state_of(executor, d.handle, state));
-    EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
     EXPECT_FALSE(ran.load(std::memory_order_acquire));
 
     gate.release();
@@ -452,7 +452,7 @@ TEST(DependencyDrivenSchedulingTest, WhenAllUpstreamGatesDependentUntilResolved)
 // 5b：submit_after 结果作为 when_all 输入的组合。A → X=after(A)，
 // W=when_all({X, C})，Y=after(W)，全部正确收敛。
 TEST(DependencyDrivenSchedulingTest, SubmitAfterResultComposesWithWhenAll) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(pool_config(4)));
 
     Gate gate;
@@ -468,9 +468,9 @@ TEST(DependencyDrivenSchedulingTest, SubmitAfterResultComposesWithWhenAll) {
     auto y = executor.submit_after_with_handle(all, [] { return 13; });
 
     // X 仍被 A 门控驻留：W 未收敛，Y 驻留。
-    executor::TaskLifecycleState state{};
+    kairo::TaskLifecycleState state{};
     ASSERT_TRUE(lifecycle_state_of(executor, y.handle, state));
-    EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
 
     gate.release();
     ASSERT_TRUE(settles_within(a.future));
@@ -487,7 +487,7 @@ TEST(DependencyDrivenSchedulingTest, SubmitAfterResultComposesWithWhenAll) {
 // 以 TaskCancelled 就绪；依赖随后完成时不重复结算、callable 不运行。
 TEST(DependencyDrivenSchedulingTest,
      ParkedDependentCancelSettlesOnceWithoutRunning) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(pool_config(2)));
 
     Gate gate;
@@ -501,27 +501,27 @@ TEST(DependencyDrivenSchedulingTest,
             return 2;
         });
 
-    executor::TaskLifecycleState state{};
+    kairo::TaskLifecycleState state{};
     ASSERT_TRUE(lifecycle_state_of(executor, dependent.handle, state));
-    EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
 
     const auto response = executor.request_task_cancel(dependent.handle);
     EXPECT_EQ(response.result,
-              executor::TaskCancellationResult::RequestedBeforeStart);
+              kairo::TaskCancellationResult::RequestedBeforeStart);
 
     ASSERT_TRUE(settles_within(dependent.future));
     {
         bool cancelled = false;
-        executor::TaskCancellationReason reason =
-            executor::TaskCancellationReason::Shutdown;
+        kairo::TaskCancellationReason reason =
+            kairo::TaskCancellationReason::Shutdown;
         try {
             (void)dependent.future.get();
-        } catch (const executor::TaskCancelled& error) {
+        } catch (const kairo::TaskCancelled& error) {
             cancelled = true;
             reason = error.reason();
         }
         EXPECT_TRUE(cancelled);
-        EXPECT_EQ(reason, executor::TaskCancellationReason::Explicit);
+        EXPECT_EQ(reason, kairo::TaskCancellationReason::Explicit);
     }
     EXPECT_FALSE(ran.load(std::memory_order_acquire));
 
@@ -543,7 +543,7 @@ TEST(DependencyDrivenSchedulingTest,
 // CapacityExhausted 拒绝；门放行排空后容量恢复。
 TEST(DependencyDrivenSchedulingTest,
      ParkedDependentsConsumeAdmissionSlotsAndRejectOverflow) {
-    executor::Executor executor;
+    kairo::Executor executor;
     auto config = pool_config(1);
     config.max_in_flight_tasks = 4;
     ASSERT_TRUE(executor.initialize(config));
@@ -552,7 +552,7 @@ TEST(DependencyDrivenSchedulingTest,
     auto upstream = gate.spawn_on(executor);  // 占 1 个名额 + 唯一 worker
     ASSERT_TRUE(gate.entered_within());
 
-    std::vector<executor::TaskSubmission<int>> parked;
+    std::vector<kairo::TaskSubmission<int>> parked;
     for (int i = 0; i < 3; ++i) {
         parked.push_back(executor.submit_after_with_handle(
             upstream.handle, [i] { return 100 + i; }));
@@ -568,7 +568,7 @@ TEST(DependencyDrivenSchedulingTest,
         bool capacity_exhausted = false;
         try {
             (void)rejected.future.get();
-        } catch (const executor::CapacityExhaustedException&) {
+        } catch (const kairo::CapacityExhaustedException&) {
             capacity_exhausted = true;
         }
         EXPECT_TRUE(capacity_exhausted);
@@ -602,7 +602,7 @@ TEST(DependencyDrivenSchedulingTest,
 // 此处裸跑（无任何收尾缓解）即以高概率触发 UAF 段错误。
 TEST(DependencyDrivenSchedulingTest,
      DependencyCompletedAfterShutdownSettlesParkedAsRejected) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(pool_config(2)));
 
     Gate gate;
@@ -612,9 +612,9 @@ TEST(DependencyDrivenSchedulingTest,
     auto dependent =
         executor.submit_after_with_handle(upstream.handle, [] { return 2; });
 
-    executor::TaskLifecycleState state{};
+    kairo::TaskLifecycleState state{};
     ASSERT_TRUE(lifecycle_state_of(executor, dependent.handle, state));
-    EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
 
     executor.shutdown(/*wait_for_tasks=*/false);
 

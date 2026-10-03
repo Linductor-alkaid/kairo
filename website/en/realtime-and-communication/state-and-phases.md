@@ -43,7 +43,7 @@ The mailbox uses four fixed reader-pinned snapshot slots. A writer claims only a
 
 Use `try_load()` when a fixed four-slot read attempt is required. `try_publish()` is a non-waiting lock-free publish interface, but not a per-call bounded/wait-free one. `publish()`, `load()`, and `update()` preserve compatibility behavior by spin/yield retrying temporary contention; they are control-plane calls rather than real-time operations. The snapshot sequence ends at `2^56 - 1`: `try_publish()` then returns `false`, while publish/update compatibility paths throw `std::overflow_error`.
 
-`update()` copies the current complete snapshot into a writer-local candidate, modifies that candidate synchronously, and then publishes it; it is not an asynchronous Executor submission. Its references need only cover that immediate call, but it still obeys the one-writer constraint. A reader's snapshot remains its own copy after later publication.
+`update()` copies the current complete snapshot into a writer-local candidate, modifies that candidate synchronously, and then publishes it; it is not an asynchronous Kairo submission. Its references need only cover that immediate call, but it still obeys the one-writer constraint. A reader's snapshot remains its own copy after later publication.
 
 ## Phases and publication watermarks
 
@@ -62,14 +62,14 @@ When a reader must reason about logical time, explicitly bind a `DoubleBuffer<T>
 `LetChannel<T>` API:
 
 ```cpp
-executor::comm::PhaseGate gate;
-executor::comm::DoubleBuffer<ControlState> state(ControlState{});
+kairo::comm::PhaseGate gate;
+kairo::comm::DoubleBuffer<ControlState> state(ControlState{});
 state.bind_to_phase_gate(gate);
 
 state.publish_for_current_phase(ControlState{/* phase 0 output */});
 gate.advance();
 
-executor::comm::Snapshot<ControlState> visible;
+kairo::comm::Snapshot<ControlState> visible;
 if (state.load_for_current_phase(visible)) {
     consume(visible.value); // phase 1 sees the complete phase 0 output.
 }

@@ -19,14 +19,14 @@ New code gives CPU and GPU separate callables instead of asking one callable to 
 
 ```cpp
 auto future = executor.submit_auto(
-    executor::cpu_gpu_task(
+    kairo::cpu_gpu_task(
         [data] { run_cpu(*data); },
         [data](void* stream) { run_gpu(stream, *data); })
         .name("segment")
         .data_size(bytes)
         .compute_intensity(3.0F)
         .preferred_executor("cuda0")
-        .fallback(executor::FallbackPolicy::AllowCpu));
+        .fallback(kairo::FallbackPolicy::AllowCpu));
 future.get();
 ```
 
@@ -80,4 +80,4 @@ executor.update_scheduler_config(config);
 
 Thresholds come from real benchmarks, not intuition. `GpuScheduler::record_performance()` can support a scheduler maintained by the caller, but `Executor` currently exposes no way to write those samples into its internal scheduler; do not treat `enable_adaptive` as Facade learning. Recalibrate thresholds after changing hardware, driver, data shape, or kernel. Scheduling policy does not replace backend availability checks or task-level exception handling.
 
-For stream, resource, or multi-device control, use the advanced interfaces deliberately; complete fields and semantics remain in the [API reference](https://github.com/Linductor-alkaid/executor/blob/master/docs/API.md).
+For stream, resource, or multi-device control, use the advanced interfaces deliberately; complete fields and semantics remain in the [API reference](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md).

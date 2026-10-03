@@ -1,6 +1,6 @@
 ---
 title: Dedicated Real-Time Control Loop
-description: Register, diagnose, start, push to, and stop a dedicated periodic thread through the Executor Facade.
+description: Register, diagnose, start, push to, and stop a dedicated periodic thread through the Kairo Facade.
 ---
 
 # Dedicated Real-Time Control Loop

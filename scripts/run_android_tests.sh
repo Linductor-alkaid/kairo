@@ -1,5 +1,5 @@
 #!/bin/bash
-# 在 Android 设备/模拟器上运行 executor standalone 测试。
+# 在 Android 设备/模拟器上运行 kairo standalone 测试。
 #
 # 用法：
 #   scripts/run_android_tests.sh --serial emulator-5554 --test-dir build-android/arm64-v8a/static/tests
@@ -12,8 +12,8 @@ set -e
 
 SERIAL="${ANDROID_SERIAL:-}"
 TEST_DIR=""
-SOAK_SECONDS="${EXECUTOR_ANDROID_SOAK_SECONDS:-0}"
-DEVICE_DIR="/data/local/tmp/executor-tests"
+SOAK_SECONDS="${KAIRO_ANDROID_SOAK_SECONDS:-0}"
+DEVICE_DIR="/data/local/tmp/kairo-tests"
 CLEANUP="${ANDROID_TEST_CLEANUP:-true}"
 BINARIES=()
 
@@ -106,7 +106,7 @@ for binary in "${BINARIES[@]}"; do
     "${ADB[@]}" push "$binary" "$remote" >/dev/null
     "${ADB[@]}" shell chmod 755 "$remote"
     set +e
-    output="$("${ADB[@]}" shell "EXECUTOR_ANDROID_SOAK_SECONDS=$SOAK_SECONDS $remote" 2>&1)"
+    output="$("${ADB[@]}" shell "KAIRO_ANDROID_SOAK_SECONDS=$SOAK_SECONDS $remote" 2>&1)"
     status=$?
     set -e
     echo "$output"

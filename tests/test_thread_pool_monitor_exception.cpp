@@ -36,12 +36,12 @@
 #include <stdexcept>
 #include <string>
 
-#include <executor/config.hpp>
-#include <executor/types.hpp>
-#include "executor/monitor/task_monitor.hpp"
-#include "executor/thread_pool/thread_pool.hpp"
+#include <kairo/config.hpp>
+#include <kairo/types.hpp>
+#include "kairo/monitor/task_monitor.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 namespace {

@@ -1,6 +1,6 @@
 ---
 title: 启动专用实时控制循环
-description: 使用 Executor Facade 注册、诊断启动、推送和停止一个专用周期线程。
+description: 使用 Kairo Facade 注册、诊断启动、推送和停止一个专用周期线程。
 ---
 
 # 启动专用实时控制循环
@@ -23,7 +23,7 @@ description: 使用 Executor Facade 注册、诊断启动、推送和停止一�
 
 <<< @/../examples/tutorial/07_realtime.cpp{1-45}
 
-完整源码：[`examples/tutorial/07_realtime.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/tutorial/07_realtime.cpp)。
+完整源码：[`examples/tutorial/07_realtime.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/07_realtime.cpp)。
 
 ```bash
 ./build/examples/tutorial/tutorial_07_realtime

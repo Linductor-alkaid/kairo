@@ -1,6 +1,6 @@
 ---
 title: Monitoring and Sampling
-description: Use task statistics and sampling rate to observe long-term Executor trends at acceptable overhead.
+description: Use task statistics and sampling rate to observe long-term Kairo trends at acceptable overhead.
 ---
 
 # Monitoring and Sampling
@@ -23,7 +23,7 @@ const auto all_stats = executor.get_all_task_statistics();
 
 `TaskStatistics` contains total, success, failure, timeout, total execution time, and maximum/minimum execution time. An unknown task type returns zero values. Work completed while monitoring is disabled does not increment new counters.
 
-Full example: [`examples/monitoring_sampling_example.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/monitoring_sampling_example.cpp).
+Full example: [`examples/monitoring_sampling_example.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/monitoring_sampling_example.cpp).
 
 | Goal | Setting | Trade-off |
 | --- | --- | --- |
@@ -35,7 +35,7 @@ Full example: [`examples/monitoring_sampling_example.cpp`](https://github.com/Li
 
 ## Full lifecycle snapshot
 
-Use `get_snapshot()` when one diagnostic read must preserve the Executor-wide scene:
+Use `get_snapshot()` when one diagnostic read must preserve the Kairo-wide scene:
 
 ```cpp
 const auto snapshot = executor.get_snapshot();

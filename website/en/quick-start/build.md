@@ -1,6 +1,6 @@
 ---
 title: Build and Install
-description: Build Executor from source and include the tutorial examples.
+description: Build Kairo from source and include the tutorial examples.
 ---
 
 # Build and Install
@@ -14,7 +14,7 @@ Create a Release build without GPU or real-time privilege requirements, then com
 Run these commands from the repository root:
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DEXECUTOR_BUILD_EXAMPLES=ON -DEXECUTOR_ENABLE_GPU=OFF
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DKAIRO_BUILD_EXAMPLES=ON -DKAIRO_ENABLE_GPU=OFF
 cmake --build build
 ```
 
@@ -25,17 +25,17 @@ export ANDROID_NDK_HOME=/path/to/android-ndk-r26c
 scripts/build_android.sh --abi arm64-v8a --api 21
 ```
 
-For Android packaging, AGP integration, and `c++_shared`, see [PACKAGE_ANDROID.md](https://github.com/Linductor-alkaid/executor/blob/master/docs/PACKAGE_ANDROID.md). CUDA, OpenCL, and real-time privileges are not needed for this first path.
+For Android packaging, AGP integration, and `c++_shared`, see [PACKAGE_ANDROID.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/PACKAGE_ANDROID.md). CUDA, OpenCL, and real-time privileges are not needed for this first path.
 
 ## Use it from your project
 
 Before installation, add the repository as a subdirectory:
 
 ```cmake
-set(EXECUTOR_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(EXECUTOR_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(KAIRO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(KAIRO_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory(path/to/executor)
-target_link_libraries(myapp PRIVATE executor::executor)
+target_link_libraries(myapp PRIVATE kairo::executor)
 ```
 
 After installation, pass the installation prefix to CMake:
@@ -48,11 +48,11 @@ cmake -B build-consumer -DCMAKE_PREFIX_PATH=/opt/executor
 Then use:
 
 ```cmake
-find_package(executor REQUIRED)
-target_link_libraries(myapp PRIVATE executor::executor)
+find_package(kairo REQUIRED)
+target_link_libraries(myapp PRIVATE kairo::executor)
 ```
 
-For packaging and installation details, read [`docs/BUILD.md`](https://github.com/Linductor-alkaid/executor/blob/master/docs/BUILD.md).
+For packaging and installation details, read [`docs/BUILD.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md).
 
 ## Verify the tutorial example
 

@@ -40,7 +40,7 @@ if (!result.completed) {
 
 ## 状态快照的范围
 
-`CompletionStatus` 只描述当前 Executor 的默认异步执行器：active、queued 和 pending 不包含应用自建线程、通信 channel 中的数据、实时任务队列或外部 I/O。完整机器人流水线是否 idle 必须由应用汇总，而不能只看 `executor.is_idle()`。
+`CompletionStatus` 只描述当前 Kairo 的默认异步执行器：active、queued 和 pending 不包含应用自建线程、通信 channel 中的数据、实时任务队列或外部 I/O。完整机器人流水线是否 idle 必须由应用汇总，而不能只看 `executor.is_idle()`。
 
 状态查询是一个瞬时快照。它返回 idle 后，另一个生产者仍可能立即提交新任务；因此阶段切换和关闭必须先关闭提交入口，再等待，而不是反过来先轮询 idle。
 
@@ -52,7 +52,7 @@ if (!result.completed) {
 
 超时不是任务异常，也不代表任务已经取消；检查 `result.timed_out` 和 `result.status`，并查询失败状态中的 `wait_timeout_count`。单个任务的返回值和异常仍应由各自的 `future.get()` 处理。
 
-当超时还可能涉及实时、Blocking I/O 或 GPU 后端时，在选择后续策略前采集完整 Executor 现场：
+当超时还可能涉及实时、Blocking I/O 或 GPU 后端时，在选择后续策略前采集完整 Kairo 现场：
 
 ```cpp
 const auto result = executor.wait_for_completion_ex(std::chrono::milliseconds{200});
@@ -80,7 +80,7 @@ if (!result.completed) {
 3. 在等待期间保留一个生产者继续提交；观察排空条件不稳定，从而验证“先停生产者”的必要性。
 4. 超时后分别演练继续等待、持久化未完成输入和 `shutdown(false)`，记录每种策略接受的数据后果。
 
-应用应事先定义两类预算：单项请求等待预算，以及服务整体排空预算。前者超时不必立即关闭 Executor；后者超时通常意味着进入降级或快速停止流程。
+应用应事先定义两类预算：单项请求等待预算，以及服务整体排空预算。前者超时不必立即关闭 Kairo；后者超时通常意味着进入降级或快速停止流程。
 
 ## 需求变化时如何演进
 
@@ -88,7 +88,7 @@ if (!result.completed) {
 | --- | --- |
 | 等一个具体结果 | 使用该任务 future 的有界等待，不用全局 completion |
 | 等一组有依赖的工作 | 保留图的最终 future，并结合全局状态诊断 |
-| 等通信数据被消费 | 查询/关闭相应 channel；Executor pending 不包含它 |
+| 等通信数据被消费 | 查询/关闭相应 channel；Kairo pending 不包含它 |
 | 等实时控制停止 | 调用实时停止并查询实时状态；普通 completion 不包含它 |
 | 进程重启后继续未完成工作 | 将业务输入持久化；内存状态快照不能恢复任务 |
 

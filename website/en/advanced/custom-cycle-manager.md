@@ -11,16 +11,16 @@ Implement `ICycleManager` and inject it into `RealtimeThreadConfig` only when bu
 
 ## Interface contract
 
-`ICycleManager` has four responsibilities: `register_cycle(name, period_ns, callback)` stores the definition; `start_cycle(name)` runs it; `stop_cycle(name)` requests stop; `get_statistics(name)` reports statistics. Executor does not own the object. It must stay valid for realtime registration, execution, and stopping. `start_cycle()` normally runs synchronously in the realtime thread start path, so it returns only after `stop_cycle()` and must not accidentally block the caller's shutdown path.
+`ICycleManager` has four responsibilities: `register_cycle(name, period_ns, callback)` stores the definition; `start_cycle(name)` runs it; `stop_cycle(name)` requests stop; `get_statistics(name)` reports statistics. Kairo does not own the object. It must stay valid for realtime registration, execution, and stopping. `start_cycle()` normally runs synchronously in the realtime thread start path, so it returns only after `stop_cycle()` and must not accidentally block the caller's shutdown path.
 
 ```cpp
-class ExternalClock final : public executor::ICycleManager {
+class ExternalClock final : public kairo::ICycleManager {
 public:
     bool register_cycle(const std::string& name, int64_t period_ns,
                         std::function<void()> callback) override;
     bool start_cycle(const std::string& name) override;
     void stop_cycle(const std::string& name) override;
-    executor::CycleStatistics get_statistics(const std::string& name) const override;
+    kairo::CycleStatistics get_statistics(const std::string& name) const override;
 };
 ```
 
@@ -28,7 +28,7 @@ Borrow the object through `RealtimeThreadConfig::cycle_manager` but still regist
 
 ```cpp
 ExternalClock clock;
-executor::RealtimeThreadConfig config;
+kairo::RealtimeThreadConfig config;
 config.cycle_manager = &clock;
 config.cycle_callback = [] { run_control_cycle(); };
 
@@ -38,7 +38,7 @@ executor.start_realtime_task_ex("control");
 executor.stop_realtime_task("control");
 ```
 
-See [`examples/realtime_can.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/realtime_can.cpp) for a minimal implementation.
+See [`examples/realtime_can.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/realtime_can.cpp) for a minimal implementation.
 
 ## Inputs, lifecycle, and failure
 

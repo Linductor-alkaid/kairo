@@ -4,12 +4,12 @@
 #include <stdexcept>
 #include <thread>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 int main() {
-    executor::Executor ex;
+    kairo::Executor ex;
 
-    executor::ExecutorConfig config;
+    kairo::ExecutorConfig config;
     config.min_threads = 1;
     config.max_threads = 1;
 
@@ -19,7 +19,7 @@ int main() {
         return 1;
     }
 
-    ex.set_failure_callback([](const executor::ExecutorFailureEvent& event) {
+    ex.set_failure_callback([](const kairo::ExecutorFailureEvent& event) {
         std::cerr << "failure kind=" << static_cast<int>(event.kind)
                   << " executor=" << event.executor_name
                   << " task=" << event.task_id

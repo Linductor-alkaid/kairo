@@ -4,14 +4,14 @@
  * 使用有实际工作负载的任务，更真实地测试批量提交的优势
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <chrono>
 #include <iostream>
 #include <iomanip>
 #include <vector>
 #include <atomic>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 std::atomic<uint64_t> work_counter{0};

@@ -1,9 +1,9 @@
 #include <iostream>
 #include <string>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message)                                      \
     do {                                                                    \

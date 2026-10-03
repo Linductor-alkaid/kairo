@@ -2,9 +2,9 @@
 #include <iostream>
 #include <string>
 
-#include <executor/interfaces.hpp>
+#include <kairo/interfaces.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message) \
     do { \

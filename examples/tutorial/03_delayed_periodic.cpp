@@ -3,13 +3,13 @@
 #include <iostream>
 #include <thread>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 using namespace std::chrono_literals;
 
 int main() {
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = 1;
     config.max_threads = 1;
     if (!executor.initialize_ex(config)) {

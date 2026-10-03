@@ -4,10 +4,10 @@
 //  - 获取失败不产生租约、不消耗引用计数；
 //  - RealtimeThreadExecutor 与 BlockingIoExecutor 各自持有租约：停止第一个
 //    不解锁，全部停止后恰好解锁一次。
-#include "executor/util/thread_utils.hpp"
-#include "executor/config.hpp"
-#include "executor/realtime_thread_executor.hpp"
-#include "executor/blocking_io_executor.hpp"
+#include "kairo/util/thread_utils.hpp"
+#include "kairo/config.hpp"
+#include "kairo/realtime_thread_executor.hpp"
+#include "kairo/blocking_io_executor.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -19,9 +19,9 @@
 
 namespace {
 
-using executor::util::ProcessMemoryLockLease;
-using executor::util::ProcessMemoryLockResult;
-using executor::util::ProcessMemoryLockSyscalls;
+using kairo::util::ProcessMemoryLockLease;
+using kairo::util::ProcessMemoryLockResult;
+using kairo::util::ProcessMemoryLockSyscalls;
 
 class CountingSyscalls : public ProcessMemoryLockSyscalls {
 public:
@@ -108,9 +108,9 @@ TEST(ProcessMemoryLockLease, FailedMlockCreatesNoLease) {
 }
 
 // 阻塞 I/O 测试 worker：等到 stop 请求后返回，期间不占 CPU。
-class WaitingWorker final : public executor::IBlockingIoWorker {
+class WaitingWorker final : public kairo::IBlockingIoWorker {
 public:
-    void run(executor::StopToken stop_token) override {
+    void run(kairo::StopToken stop_token) override {
         while (!stop_token.stop_requested()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
@@ -133,19 +133,19 @@ TEST(ProcessMemoryLockLease, ExecutorsHoldLeasesUntilLastStop) {
     CountingSyscalls syscalls;
     SyscallRestoreGuard guard(&syscalls);
 
-    executor::RealtimeThreadConfig rt_config;
+    kairo::RealtimeThreadConfig rt_config;
     rt_config.enable_process_memory_lock = true;
     rt_config.thread_name = "p004_lease";
     rt_config.cycle_period_ns = 20'000'000;  // 20ms，避免忙转
     rt_config.timer_slack_ns = 0;            // 保留内核默认，减少 CI 环境抖动
     rt_config.cycle_callback = [] {};
-    executor::RealtimeThreadExecutor rt_executor("p004_rt", rt_config);
+    kairo::RealtimeThreadExecutor rt_executor("p004_rt", rt_config);
     ASSERT_TRUE(rt_executor.start());
 
-    executor::BlockingIoConfig io_config;
+    kairo::BlockingIoConfig io_config;
     io_config.enable_memory_lock = true;
     io_config.thread_name = "p004_io";
-    executor::BlockingIoExecutor io_executor(
+    kairo::BlockingIoExecutor io_executor(
         "p004_io", io_config, std::make_unique<WaitingWorker>());
     ASSERT_TRUE(io_executor.start());
 

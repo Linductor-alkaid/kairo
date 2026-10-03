@@ -4,13 +4,13 @@
 // => negative rates silently become 100% sampling. NaN likewise converts to a
 // huge value and clamps to 100%. Test observes the stored rate AND the
 // behavioral effect on record_task_start sampling.
-#include "executor/monitor/task_monitor.hpp"
+#include "kairo/monitor/task_monitor.hpp"
 
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 
-using executor::monitor::TaskMonitor;
+using kairo::monitor::TaskMonitor;
 
 static int count_sampled(TaskMonitor& m, int n, const char* tag) {
     int sampled = 0;

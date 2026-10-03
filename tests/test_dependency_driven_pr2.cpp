@@ -17,7 +17,7 @@
 // 观察窗口是 D1 被测语义本身（时间预算），使用有界 wait_until，不作为
 // 通过/失败的 sleep 时序依据。
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <gtest/gtest.h>
 
@@ -36,7 +36,7 @@ using namespace std::chrono_literals;
 namespace {
 
 // 单个 future 的有限等待上限；超时即失败（防挂死）。TSAN 下放大。
-#if defined(EXECUTOR_TEST_TSAN)
+#if defined(KAIRO_TEST_TSAN)
 constexpr auto kSettleLimit = std::chrono::seconds{30};
 #else
 constexpr auto kSettleLimit = std::chrono::seconds{10};
@@ -49,19 +49,19 @@ constexpr int64_t kTimeoutBudgetMs = 200;
 // 等待"预算肯定已流逝"的观察窗口（>= 2x 预算，容忍负载抖动）。
 constexpr auto kBudgetElapseWindow = std::chrono::milliseconds{500};
 
-executor::ExecutorConfig pool_config(std::size_t workers,
+kairo::ExecutorConfig pool_config(std::size_t workers,
                                      std::size_t queue_capacity = 64) {
-    executor::ExecutorConfig config;
+    kairo::ExecutorConfig config;
     config.min_threads = workers;
     config.max_threads = workers;
     config.queue_capacity = queue_capacity;
     return config;
 }
 
-executor::ExecutorConfig timeout_config(std::size_t workers,
+kairo::ExecutorConfig timeout_config(std::size_t workers,
                                         int64_t timeout_ms,
                                         std::size_t max_in_flight = 0) {
-    executor::ExecutorConfig config = pool_config(workers);
+    kairo::ExecutorConfig config = pool_config(workers);
     config.task_timeout_ms = timeout_ms;
     config.max_in_flight_tasks = max_in_flight;
     return config;
@@ -79,7 +79,7 @@ public:
 
     ~Gate() { release(); }
 
-    executor::TaskSubmission<int> spawn_on(executor::Executor& executor) {
+    kairo::TaskSubmission<int> spawn_on(kairo::Executor& executor) {
         auto entered = std::make_shared<std::promise<void>>();
         entered_ = entered->get_future();
         auto release = release_;
@@ -140,7 +140,7 @@ bool settles_within(std::future<void>& future,
 // 先于级联结算"（D1-a 经 grandchild 验证），不保证先于本节点 own future。
 // 因此在"无下游 dependent"的用例里，own future 结算后读取计数必须用有界
 // 等待，而非直接断言（后者会以 ~1/600 概率读到尚未写入的 0）。
-bool timeout_count_reaches(executor::Executor& executor, uint64_t expected) {
+bool timeout_count_reaches(kairo::Executor& executor, uint64_t expected) {
     const auto deadline = std::chrono::steady_clock::now() + kSettleLimit;
     for (;;) {
         if (executor.get_failure_status().timeout_count >= expected) {
@@ -154,9 +154,9 @@ bool timeout_count_reaches(executor::Executor& executor, uint64_t expected) {
 }
 
 // 从快照中读取任务的 lifecycle 状态；任务不在快照中返回 false。
-bool lifecycle_state_of(executor::Executor& executor,
-                        const executor::TaskHandle& handle,
-                        executor::TaskLifecycleState& state) {
+bool lifecycle_state_of(kairo::Executor& executor,
+                        const kairo::TaskHandle& handle,
+                        kairo::TaskLifecycleState& state) {
     const auto snapshot = executor.get_snapshot();
     for (const auto& task : snapshot.in_flight_tasks) {
         if (task.task_id == handle.id()) {
@@ -206,7 +206,7 @@ void wait_until_after(std::chrono::steady_clock::time_point deadline) {
 // 全新 facade（从未提交过 delayed/periodic 任务）：这是 D1 的主路径——
 // 用户只配置 task_timeout_ms 并使用依赖图， facade 定时器线程必须就绪。
 TEST(DependencyDrivenPR2Test, ParkedTimeoutFiresOnFreshFacadeAndCascades) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(
         timeout_config(2, kTimeoutBudgetMs)));
 
@@ -230,9 +230,9 @@ TEST(DependencyDrivenPR2Test, ParkedTimeoutFiresOnFreshFacadeAndCascades) {
 
     // 未超预算前：dependent/grandchild 驻留 DependencyBlocked。
     {
-        executor::TaskLifecycleState state{};
+        kairo::TaskLifecycleState state{};
         ASSERT_TRUE(lifecycle_state_of(executor, dependent.handle, state));
-        EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+        EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
     }
 
     // 超预算后：dependent future 限时（kSettleLimit 内）就绪。
@@ -251,7 +251,7 @@ TEST(DependencyDrivenPR2Test, ParkedTimeoutFiresOnFreshFacadeAndCascades) {
         bool other = false;
         try {
             (void)dependent.future.get();
-        } catch (const executor::TimedOutException& error) {
+        } catch (const kairo::TimedOutException& error) {
             timed_out = true;
             message = error.what();
         } catch (...) {
@@ -269,7 +269,7 @@ TEST(DependencyDrivenPR2Test, ParkedTimeoutFiresOnFreshFacadeAndCascades) {
         bool timed_out = false;
         try {
             (void)grandchild.future.get();
-        } catch (const executor::TimedOutException&) {
+        } catch (const kairo::TimedOutException&) {
             timed_out = true;
         } catch (...) {
             timed_out = false;
@@ -282,7 +282,7 @@ TEST(DependencyDrivenPR2Test, ParkedTimeoutFiresOnFreshFacadeAndCascades) {
     EXPECT_GE(executor.get_failure_status().timeout_count, 1U);
 
     // 定时器获胜后，任务图节点应为终态（不在 in-flight 快照中滞留）。
-    executor::TaskLifecycleState state{};
+    kairo::TaskLifecycleState state{};
     EXPECT_FALSE(lifecycle_state_of(executor, dependent.handle, state));
 
     gate.release();
@@ -294,7 +294,7 @@ TEST(DependencyDrivenPR2Test, ParkedTimeoutFiresOnFreshFacadeAndCascades) {
 // 后，parked 超时应同样触发。若上一用例失败而本用例通过，则根因锁定为
 // "定时器线程未启动时 schedule_once 静默失活"。
 TEST(DependencyDrivenPR2Test, ParkedTimeoutFiresAfterTimerThreadPrimed) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(
         timeout_config(2, kTimeoutBudgetMs)));
 
@@ -325,7 +325,7 @@ TEST(DependencyDrivenPR2Test, ParkedTimeoutFiresAfterTimerThreadPrimed) {
         std::string message;
         try {
             (void)dependent.future.get();
-        } catch (const executor::TimedOutException& error) {
+        } catch (const kairo::TimedOutException& error) {
             timed_out = true;
             message = error.what();
         } catch (...) {
@@ -346,7 +346,7 @@ TEST(DependencyDrivenPR2Test, ParkedTimeoutFiresAfterTimerThreadPrimed) {
 
 // D1-b：预算内完成 → 正常执行、不触发超时。
 TEST(DependencyDrivenPR2Test, ParkedWithinBudgetCompletesWithoutTimeout) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(
         timeout_config(2, kTimeoutBudgetMs)));
 
@@ -358,7 +358,7 @@ TEST(DependencyDrivenPR2Test, ParkedWithinBudgetCompletesWithoutTimeout) {
         upstream.handle, [] { return 42; });
 
     // 确认驻留后立刻放行（事件驱动，远在预算内）。
-    executor::TaskLifecycleState state{};
+    kairo::TaskLifecycleState state{};
     ASSERT_TRUE(lifecycle_state_of(executor, dependent.handle, state));
     gate.release();
 
@@ -374,7 +374,7 @@ TEST(DependencyDrivenPR2Test, ParkedWithinBudgetCompletesWithoutTimeout) {
 
 // D1-c：task_timeout_ms=0（默认）时 parked 永不超时（既有行为回归）。
 TEST(DependencyDrivenPR2Test, ParkedNeverTimesOutWhenDisabled) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(pool_config(2)));
 
     Gate gate;
@@ -395,9 +395,9 @@ TEST(DependencyDrivenPR2Test, ParkedNeverTimesOutWhenDisabled) {
                   std::chrono::steady_clock::now() - submitted_at)
                   .count(),
               kTimeoutBudgetMs);
-    executor::TaskLifecycleState state{};
+    kairo::TaskLifecycleState state{};
     ASSERT_TRUE(lifecycle_state_of(executor, dependent.handle, state));
-    EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
     EXPECT_FALSE(ran.load(std::memory_order_acquire));
     EXPECT_EQ(executor.get_failure_status().timeout_count, 0U);
 
@@ -411,7 +411,7 @@ TEST(DependencyDrivenPR2Test, ParkedNeverTimesOutWhenDisabled) {
 // D1-d（方向一）：取消先于超时 → 取消获胜，超时窗口流逝后不得再结算。
 // 同步提交后立刻取消，两个事件被压进同一 200ms 预算窗口。
 TEST(DependencyDrivenPR2Test, CancelWinsRaceAgainstParkedTimeout) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(
         timeout_config(2, kTimeoutBudgetMs)));
 
@@ -426,30 +426,30 @@ TEST(DependencyDrivenPR2Test, CancelWinsRaceAgainstParkedTimeout) {
             return 3;
         });
 
-    executor::TaskLifecycleState state{};
+    kairo::TaskLifecycleState state{};
     ASSERT_TRUE(lifecycle_state_of(executor, dependent.handle, state));
-    EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
 
     // 立即取消（预算窗口内）。
     const auto response = executor.request_task_cancel(dependent.handle);
     EXPECT_EQ(response.result,
-              executor::TaskCancellationResult::RequestedBeforeStart);
+              kairo::TaskCancellationResult::RequestedBeforeStart);
 
     ASSERT_TRUE(settles_within(dependent.future));
     {
         bool cancelled = false;
-        executor::TaskCancellationReason reason =
-            executor::TaskCancellationReason::Shutdown;
+        kairo::TaskCancellationReason reason =
+            kairo::TaskCancellationReason::Shutdown;
         try {
             (void)dependent.future.get();
-        } catch (const executor::TaskCancelled& error) {
+        } catch (const kairo::TaskCancelled& error) {
             cancelled = true;
             reason = error.reason();
         } catch (...) {
             cancelled = false;
         }
         EXPECT_TRUE(cancelled);
-        EXPECT_EQ(reason, executor::TaskCancellationReason::Explicit);
+        EXPECT_EQ(reason, kairo::TaskCancellationReason::Explicit);
     }
     EXPECT_FALSE(ran.load(std::memory_order_acquire));
 
@@ -467,7 +467,7 @@ TEST(DependencyDrivenPR2Test, CancelWinsRaceAgainstParkedTimeout) {
 
 // D1-d（方向二）：超时先于取消 → 超时获胜，后续取消落 AlreadyCompleted。
 TEST(DependencyDrivenPR2Test, TimeoutWinsRaceAgainstLateCancel) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(
         timeout_config(2, kTimeoutBudgetMs)));
 
@@ -488,7 +488,7 @@ TEST(DependencyDrivenPR2Test, TimeoutWinsRaceAgainstLateCancel) {
         bool timed_out = false;
         try {
             (void)dependent.future.get();
-        } catch (const executor::TimedOutException&) {
+        } catch (const kairo::TimedOutException&) {
             timed_out = true;
         } catch (...) {
             timed_out = false;
@@ -499,7 +499,7 @@ TEST(DependencyDrivenPR2Test, TimeoutWinsRaceAgainstLateCancel) {
     // 迟到的取消必须落 AlreadyCompleted（不得改写终态、不得二次结算）。
     const auto response = executor.request_task_cancel(dependent.handle);
     EXPECT_EQ(response.result,
-              executor::TaskCancellationResult::AlreadyCompleted);
+              kairo::TaskCancellationResult::AlreadyCompleted);
 
     // own future 结算不与统计写入定序（见 timeout_count_reaches 说明）。
     EXPECT_TRUE(timeout_count_reaches(executor, 1));
@@ -517,7 +517,7 @@ TEST(DependencyDrivenPR2Test, TimeoutWinsRaceAgainstLateCancel) {
 // 在 sweep 前推进"的 parked 链 → 所有 parked future 在 gate 仍阻塞时（即
 // 依赖不可能已级联时）就被 sweep 结算；admission 计数随后归零。
 TEST(DependencyDrivenPR2Test, ShutdownFalseSweepsParkedChainWithBlockedWorker) {
-    executor::Executor executor;
+    kairo::Executor executor;
     auto config = pool_config(1);
     config.max_in_flight_tasks = 16;
     ASSERT_TRUE(executor.initialize(config));
@@ -589,7 +589,7 @@ TEST(DependencyDrivenPR2Test, ShutdownFalseSweepsParkedChainWithBlockedWorker) {
 // （在停池前出队），也可能在停池后被拒绝结算，两者都是合法收敛；本用例的
 // 契约是"不悬空、限时收敛"（旧实现此处 parked future 永久悬空）。
 TEST(DependencyDrivenPR2Test, ShutdownTrueResolvesParkedChainWithinBound) {
-    executor::Executor executor;
+    kairo::Executor executor;
     auto config = pool_config(1);
     config.max_in_flight_tasks = 16;
     ASSERT_TRUE(executor.initialize(config));
@@ -604,9 +604,9 @@ TEST(DependencyDrivenPR2Test, ShutdownTrueResolvesParkedChainWithinBound) {
     auto grandchild = executor.submit_after_with_handle(
         dependent.handle, [] { return 22; });
 
-    executor::TaskLifecycleState state{};
+    kairo::TaskLifecycleState state{};
     ASSERT_TRUE(lifecycle_state_of(executor, dependent.handle, state));
-    EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
 
     // 辅助线程在 250ms 预算后放行 gate：shutdown(true) 主线程进入池等待
     // 阶段（微秒级）后链路才可能推进。
@@ -634,7 +634,7 @@ TEST(DependencyDrivenPR2Test, ShutdownTrueResolvesParkedChainWithinBound) {
 // D2-c：worker 线程内发起 shutdown（三条 sweep 调用路径的第一条分支）——
 // sweep 在 worker 上执行，parked 下游仍须限时结算。
 TEST(DependencyDrivenPR2Test, ShutdownFromWorkerSweepsParkedDependents) {
-    executor::Executor executor;
+    kairo::Executor executor;
     auto config = pool_config(2);
     config.max_in_flight_tasks = 16;
     ASSERT_TRUE(executor.initialize(config));
@@ -649,9 +649,9 @@ TEST(DependencyDrivenPR2Test, ShutdownFromWorkerSweepsParkedDependents) {
             ran.store(true, std::memory_order_release);
             return 30;
         });
-    executor::TaskLifecycleState state{};
+    kairo::TaskLifecycleState state{};
     ASSERT_TRUE(lifecycle_state_of(executor, dependent.handle, state));
-    EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
 
     // 第二个 worker 上发起 shutdown(false)：manager shutdown 走
     // is_current_worker_thread 分支，返回后 facade 在该 worker 上执行 sweep。
@@ -690,7 +690,7 @@ TEST(DependencyDrivenPR2Test, ShutdownFromWorkerSweepsParkedDependents) {
 // -------------------------------------------------------------------------
 
 TEST(DependencyDrivenPR2Test, ParkedDependentSurvivesRetentionChurn) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(pool_config(3)));
 
     // A 快速成功成为终态节点；B 门控驻留。
@@ -705,13 +705,13 @@ TEST(DependencyDrivenPR2Test, ParkedDependentSurvivesRetentionChurn) {
     // D 依赖 {A, B}：A 已成功，unmet=1，parked；A 是被 D 引用的终态节点。
     std::atomic<bool> ran_d{false};
     auto d = executor.submit_after_with_handle(
-        std::vector<executor::TaskHandle>{a.handle, b.handle}, [&ran_d] {
+        std::vector<kairo::TaskHandle>{a.handle, b.handle}, [&ran_d] {
             ran_d.store(true, std::memory_order_release);
             return 42;
         });
-    executor::TaskLifecycleState state{};
+    kairo::TaskLifecycleState state{};
     ASSERT_TRUE(lifecycle_state_of(executor, d.handle, state));
-    EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
 
     // 极小 retention + 大量无关任务搅动 trim。
     executor.set_task_graph_retention_capacity(2);
@@ -737,9 +737,9 @@ TEST(DependencyDrivenPR2Test, ParkedDependentSurvivesRetentionChurn) {
 
 // submit_on 句柄作为 submit_after 依赖：成功/失败两路径。
 TEST(DependencyDrivenPR2Test, SerialHandleAsDependencySuccessAndFailure) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(pool_config(2)));
-    executor::SerialExecutionContext context;
+    kairo::SerialExecutionContext context;
 
     auto serial_ok = executor.submit_on_with_handle(context, [] { return 11; });
     std::atomic<bool> ran_dep{false};
@@ -786,7 +786,7 @@ TEST(DependencyDrivenPR2Test, SerialHandleAsDependencySuccessAndFailure) {
         std::string message;
         try {
             (void)bad_dependent.future.get();
-        } catch (const executor::TaskCancelled&) {
+        } catch (const kairo::TaskCancelled&) {
             cancelled = true;
         } catch (const std::runtime_error& error) {
             runtime_failure = true;
@@ -806,9 +806,9 @@ TEST(DependencyDrivenPR2Test, SerialHandleAsDependencySuccessAndFailure) {
 // （drain bag 化 + record_task_exception 提前的观测不变式）。
 TEST(DependencyDrivenPR2Test,
      SerialFailureStatsVisibleBeforeDependentFuture) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(pool_config(2)));
-    executor::SerialExecutionContext context;
+    kairo::SerialExecutionContext context;
 
     const auto before = executor.get_failure_status().task_exception_count;
 
@@ -831,11 +831,11 @@ TEST(DependencyDrivenPR2Test,
 // serial callable 不运行，admission 收敛。
 TEST(DependencyDrivenPR2Test,
      ShutdownFalseSettlesParkedDownstreamOfSerialDispatch) {
-    executor::Executor executor;
+    kairo::Executor executor;
     auto config = pool_config(1);
     config.max_in_flight_tasks = 16;
     ASSERT_TRUE(executor.initialize(config));
-    executor::SerialExecutionContext context;
+    kairo::SerialExecutionContext context;
 
     Gate gate;
     auto gate_task = gate.spawn_on(executor);
@@ -872,7 +872,7 @@ TEST(DependencyDrivenPR2Test,
         std::string message;
         try {
             (void)serial.future.get();
-        } catch (const executor::ExecutorStopping& error) {
+        } catch (const kairo::ExecutorStopping& error) {
             stopping = true;
             message = error.what();
         } catch (...) {
@@ -893,7 +893,7 @@ TEST(DependencyDrivenPR2Test,
         std::string detail;
         try {
             (void)dependent.future.get();
-        } catch (const executor::ExecutorStopping& error) {
+        } catch (const kairo::ExecutorStopping& error) {
             stopping = true;
             detail = error.what();
         } catch (const std::exception& error) {
@@ -920,7 +920,7 @@ TEST(DependencyDrivenPR2Test,
 
 // 路径一：依赖失败级联结算 parked dependent → 计数回基线。
 TEST(DependencyDrivenPR2Test, AdmissionReleasedOnDependencyFailurePath) {
-    executor::Executor executor;
+    kairo::Executor executor;
     auto config = pool_config(2);
     config.max_in_flight_tasks = 8;
     ASSERT_TRUE(executor.initialize(config));
@@ -939,7 +939,7 @@ TEST(DependencyDrivenPR2Test, AdmissionReleasedOnDependencyFailurePath) {
 
     std::atomic<bool> ran{false};
     auto dependent = executor.submit_after_with_handle(
-        std::vector<executor::TaskHandle>{upstream.handle, failing.handle},
+        std::vector<kairo::TaskHandle>{upstream.handle, failing.handle},
         [&ran] {
             ran.store(true, std::memory_order_release);
             return 1;
@@ -981,7 +981,7 @@ TEST(DependencyDrivenPR2Test, AdmissionReleasedOnDependencyFailurePath) {
 
 // 路径二：parked 超时结算 → 计数回基线。
 TEST(DependencyDrivenPR2Test, AdmissionReleasedOnParkedTimeoutPath) {
-    executor::Executor executor;
+    kairo::Executor executor;
     auto config = timeout_config(2, kTimeoutBudgetMs, /*max_in_flight=*/8);
     ASSERT_TRUE(executor.initialize(config));
 
@@ -1009,7 +1009,7 @@ TEST(DependencyDrivenPR2Test, AdmissionReleasedOnParkedTimeoutPath) {
 
 // 路径三：parked 取消结算 → 计数回基线。
 TEST(DependencyDrivenPR2Test, AdmissionReleasedOnParkedCancelPath) {
-    executor::Executor executor;
+    kairo::Executor executor;
     auto config = pool_config(2);
     config.max_in_flight_tasks = 8;
     ASSERT_TRUE(executor.initialize(config));
@@ -1024,7 +1024,7 @@ TEST(DependencyDrivenPR2Test, AdmissionReleasedOnParkedCancelPath) {
 
     const auto response = executor.request_task_cancel(dependent.handle);
     EXPECT_EQ(response.result,
-              executor::TaskCancellationResult::RequestedBeforeStart);
+              kairo::TaskCancellationResult::RequestedBeforeStart);
     ASSERT_TRUE(settles_within(dependent.future));
     EXPECT_EQ(executor.get_in_flight_submissions(), 1U);  // 仅剩 gate
 
@@ -1037,7 +1037,7 @@ TEST(DependencyDrivenPR2Test, AdmissionReleasedOnParkedCancelPath) {
 
 // 路径四：shutdown sweep 结算 parked 链 → 计数在全部在途任务收尾后回零。
 TEST(DependencyDrivenPR2Test, AdmissionReleasedOnShutdownSweepPath) {
-    executor::Executor executor;
+    kairo::Executor executor;
     auto config = pool_config(1);
     config.max_in_flight_tasks = 8;
     ASSERT_TRUE(executor.initialize(config));

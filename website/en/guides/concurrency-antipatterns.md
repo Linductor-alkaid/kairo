@@ -1,6 +1,6 @@
 ---
 title: Concurrency Architecture Antipatterns
-description: Diagnose common Executor integration errors from symptoms such as queue growth, stalled shutdown, dangling references, and silent failure.
+description: Diagnose common Kairo integration errors from symptoms such as queue growth, stalled shutdown, dangling references, and silent failure.
 ---
 
 # Concurrency Architecture Antipatterns
@@ -29,7 +29,7 @@ executor.submit_auto([&] {
 });
 ```
 
-It occupies a worker indefinitely, and blocking I/O may ignore application stop. Active stays full and queued rises even when CPU is low; `shutdown(true)` can wait but cannot safely kill arbitrary C++ code. Use `start_worker()` through the [Blocking I/O worker](/en/realtime-and-communication/blocking-io-workers) path when the loop needs Executor-owned stop/wake/join lifecycle, `submit_periodic()` for soft maintenance, and a real-time task for jitter-budgeted loops. Verify that active count falls within budget after producers stop.
+It occupies a worker indefinitely, and blocking I/O may ignore application stop. Active stays full and queued rises even when CPU is low; `shutdown(true)` can wait but cannot safely kill arbitrary C++ code. Use `start_worker()` through the [Blocking I/O worker](/en/realtime-and-communication/blocking-io-workers) path when the loop needs Kairo-owned stop/wake/join lifecycle, `submit_periodic()` for soft maintenance, and a real-time task for jitter-budgeted loops. Verify that active count falls within budget after producers stop.
 
 ## 2. Synchronous pool wait inside a worker
 
@@ -63,22 +63,22 @@ executor.submit_auto(write_record);
 return Accepted;
 ```
 
-Acceptance does not prove eventual execution. Keep a future for request results; for genuine fire-and-forget work provide a callback/status plus business ID. Use an outbox, retry queue, or idempotency protocol for critical side effects: Executor is not a delivery-guarantee system. Inject a throw and a rejection and confirm business metrics, alerts, and logs all identify the input.
+Acceptance does not prove eventual execution. Keep a future for request results; for genuine fire-and-forget work provide a callback/status plus business ID. Use an outbox, retry queue, or idempotency protocol for critical side effects: Kairo is not a delivery-guarantee system. Inject a throw and a rejection and confirm business metrics, alerts, and logs all identify the input.
 
 ## 6. A large queue hiding persistent overload
 
 Increasing `queue_capacity` postpones failure but cannot make a sustained arrival rate below service capacity. It may process stale work, grow memory, and lengthen shutdown. Measure arrival rate, service time, queue depth, and end-to-end age; rate-limit/scale FIFO work, use `LatestMailbox` for latest-only state, and make intentional dropping observable. Under sustained overload, memory and latency must remain bounded.
 
-## 7. Mixed Executor instances and resources
+## 7. Mixed Kairo instances and resources
 
-Handles, registries, and direct executor pointers belong to the manager that created them. Do not pass an instance-A `TaskHandle` to instance-B, retain a manager-owned realtime/GPU pointer after shutdown, or let a component shut down a shared singleton. Pass the same Executor explicitly, keep handles within their graph/runtime lifetime, and reserve direct pointers for protected advanced local use.
+Handles, registries, and direct executor pointers belong to the manager that created them. Do not pass an instance-A `TaskHandle` to instance-B, retain a manager-owned realtime/GPU pointer after shutdown, or let a component shut down a shared singleton. Pass the same Kairo explicitly, keep handles within their graph/runtime lifetime, and reserve direct pointers for protected advanced local use.
 
 ## 8. Reversed shutdown order
 
 Wrong:
 
 ```text
-Destroy business objects → shutdown Executor → stop timers/device callbacks
+Destroy business objects → shutdown Kairo → stop timers/device callbacks
 ```
 
 Correct:
@@ -89,11 +89,11 @@ Stop accepting external work
 → cancel soft-periodic tasks
 → stop real-time upstream, then real-time tasks
 → bounded-drain ordinary work
-→ shutdown Executor
+→ shutdown Kairo
 → destroy task-owned data and logging
 ```
 
-After shutdown, rebuild rather than reinitialize an Executor. During shutdown-race testing, new submissions must receive explicit rejection and object destruction must follow relevant task completion.
+After shutdown, rebuild rather than reinitialize an Kairo. During shutdown-race testing, new submissions must receive explicit rejection and object destruction must follow relevant task completion.
 
 ## 9. Soft timeout mistaken for forced cancellation
 

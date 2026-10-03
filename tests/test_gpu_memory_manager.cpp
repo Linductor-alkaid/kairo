@@ -5,12 +5,12 @@
 #include <unordered_map>
 #include <vector>
 
-#include <executor/config.hpp>
-#include <executor/types.hpp>
-#include "executor/gpu/gpu_memory_manager.hpp"
+#include <kairo/config.hpp>
+#include <kairo/types.hpp>
+#include "kairo/gpu/gpu_memory_manager.hpp"
 
-using namespace executor;
-using namespace executor::gpu;
+using namespace kairo;
+using namespace kairo::gpu;
 
 #define TEST_ASSERT(condition, message) \
     do { \

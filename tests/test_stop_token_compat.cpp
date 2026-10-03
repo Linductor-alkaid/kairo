@@ -3,14 +3,14 @@
 #include <thread>
 #include <type_traits>
 
-#include <executor/stop_token.hpp>
+#include <kairo/stop_token.hpp>
 
-#if defined(EXECUTOR_STOP_TOKEN_FORCE_FALLBACK)
-static_assert(!std::is_same_v<executor::StopToken, std::stop_token>,
+#if defined(KAIRO_STOP_TOKEN_FORCE_FALLBACK)
+static_assert(!std::is_same_v<kairo::StopToken, std::stop_token>,
               "forced fallback must instantiate executor's own StopToken implementation");
 #elif !defined(__ANDROID__) || defined(__cpp_lib_jthread)
-static_assert(std::is_same_v<executor::StopToken, std::stop_token>,
-              "executor::StopToken must alias std::stop_token on desktop/standard-lib path");
+static_assert(std::is_same_v<kairo::StopToken, std::stop_token>,
+              "kairo::StopToken must alias std::stop_token on desktop/standard-lib path");
 #endif
 
 #define TEST_ASSERT(condition, message)                                      \
@@ -23,8 +23,8 @@ static_assert(std::is_same_v<executor::StopToken, std::stop_token>,
     } while (0)
 
 bool test_stop_source_request_once() {
-    executor::StopSource source;
-    const executor::StopToken token = source.get_token();
+    kairo::StopSource source;
+    const kairo::StopToken token = source.get_token();
 
     TEST_ASSERT(token.stop_possible(), "stop token must be possible from a source");
     TEST_ASSERT(!token.stop_requested(), "stop token must not be requested initially");
@@ -38,7 +38,7 @@ bool test_jthread_passes_stop_token_and_joins() {
     std::atomic<bool> entered{false};
     std::atomic<bool> left{false};
 
-    executor::detail::JThread thread([&](executor::StopToken token) {
+    kairo::detail::JThread thread([&](kairo::StopToken token) {
         entered.store(true, std::memory_order_release);
         while (!token.stop_requested()) {
             std::this_thread::yield();
@@ -62,7 +62,7 @@ bool test_jthread_destructor_requests_stop_and_joins() {
     std::atomic<bool> left{false};
 
     {
-        executor::detail::JThread thread([&](executor::StopToken token) {
+        kairo::detail::JThread thread([&](kairo::StopToken token) {
             entered.store(true, std::memory_order_release);
             while (!token.stop_requested()) {
                 std::this_thread::yield();
@@ -86,7 +86,7 @@ bool test_jthread_move_constructor_does_not_double_join() {
     std::atomic<bool> left{false};
 
     {
-        executor::detail::JThread source([&](executor::StopToken token) {
+        kairo::detail::JThread source([&](kairo::StopToken token) {
             entered.store(true, std::memory_order_release);
             while (!token.stop_requested()) {
                 std::this_thread::yield();
@@ -98,7 +98,7 @@ bool test_jthread_move_constructor_does_not_double_join() {
             std::this_thread::yield();
         }
 
-        executor::detail::JThread target(std::move(source));
+        kairo::detail::JThread target(std::move(source));
         TEST_ASSERT(!source.joinable(), "moved-from jthread must not be joinable");
         TEST_ASSERT(target.joinable(), "move-constructed jthread must own the thread");
         TEST_ASSERT(target.request_stop(), "target jthread must expose its stop source");
@@ -117,7 +117,7 @@ bool test_jthread_move_assignment_joins_previous_thread() {
     std::atomic<bool> second_left{false};
 
     {
-        executor::detail::JThread target([&](executor::StopToken token) {
+        kairo::detail::JThread target([&](kairo::StopToken token) {
             first_entered.store(true, std::memory_order_release);
             while (!token.stop_requested()) {
                 std::this_thread::yield();
@@ -129,7 +129,7 @@ bool test_jthread_move_assignment_joins_previous_thread() {
             std::this_thread::yield();
         }
 
-        executor::detail::JThread source([&](executor::StopToken token) {
+        kairo::detail::JThread source([&](kairo::StopToken token) {
             second_entered.store(true, std::memory_order_release);
             while (!token.stop_requested()) {
                 std::this_thread::yield();

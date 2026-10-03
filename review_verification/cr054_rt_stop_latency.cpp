@@ -8,15 +8,15 @@
 // Test: cycle period 500ms, trivial callback, no ICycleManager (built-in
 // loop). Warm up, then measure stop_and_join() duration across rounds.
 // Expected if confirmed: latencies roughly uniform in [0, 500ms), mean ~250ms.
-#include <executor/realtime_thread_executor.hpp>
+#include <kairo/realtime_thread_executor.hpp>
 
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <vector>
 
-using executor::RealtimeThreadConfig;
-using executor::RealtimeThreadExecutor;
+using kairo::RealtimeThreadConfig;
+using kairo::RealtimeThreadExecutor;
 
 using Clock = std::chrono::steady_clock;
 

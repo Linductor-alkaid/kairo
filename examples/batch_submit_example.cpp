@@ -4,13 +4,13 @@
  * 演示如何使用 submit_batch() 和 submit_batch_no_future() 高效提交大量任务
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <iostream>
 #include <vector>
 #include <chrono>
 #include <atomic>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 // 模拟数据处理任务

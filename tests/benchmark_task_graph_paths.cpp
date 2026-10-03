@@ -12,11 +12,11 @@
  *      per-hop scheduling cost.
  * Also prints closure_graveyard_size() (expected 0 after clean runs).
  *
- * Config: env EXECUTOR_BENCHMARK_* + CLI (--json, --tasks, --producers).
+ * Config: env KAIRO_BENCHMARK_* + CLI (--json, --tasks, --producers).
  * Output: human-readable text (default) or JSON lines (--json).
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -28,9 +28,9 @@
 #include <thread>
 #include <vector>
 
-using executor::Executor;
-using executor::ExecutorConfig;
-using executor::TaskHandle;
+using kairo::Executor;
+using kairo::ExecutorConfig;
+using kairo::TaskHandle;
 
 namespace {
 
@@ -56,16 +56,16 @@ size_t parse_size_t(const char* s, size_t default_val) {
 }
 
 void apply_env(Config& c) {
-    if (const char* t = std::getenv("EXECUTOR_BENCHMARK_TASKS")) {
+    if (const char* t = std::getenv("KAIRO_BENCHMARK_TASKS")) {
         c.tasks_per_producer = parse_size_t(t, c.tasks_per_producer);
     }
-    if (const char* t = std::getenv("EXECUTOR_BENCHMARK_FANOUT")) {
+    if (const char* t = std::getenv("KAIRO_BENCHMARK_FANOUT")) {
         c.fanout = parse_size_t(t, c.fanout);
     }
-    if (const char* t = std::getenv("EXECUTOR_BENCHMARK_CHAIN")) {
+    if (const char* t = std::getenv("KAIRO_BENCHMARK_CHAIN")) {
         c.chain_length = parse_size_t(t, c.chain_length);
     }
-    if (const char* t = std::getenv("EXECUTOR_BENCHMARK_JSON")) {
+    if (const char* t = std::getenv("KAIRO_BENCHMARK_JSON")) {
         if (t[0] == '1' || t[0] == 't' || t[0] == 'T') c.json_output = true;
     }
 }

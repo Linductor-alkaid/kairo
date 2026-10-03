@@ -11,14 +11,14 @@
 //
 // Build (TSAN):
 //   g++ -std=c++20 -O1 -g -fsanitize=thread -fno-omit-frame-pointer
-//     -DEXECUTOR_THREAD_POOL_TEST_HOOKS -I include -I src
+//     -DKAIRO_THREAD_POOL_TEST_HOOKS -I include -I src
 //     review_verification/lf_cr004_hook_race.cpp build-tsan/src/libexecutor.a
 //     -lpthread -ldl -o review_verification/lf_cr004_hook_race_tsan
 // Run:
 //   setarch $(uname -m) -R ./review_verification/lf_cr004_hook_race_tsan
 //     [iterations]
 
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 
 #include <atomic>
 #include <cstdio>
@@ -26,7 +26,7 @@
 #include <thread>
 #include <vector>
 
-using executor::LockFreeTaskExecutor;
+using kairo::LockFreeTaskExecutor;
 
 static void dummy_hook(void*) {}
 

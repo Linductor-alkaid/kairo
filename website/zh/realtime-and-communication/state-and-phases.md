@@ -15,7 +15,7 @@ description: 为最新配置、完整状态与启动顺序分别选择 LatestMai
 
 <<< @/../examples/tutorial/08_communication.cpp{1-29}
 
-完整源码：[`examples/tutorial/08_communication.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/tutorial/08_communication.cpp)。
+完整源码：[`examples/tutorial/08_communication.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/08_communication.cpp)。
 
 ```bash
 ./build/examples/tutorial/tutorial_08_communication
@@ -51,7 +51,7 @@ mailbox 使用四个固定的 reader-pin 快照槽。writer 只取得未被 pin 
 
 需要固定四槽读取尝试时使用 `try_load()`。`try_publish()` 是非等待 lock-free 发布接口，但不是单次有界/wait-free 接口。`publish()`、`load()` 和 `update()` 为保留兼容行为，在暂时竞争时会 spin/yield；它们是控制面调用，不是实时操作。快照 sequence 终止于 `2^56 - 1`：耗尽后 `try_publish()` 返回 `false`，publish/update 兼容路径抛 `std::overflow_error`。
 
-`update()` 会在 writer 路径中把当前完整快照复制为局部候选值，同步修改后再发布；它不是提交给 Executor 的异步任务。它捕获的引用只需覆盖这次同步调用，但仍要遵守 DoubleBuffer 的单 writer 约束。reader 得到的 snapshot 是自己的值副本，可以在下一次发布后继续使用。
+`update()` 会在 writer 路径中把当前完整快照复制为局部候选值，同步修改后再发布；它不是提交给 Kairo 的异步任务。它捕获的引用只需覆盖这次同步调用，但仍要遵守 DoubleBuffer 的单 writer 约束。reader 得到的 snapshot 是自己的值副本，可以在下一次发布后继续使用。
 
 ## 阶段与发布水位
 
@@ -69,14 +69,14 @@ closed flag 占用状态最高位，因此 phase 和 ticket 必须小于 `2^63`�
 `PhaseGate`。这是既有组件的可选模式，不是独立的 `LetChannel<T>` API：
 
 ```cpp
-executor::comm::PhaseGate gate;
-executor::comm::DoubleBuffer<ControlState> state(ControlState{});
+kairo::comm::PhaseGate gate;
+kairo::comm::DoubleBuffer<ControlState> state(ControlState{});
 state.bind_to_phase_gate(gate);
 
 state.publish_for_current_phase(ControlState{/* phase 0 output */});
 gate.advance();
 
-executor::comm::Snapshot<ControlState> visible;
+kairo::comm::Snapshot<ControlState> visible;
 if (state.load_for_current_phase(visible)) {
     consume(visible.value); // phase 1 读取完整的 phase 0 输出。
 }

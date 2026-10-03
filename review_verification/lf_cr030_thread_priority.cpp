@@ -14,7 +14,7 @@
 // setpriority(PRIO_PROCESS, worker_tid, ...) does reach the worker, proving
 // per-thread targeting is possible and the handle was simply ignored.
 
-#include "executor/util/thread_utils.hpp"
+#include "kairo/util/thread_utils.hpp"
 
 #include <atomic>
 #include <cerrno>
@@ -28,8 +28,8 @@
 #include <thread>
 #include <unistd.h>
 
-using executor::util::get_current_thread_priority;
-using executor::util::set_thread_priority;
+using kairo::util::get_current_thread_priority;
+using kairo::util::set_thread_priority;
 
 namespace {
 

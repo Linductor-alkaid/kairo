@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
-#include "executor/util/lockfree_queue.hpp"
+#include "kairo/util/lockfree_queue.hpp"
 
 #include <cstddef>
 
-using executor::util::LockFreeQueue;
+using kairo::util::LockFreeQueue;
 
 TEST(LockFreeQueueBatchNullBuffersTest, PushBatchRejectsNullItemsWhenCountPositive) {
     LockFreeQueue<int> q(8);

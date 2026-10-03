@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 #include <thread>
 #include <vector>
 #include <atomic>
@@ -7,7 +7,7 @@
 #include <set>
 #include <mutex>
 
-using namespace executor;
+using namespace kairo;
 
 /**
  * @brief MPSC 并发安全性测试

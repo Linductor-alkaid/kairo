@@ -11,7 +11,7 @@
 //   - cancel via found state fires B's sink; A's sink never fires, A stays
 //     Pending and can still begin execution.
 
-#include "executor/task_cancellation.hpp"
+#include "kairo/task_cancellation.hpp"
 
 #include <atomic>
 #include <exception>
@@ -19,7 +19,7 @@
 #include <memory>
 #include <string>
 
-using namespace executor;
+using namespace kairo;
 
 static const char* lookup_str(TaskCancellationRegistry::LookupResult r) {
     switch (r) {

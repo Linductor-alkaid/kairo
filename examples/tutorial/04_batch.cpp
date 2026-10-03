@@ -3,11 +3,11 @@
 #include <iostream>
 #include <vector>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 int main() {
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
     if (!executor.initialize_ex(config)) {

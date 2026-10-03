@@ -6,12 +6,12 @@
 // instead of 0 or a small default budget.
 // Contrasts: default options (max_items_per_cycle=64) drain at most 64 per call;
 // explicit drain_for_cycle(h, 0) falls back to the option value, not unlimited.
-#include <executor/comm/mailbox.hpp>
+#include <kairo/comm/mailbox.hpp>
 
 #include <cstdio>
 
-using executor::comm::RealtimeChannel;
-using executor::comm::RealtimeChannelOptions;
+using kairo::comm::RealtimeChannel;
+using kairo::comm::RealtimeChannelOptions;
 
 int main() {
     int result = 0;

@@ -1,17 +1,17 @@
 cmake_minimum_required(VERSION 3.16)
-project(executor LANGUAGES CXX VERSION 0.5.3)
+project(kairo LANGUAGES CXX VERSION 0.6.0)
 
 # CR-085: 版本单一来源。project(VERSION) 是唯一事实来源；这里生成代码侧可
-# include 的 executor/version.hpp（构建树经 executor 目标的 BUILD_INTERFACE
-# include 路径暴露，安装树经下方 install(FILES) 落到 include/executor/），
+# include 的 kairo/version.hpp（构建树经 kairo 目标的 BUILD_INTERFACE
+# include 路径暴露，安装树经下方 install(FILES) 落到 include/kairo/），
 # 打包脚本也从 CMakeLists.txt 提取默认版本，不再各自硬编码。
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.hpp.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/executor/version.hpp"
+    "${CMAKE_CURRENT_BINARY_DIR}/kairo/version.hpp"
     @ONLY
 )
-# 供 src/CMakeLists.txt 挂到 executor 目标的 BUILD_INTERFACE include 路径
-set(EXECUTOR_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+# 供 src/CMakeLists.txt 挂到 kairo 目标的 BUILD_INTERFACE include 路径
+set(KAIRO_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 
 # C++ 标准设置
 set(CMAKE_CXX_STANDARD 20)
@@ -19,37 +19,37 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # 构建选项
-option(EXECUTOR_BUILD_TESTS "Build tests" ON)
-option(EXECUTOR_BUILD_EXAMPLES "Build examples" OFF)
-option(EXECUTOR_BUILD_SHARED "Build shared library" OFF)
-option(EXECUTOR_ENABLE_REALTIME_ALLOCATION_GUARD
+option(KAIRO_BUILD_TESTS "Build tests" ON)
+option(KAIRO_BUILD_EXAMPLES "Build examples" OFF)
+option(KAIRO_BUILD_SHARED "Build shared library" OFF)
+option(KAIRO_ENABLE_REALTIME_ALLOCATION_GUARD
        "Enable Linux diagnostic allocation tracking for explicitly guarded realtime paths" OFF)
 
 # GPU 支持选项
-# Android 一期默认关闭 GPU；用户显式传入 -DEXECUTOR_ENABLE_GPU=ON 时仍可覆盖。
-if(ANDROID AND NOT DEFINED EXECUTOR_ENABLE_GPU)
-    set(_executor_enable_gpu_default OFF)
+# Android 一期默认关闭 GPU；用户显式传入 -DKAIRO_ENABLE_GPU=ON 时仍可覆盖。
+if(ANDROID AND NOT DEFINED KAIRO_ENABLE_GPU)
+    set(_kairo_enable_gpu_default OFF)
 else()
-    set(_executor_enable_gpu_default ON)
+    set(_kairo_enable_gpu_default ON)
 endif()
-if(ANDROID AND NOT DEFINED EXECUTOR_ENABLE_CUDA)
-    set(_executor_enable_cuda_default OFF)
+if(ANDROID AND NOT DEFINED KAIRO_ENABLE_CUDA)
+    set(_kairo_enable_cuda_default OFF)
 else()
-    set(_executor_enable_cuda_default ON)
+    set(_kairo_enable_cuda_default ON)
 endif()
-option(EXECUTOR_ENABLE_GPU "Enable GPU support" ${_executor_enable_gpu_default})
-option(EXECUTOR_ENABLE_CUDA "Enable CUDA support" ${_executor_enable_cuda_default})
-option(EXECUTOR_ENABLE_OPENCL "Enable OpenCL support" OFF)
+option(KAIRO_ENABLE_GPU "Enable GPU support" ${_kairo_enable_gpu_default})
+option(KAIRO_ENABLE_CUDA "Enable CUDA support" ${_kairo_enable_cuda_default})
+option(KAIRO_ENABLE_OPENCL "Enable OpenCL support" OFF)
 
 # 无锁工作线程队列（需配套支持 TaskDispatcher 模板化的双模式构建）
-option(EXECUTOR_LOCKFREE_QUEUE "Use LockFreeWorkerQueue as the worker local queue implementation" OFF)
-if(EXECUTOR_LOCKFREE_QUEUE)
+option(KAIRO_LOCKFREE_QUEUE "Use LockFreeWorkerQueue as the worker local queue implementation" OFF)
+if(KAIRO_LOCKFREE_QUEUE)
     add_definitions(-DUSE_LOCKFREE_WORKER_QUEUE)
 endif()
 
-if(EXECUTOR_ENABLE_REALTIME_ALLOCATION_GUARD)
+if(KAIRO_ENABLE_REALTIME_ALLOCATION_GUARD)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        add_compile_definitions(EXECUTOR_ENABLE_REALTIME_ALLOCATION_GUARD)
+        add_compile_definitions(KAIRO_ENABLE_REALTIME_ALLOCATION_GUARD)
     else()
         message(WARNING "Realtime allocation guard is only supported on Linux")
     endif()
@@ -74,8 +74,8 @@ include(Sanitizers)
 include(Coverage)
 
 # GPU/CUDA 支持检测
-if(EXECUTOR_ENABLE_GPU)
-    if(EXECUTOR_ENABLE_CUDA)
+if(KAIRO_ENABLE_GPU)
+    if(KAIRO_ENABLE_CUDA)
         # 查找 CUDA（优先使用现代方法）
         # CMake 3.18+ 支持 CUDAToolkit
         if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.18")
@@ -127,40 +127,40 @@ if(EXECUTOR_ENABLE_GPU)
             if(CUDA_TOOLKIT_ROOT_DIR)
                 message(STATUS "CUDA Toolkit Root: ${CUDA_TOOLKIT_ROOT_DIR}")
             endif()
-            set(EXECUTOR_CUDA_ENABLED ON)
-            add_definitions(-DEXECUTOR_ENABLE_CUDA)
+            set(KAIRO_CUDA_ENABLED ON)
+            add_definitions(-DKAIRO_ENABLE_CUDA)
         else()
             message(WARNING "CUDA support requested but CUDA not found. Disabling CUDA support.")
-            set(EXECUTOR_CUDA_ENABLED OFF)
-            set(EXECUTOR_ENABLE_CUDA OFF)
+            set(KAIRO_CUDA_ENABLED OFF)
+            set(KAIRO_ENABLE_CUDA OFF)
         endif()
     else()
-        set(EXECUTOR_CUDA_ENABLED OFF)
+        set(KAIRO_CUDA_ENABLED OFF)
     endif()
 
     # OpenCL 支持检测
-    if(EXECUTOR_ENABLE_OPENCL)
+    if(KAIRO_ENABLE_OPENCL)
         find_package(OpenCL QUIET)
         if(OpenCL_FOUND)
             message(STATUS "OpenCL found: Version ${OpenCL_VERSION_STRING}")
-            set(EXECUTOR_OPENCL_ENABLED ON)
-            add_definitions(-DEXECUTOR_ENABLE_OPENCL)
+            set(KAIRO_OPENCL_ENABLED ON)
+            add_definitions(-DKAIRO_ENABLE_OPENCL)
         else()
             message(WARNING "OpenCL support requested but OpenCL not found. Disabling OpenCL support.")
-            set(EXECUTOR_OPENCL_ENABLED OFF)
-            set(EXECUTOR_ENABLE_OPENCL OFF)
+            set(KAIRO_OPENCL_ENABLED OFF)
+            set(KAIRO_ENABLE_OPENCL OFF)
         endif()
     else()
-        set(EXECUTOR_OPENCL_ENABLED OFF)
+        set(KAIRO_OPENCL_ENABLED OFF)
     endif()
 
     # 如果启用了 GPU 支持（即使 CUDA/OpenCL 未找到，也定义宏以支持其他后端）
-    if(EXECUTOR_ENABLE_GPU)
-        add_definitions(-DEXECUTOR_ENABLE_GPU)
+    if(KAIRO_ENABLE_GPU)
+        add_definitions(-DKAIRO_ENABLE_GPU)
     endif()
 else()
-    set(EXECUTOR_CUDA_ENABLED OFF)
-    set(EXECUTOR_ENABLE_CUDA OFF)
+    set(KAIRO_CUDA_ENABLED OFF)
+    set(KAIRO_ENABLE_CUDA OFF)
 endif()
 
 # 安装目录（须在 add_subdirectory(src) 之前，src 中 install(EXPORT) 使用 CMAKE_INSTALL_LIBDIR）
@@ -169,34 +169,34 @@ include(GNUInstallDirs)
 # 添加子目录
 add_subdirectory(src)
 
-if(EXECUTOR_BUILD_TESTS)
+if(KAIRO_BUILD_TESTS)
     enable_testing()
     include(CTest)
     add_subdirectory(tests)
 endif()
 
-if(EXECUTOR_BUILD_EXAMPLES)
+if(KAIRO_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-# 安装配置（executor 目标已由 src/CMakeLists 安装并导出）
+# 安装配置（kairo 目标已由 src/CMakeLists 安装并导出）
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 # CR-085: 安装 configure_file 生成的版本头（源码树没有对应文件，不能并入
 # install(DIRECTORY include/)）
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/executor/version.hpp"
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executor)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/kairo/version.hpp"
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kairo)
 
-# find_package(executor) 支持：生成并安装 executorConfig.cmake、executorConfigVersion.cmake
+# find_package(kairo) 支持：生成并安装 kairoConfig.cmake、kairoConfigVersion.cmake
 include(CMakePackageConfigHelpers)
-set(EXECUTOR_CMAKE_CONFIG_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/executor")
+set(KAIRO_CMAKE_CONFIG_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/kairo")
 write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/executorConfigVersion.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/kairoConfigVersion.cmake"
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion
 )
 install(FILES
-    cmake/executorConfig.cmake
-    "${CMAKE_CURRENT_BINARY_DIR}/executorConfigVersion.cmake"
-    DESTINATION ${EXECUTOR_CMAKE_CONFIG_DIR}
+    cmake/kairoConfig.cmake
+    "${CMAKE_CURRENT_BINARY_DIR}/kairoConfigVersion.cmake"
+    DESTINATION ${KAIRO_CMAKE_CONFIG_DIR}
 )

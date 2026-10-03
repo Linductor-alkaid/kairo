@@ -5,7 +5,7 @@ description: Implement an observable import request with dependencies, batch tas
 
 # Service Data Import
 
-Executor's task model also applies to server workloads. Before importing CSV orders, this example loads a schema and opens a destination table in parallel. After preparation it validates/imports four rows concurrently, one of which is invalid. The request reports accepted and rejected counts, and service shutdown confirms that no work remains.
+Kairo's task model also applies to server workloads. Before importing CSV orders, this example loads a schema and opens a destination table in parallel. After preparation it validates/imports four rows concurrently, one of which is invalid. The request reports accepted and rejected counts, and service shutdown confirms that no work remains.
 
 It intentionally does not connect to a real database, keeping the smoke test free of external dependencies. Real writes still need transactions, idempotency keys, and connection-pool capacity.
 
@@ -30,9 +30,9 @@ The schema/table relationship is a one-time completion dependency. The four rows
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
-  -DEXECUTOR_BUILD_TESTS=ON \
-  -DEXECUTOR_BUILD_EXAMPLES=ON \
-  -DEXECUTOR_ENABLE_GPU=OFF
+  -DKAIRO_BUILD_TESTS=ON \
+  -DKAIRO_BUILD_EXAMPLES=ON \
+  -DKAIRO_ENABLE_GPU=OFF
 cmake --build build --target tutorial_10_service_data_import
 ./build/examples/tutorial/tutorial_10_service_data_import
 ```
@@ -53,7 +53,7 @@ auto prerequisites = executor.when_all({schema.handle, destination.handle});
 auto prepared = executor.submit_after(prerequisites, mark_prepared);
 ```
 
-`TaskHandle` expresses completion only; obtain `schema-v1` and `orders` from their respective futures. Keep both handles and futures in the request owner until `prepared.get()` completes. Do not store them across Executor instances or request lifetimes.
+`TaskHandle` expresses completion only; obtain `schema-v1` and `orders` from their respective futures. Keep both handles and futures in the request owner until `prepared.get()` completes. Do not store them across Kairo instances or request lifetimes.
 
 If schema loading fails, the dependent does not run and its future propagates the prerequisite failure. Convert that failure to a clear 4xx/5xx or retry result at the request boundary rather than submitting rows anyway.
 
@@ -85,7 +85,7 @@ for (auto& future : futures) {
 }
 ```
 
-Do not exit the loop at the first exception, or the remaining results become unobserved. For all-or-nothing behavior, parse and validate in parallel, then commit through a controlled database transaction; Executor batch does not provide rollback.
+Do not exit the loop at the first exception, or the remaining results become unobserved. For all-or-nothing behavior, parse and validate in parallel, then commit through a controlled database transaction; Kairo batch does not provide rollback.
 
 ## Separate request results from service observation
 
@@ -108,7 +108,7 @@ Use an order/import ID as an idempotency key because a task can finish after a c
 
 Fail schema loading, preserve the empty order ID, make database work slow under a shorter request budget, and begin service draining before accepting a batch. Each path should produce an explicit preparation error, partial result, timeout policy, or submission rejection.
 
-Stop new traffic, put HTTP into draining mode, stop readers/producers, let current requests consume futures, bounded-wait the executor, record pending counts/failures/unfinished job IDs, then shut down Executor before destroying the connection pool, result store, and log facilities. Rebuild an independent import subsystem rather than reinitializing a shut-down instance.
+Stop new traffic, put HTTP into draining mode, stop readers/producers, let current requests consume futures, bounded-wait the executor, record pending counts/failures/unfinished job IDs, then shut down Kairo before destroying the connection pool, result store, and log facilities. Rebuild an independent import subsystem rather than reinitializing a shut-down instance.
 
 | New requirement | Evolution |
 | --- | --- |

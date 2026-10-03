@@ -2,14 +2,14 @@
  * 连续创建销毁测试 - 定位段错误问题
  */
 
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 #include <iostream>
 #include <thread>
 #include <vector>
 #include <atomic>
 #include <chrono>
 
-using namespace executor;
+using namespace kairo;
 
 void run_test(int test_num, int num_threads) {
     std::cout << "测试 " << test_num << ": " << num_threads << " 个线程\n";

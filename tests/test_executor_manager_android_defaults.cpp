@@ -1,15 +1,15 @@
-#include <executor/config.hpp>
-#include <executor/executor_manager.hpp>
+#include <kairo/config.hpp>
+#include <kairo/executor_manager.hpp>
 
 #include <future>
 #include <iostream>
 
 #if defined(__ANDROID__)
 #define private public
-#include "executor/thread_pool_executor.hpp"
+#include "kairo/thread_pool_executor.hpp"
 #undef private
-#include "executor/thread_pool/thread_pool.hpp"
-#include "executor/util/thread_utils.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
+#include "kairo/util/thread_utils.hpp"
 #endif
 
 #define TEST_ASSERT(condition, message)                                      \
@@ -23,23 +23,23 @@
 
 #if defined(__ANDROID__)
 bool test_android_default_async_executor_budget() {
-    executor::ExecutorManager manager;
-    executor::ExecutorConfig config;
+    kairo::ExecutorManager manager;
+    kairo::ExecutorConfig config;
     config.enable_monitoring = false;
 
     TEST_ASSERT(manager.initialize_async_executor(config),
                 "default async executor should initialize on Android");
 
-    executor::IAsyncExecutor* async = manager.get_default_async_executor();
+    kairo::IAsyncExecutor* async = manager.get_default_async_executor();
     TEST_ASSERT(async != nullptr, "initialized manager should expose async executor");
 
-    auto* thread_pool_executor = dynamic_cast<executor::ThreadPoolExecutor*>(async);
+    auto* thread_pool_executor = dynamic_cast<kairo::ThreadPoolExecutor*>(async);
     TEST_ASSERT(thread_pool_executor != nullptr,
                 "default async executor should be a ThreadPoolExecutor");
     const auto pool = thread_pool_executor->thread_pool_;
     TEST_ASSERT(pool != nullptr, "thread pool should be created after start");
 
-    const executor::ThreadPoolStatus pool_status = pool->get_status();
+    const kairo::ThreadPoolStatus pool_status = pool->get_status();
     TEST_ASSERT(pool_status.total_threads > 0,
                 "Android default thread pool should have started workers");
     TEST_ASSERT(pool_status.total_threads <= 4,

@@ -1,5 +1,5 @@
-#include <executor/config.hpp>
-#include "executor/thread_pool/thread_pool.hpp"
+#include <kairo/config.hpp>
+#include "kairo/thread_pool/thread_pool.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -10,7 +10,7 @@
 #include <thread>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message)                                       \
     do {                                                                      \

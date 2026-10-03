@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "executor/util/lockfree_queue.hpp"
-#include <executor/lockfree_task_executor.hpp>
+#include "kairo/util/lockfree_queue.hpp"
+#include <kairo/lockfree_task_executor.hpp>
 
 #include <cstddef>
 #include <algorithm>
@@ -10,8 +10,8 @@
 #include <thread>
 #include <vector>
 
-using executor::LockFreeTaskExecutor;
-using executor::util::LockFreeQueue;
+using kairo::LockFreeTaskExecutor;
+using kairo::util::LockFreeQueue;
 
 namespace {
 

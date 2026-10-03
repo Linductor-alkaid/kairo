@@ -8,9 +8,9 @@
 #include <random>
 
 // 包含 Executor 的头文件
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 // 测试辅助宏
 #define TEST_ASSERT(condition, message) \
@@ -321,14 +321,14 @@ int main() {
     
     // 长时间运行测试（可选，因为耗时较长）
     // 可以通过环境变量或命令行参数控制是否运行
-    const char* run_long_test = std::getenv("EXECUTOR_RUN_LONG_STRESS_TEST");
+    const char* run_long_test = std::getenv("KAIRO_RUN_LONG_STRESS_TEST");
     if (run_long_test && std::string(run_long_test) == "1") {
         std::cout << "--- Long-Running Test ---" << std::endl;
         all_passed &= test_long_running();
         std::cout << std::endl;
     } else {
         std::cout << "--- Long-Running Test ---" << std::endl;
-        std::cout << "  Skipped (set EXECUTOR_RUN_LONG_STRESS_TEST=1 to enable)" << std::endl;
+        std::cout << "  Skipped (set KAIRO_RUN_LONG_STRESS_TEST=1 to enable)" << std::endl;
         std::cout << std::endl;
     }
     

@@ -7,7 +7,7 @@ description: Measure throughput, tail latency, jitter, and correctness with one 
 
 ## Write the question before running a benchmark
 
-A performance test answers a concrete user question: how many specified parse tasks complete per second on this machine; whether 99% of requests reach a business result within 5 ms; p99 jitter of a 1 ms control cycle under target permissions/load; or whether sustained overload rejects by contract without losing accepted work. “Is Executor fast?” is not an experiment. Fix workload, concurrency model, input size, queue policy, hardware, and pass condition before selecting metrics.
+A performance test answers a concrete user question: how many specified parse tasks complete per second on this machine; whether 99% of requests reach a business result within 5 ms; p99 jitter of a 1 ms control cycle under target permissions/load; or whether sustained overload rejects by contract without losing accepted work. “Is Kairo fast?” is not an experiment. Fix workload, concurrency model, input size, queue policy, hardware, and pass condition before selecting metrics.
 
 ## Five result classes do not substitute for each other
 
@@ -38,7 +38,7 @@ Do not omit unit/integration tests for values/exceptions/dependencies/shutdown, 
 
 ### Fix environment, workload, and noise
 
-Record commit/dirty state; OS/kernel/architecture; CPU/sockets/physical/logical cores; allowed cpuset/affinity; memory; compiler/CMake/build flags; Executor configuration; power governor/virtualization/container limits; realtime permissions/applied status; and GPU backend/driver/device if used.
+Record commit/dirty state; OS/kernel/architecture; CPU/sockets/physical/logical cores; allowed cpuset/affinity; memory; compiler/CMake/build flags; Kairo configuration; power governor/virtualization/container limits; realtime permissions/applied status; and GPU backend/driver/device if used.
 
 Record task body/input size, producers/consumers/threads, queue capacity, batch size, period, per-cycle budget, drop policy, and duration. Keep everything but the measured variable constant. An empty lambda measures scheduling overhead, not production behavior; add a workload resembling real compute, memory access, and I/O boundaries.
 
@@ -64,9 +64,9 @@ Historical `docs/performance/` reports provide optimization context, not a curre
 ```bash
 cmake -S . -B build-perf \
   -DCMAKE_BUILD_TYPE=Release \
-  -DEXECUTOR_BUILD_TESTS=ON \
-  -DEXECUTOR_BUILD_EXAMPLES=OFF \
-  -DEXECUTOR_ENABLE_GPU=OFF
+  -DKAIRO_BUILD_TESTS=ON \
+  -DKAIRO_BUILD_EXAMPLES=OFF \
+  -DKAIRO_ENABLE_GPU=OFF
 cmake --build build-perf -j --target \
   benchmark_baseline \
   benchmark_timer_precision \

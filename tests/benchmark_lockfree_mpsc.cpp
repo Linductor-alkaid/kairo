@@ -5,7 +5,7 @@
  * 输出：吞吐量、延迟分布、失败率、JSON格式
  */
 
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 #include <thread>
 #include <vector>
 #include <atomic>
@@ -16,7 +16,7 @@
 #include <numeric>
 #include <cstring>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 struct BenchmarkResult {

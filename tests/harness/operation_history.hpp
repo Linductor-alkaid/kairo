@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-namespace executor::test::harness {
+namespace kairo::test::harness {
 
 struct Operation {
     enum class Type {
@@ -203,4 +203,4 @@ private:
     std::vector<Operation> operations_;
 };
 
-} // namespace executor::test::harness
+} // namespace kairo::test::harness

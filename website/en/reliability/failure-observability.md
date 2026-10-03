@@ -58,10 +58,10 @@ Choose capacity from memory budget and incident investigation window. Do not kee
 
 ## Callback boundary
 
-The failure callback runs on Executor's failure-recording path. Keep it short and nonblocking, and own any external I/O policy. An exception thrown by the callback is isolated and does not terminate a worker/background thread. For complex handling, enqueue a small event into application logging or alert infrastructure.
+The failure callback runs on Kairo's failure-recording path. Keep it short and nonblocking, and own any external I/O policy. An exception thrown by the callback is isolated and does not terminate a worker/background thread. For complex handling, enqueue a small event into application logging or alert infrastructure.
 
 ## Failures are not interchangeable
 
-`TaskException`, `SubmitRejected`, `WaitTimeout`, real-time drops, GPU failure, and safe tuning fallback can all enter `ExecutorFailureStatus`, but have different meanings. Task exception needs a business-result decision; wait timeout means unfinished work; tuning fallback may still run safely. A routing capability snapshot is not a reservation: stop, a full queue, and object-pool exhaustion still surface through `DispatchResult`, future rejection, and appropriate failure events. Communication events remain in local `executor::comm` callbacks/statistics by default.
+`TaskException`, `SubmitRejected`, `WaitTimeout`, real-time drops, GPU failure, and safe tuning fallback can all enter `ExecutorFailureStatus`, but have different meanings. Task exception needs a business-result decision; wait timeout means unfinished work; tuning fallback may still run safely. A routing capability snapshot is not a reservation: stop, a full queue, and object-pool exhaustion still surface through `DispatchResult`, future rejection, and appropriate failure events. Communication events remain in local `kairo::comm` callbacks/statistics by default.
 
 Next: [monitoring and sampling](/en/reliability/monitoring) for throughput, success/failure, and execution-time trends; [bounded waiting and status](/en/tutorial/waiting-and-status) for wait timeout decisions.

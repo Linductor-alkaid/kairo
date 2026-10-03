@@ -1,4 +1,4 @@
-#include <executor/comm.hpp>
+#include <kairo/comm.hpp>
 
 #include <gtest/gtest.h>
 
@@ -16,12 +16,12 @@ using namespace std::chrono_literals;
 
 namespace {
 
-using executor::comm::ChannelOptions;
-using executor::comm::CommErrorCode;
-using executor::comm::CommEventKind;
-using executor::comm::DropPolicy;
-using executor::comm::MpscChannel;
-using executor::comm::SpscChannel;
+using kairo::comm::ChannelOptions;
+using kairo::comm::CommErrorCode;
+using kairo::comm::CommEventKind;
+using kairo::comm::DropPolicy;
+using kairo::comm::MpscChannel;
+using kairo::comm::SpscChannel;
 
 ChannelOptions options(size_t capacity,
                        DropPolicy drop_policy = DropPolicy::RejectNewest) {
@@ -212,7 +212,7 @@ TEST(CommChannelTest, SmallCapacitySurvivesHeavyConcurrentNodeReuse) {
 TEST(CommChannelTest, RejectNewestReportsFullAndDropStats) {
     MpscChannel<int> channel(options(2));
     int dropped_events = 0;
-    channel.set_event_callback([&](const executor::comm::CommEvent& event) noexcept {
+    channel.set_event_callback([&](const kairo::comm::CommEvent& event) noexcept {
         if (event.kind == CommEventKind::Dropped) {
             ++dropped_events;
         }

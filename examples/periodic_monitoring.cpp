@@ -4,12 +4,12 @@
 #include <stdexcept>
 #include <thread>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 int main() {
-    executor::Executor ex;
+    kairo::Executor ex;
 
-    executor::ExecutorConfig config;
+    kairo::ExecutorConfig config;
     config.min_threads = 1;
     config.max_threads = 1;
 

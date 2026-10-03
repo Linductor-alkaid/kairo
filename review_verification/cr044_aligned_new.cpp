@@ -1,6 +1,6 @@
 // CR-044 verification: the realtime allocation guard's operator new
 // replacement (src/executor/comm/realtime_memory.cpp, guarded by
-// EXECUTOR_ENABLE_REALTIME_ALLOCATION_GUARD) covers only the plain
+// KAIRO_ENABLE_REALTIME_ALLOCATION_GUARD) covers only the plain
 // operator new / new[] and NOT the over-aligned C++17 variants
 // operator new(size_t, align_val_t) / operator new[](size_t, align_val_t).
 //
@@ -9,7 +9,7 @@
 // invisible to the guard: no allocation_count, no bytes, no Abort.
 //
 // The shipped build/src/libexecutor.a is built with the guard OFF
-// (CMakeCache: EXECUTOR_ENABLE_REALTIME_ALLOCATION_GUARD:BOOL=OFF), so this
+// (CMakeCache: KAIRO_ENABLE_REALTIME_ALLOCATION_GUARD:BOOL=OFF), so this
 // test compiles the library's own realtime_memory.cpp with the official
 // option macro enabled (no source modification) and links it ahead of the
 // archive. Run modes:
@@ -17,14 +17,14 @@
 //   cr044_aligned_new abort    - Abort policy + over-aligned allocation;
 //                                prints SURVIVED if the guard missed it
 //   cr044_aligned_new default  - link layout probe against stock libexecutor.a
-#include <executor/comm/realtime_memory.hpp>
+#include <kairo/comm/realtime_memory.hpp>
 
 #include <cstdio>
 #include <memory>
 #include <new>
 
-using executor::comm::RealtimeAllocationGuard;
-using executor::comm::RealtimeAllocationViolationPolicy;
+using kairo::comm::RealtimeAllocationGuard;
+using kairo::comm::RealtimeAllocationViolationPolicy;
 
 namespace {
 

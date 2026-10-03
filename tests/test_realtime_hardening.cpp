@@ -12,9 +12,9 @@
 #include <exception>
 
 // 包含线程工具头文件
-#include "executor/util/thread_utils.hpp"
-#include "executor/config.hpp"
-#include "executor/realtime_thread_executor.hpp"
+#include "kairo/util/thread_utils.hpp"
+#include "kairo/config.hpp"
+#include "kairo/realtime_thread_executor.hpp"
 
 #if defined(__linux__) && !defined(__ANDROID__)
 #include <unistd.h>
@@ -22,7 +22,7 @@
 #include <sys/resource.h>
 #endif
 
-using namespace executor::util;
+using namespace kairo::util;
 
 // 测试辅助宏
 #define TEST_ASSERT(condition, message) \
@@ -38,7 +38,7 @@ using namespace executor::util;
 bool test_realtime_memory_lock_process_scoped_contract() {
     std::cout << "Testing RealtimeMemoryLock.ProcessScopedContract..." << std::endl;
 
-    executor::RealtimeThreadConfig disabled_config;
+    kairo::RealtimeThreadConfig disabled_config;
     TEST_ASSERT(!disabled_config.enable_process_memory_lock,
                 "Process-wide memory locking must be opt-in");
 
@@ -46,7 +46,7 @@ bool test_realtime_memory_lock_process_scoped_contract() {
     disabled_config.cycle_period_ns = 20'000'000;
     disabled_config.timer_slack_ns = 0;
     disabled_config.cycle_callback = [] {};
-    executor::RealtimeThreadExecutor disabled_executor("p002_disabled", disabled_config);
+    kairo::RealtimeThreadExecutor disabled_executor("p002_disabled", disabled_config);
     TEST_ASSERT(disabled_executor.start(), "Disabled memory-lock executor should start");
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
     const auto disabled_status = disabled_executor.get_status();
@@ -62,13 +62,13 @@ bool test_realtime_memory_lock_process_scoped_contract() {
         struct rlimit denied_limit = original_limit;
         denied_limit.rlim_cur = 0;
         if (setrlimit(RLIMIT_MEMLOCK, &denied_limit) == 0) {
-            executor::RealtimeThreadConfig denied_config;
+            kairo::RealtimeThreadConfig denied_config;
             denied_config.enable_process_memory_lock = true;
             denied_config.thread_name = "p002_denied";
             denied_config.cycle_period_ns = 20'000'000;
             denied_config.timer_slack_ns = 0;
             denied_config.cycle_callback = [] {};
-            executor::RealtimeThreadExecutor denied_executor("p002_denied", denied_config);
+            kairo::RealtimeThreadExecutor denied_executor("p002_denied", denied_config);
             TEST_ASSERT(denied_executor.start(), "Denied memory-lock executor should still start");
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             const auto denied_status = denied_executor.get_status();
@@ -139,7 +139,7 @@ bool test_set_current_thread_timer_slack_ns() {
 bool test_default_config_is_optimal() {
     std::cout << "Testing RealtimeThreadConfig default-is-optimal values..." << std::endl;
 
-    executor::RealtimeThreadConfig cfg;
+    kairo::RealtimeThreadConfig cfg;
     TEST_ASSERT(cfg.enable_process_memory_lock == false,
                 "Default enable_process_memory_lock should be false (process-wide opt-in)");
     TEST_ASSERT(cfg.timer_slack_ns == 1,
@@ -157,7 +157,7 @@ bool test_realtime_priority_adaptive() {
 
     // Case 1: 1ms cycle, priority=0 → auto-recommend 80 (hard realtime)
     {
-        executor::RealtimeThreadConfig cfg;
+        kairo::RealtimeThreadConfig cfg;
         cfg.thread_name = "test_rt_1ms";
         cfg.cycle_period_ns = 1'000'000;  // 1ms
         cfg.thread_priority = 0;          // not explicitly set
@@ -173,7 +173,7 @@ bool test_realtime_priority_adaptive() {
 
     // Case 2: 5ms cycle, priority=0 → auto-recommend 50 (soft realtime)
     {
-        executor::RealtimeThreadConfig cfg;
+        kairo::RealtimeThreadConfig cfg;
         cfg.thread_name = "test_rt_5ms";
         cfg.cycle_period_ns = 5'000'000;  // 5ms
         cfg.thread_priority = 0;
@@ -186,7 +186,7 @@ bool test_realtime_priority_adaptive() {
 
     // Case 3: 20ms cycle, priority=0 → stays 0 (normal scheduling sufficient)
     {
-        executor::RealtimeThreadConfig cfg;
+        kairo::RealtimeThreadConfig cfg;
         cfg.thread_name = "test_rt_20ms";
         cfg.cycle_period_ns = 20'000'000;  // 20ms
         cfg.thread_priority = 0;
@@ -198,7 +198,7 @@ bool test_realtime_priority_adaptive() {
 
     // Case 4: user explicitly sets priority → respected, no auto
     {
-        executor::RealtimeThreadConfig cfg;
+        kairo::RealtimeThreadConfig cfg;
         cfg.thread_name = "test_rt_explicit";
         cfg.cycle_period_ns = 1'000'000;
         cfg.thread_priority = 42;  // explicit override
@@ -215,14 +215,14 @@ bool test_android_realtime_auto_priority_is_disabled() {
 #if defined(__ANDROID__)
     std::cout << "Testing Android realtime auto-priority stays ordinary..." << std::endl;
 
-    executor::RealtimeThreadConfig config;
+    kairo::RealtimeThreadConfig config;
     config.thread_name = "android_rt_auto";
     config.cycle_period_ns = 1'000'000;  // desktop Linux 会自动建议 SCHED_FIFO 80
     config.thread_priority = 0;
     config.timer_slack_ns = 0;
     config.cycle_callback = [] {};
 
-    executor::RealtimeThreadExecutor executor("android_rt_auto", config);
+    kairo::RealtimeThreadExecutor executor("android_rt_auto", config);
     TEST_ASSERT(executor.start(), "Android short-period RT executor should start");
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
     const auto status = executor.get_status();
@@ -243,7 +243,7 @@ bool test_android_realtime_auto_priority_is_disabled() {
 bool test_default_realtime_cpu_affinity_is_adaptive_sentinel() {
     std::cout << "Testing default RealtimeThreadConfig::cpu_affinity is empty (adaptive sentinel)..." << std::endl;
 
-    executor::RealtimeThreadConfig cfg;
+    kairo::RealtimeThreadConfig cfg;
     TEST_ASSERT(cfg.cpu_affinity.empty(),
                 "Default RealtimeThreadConfig::cpu_affinity should be empty (sentinel: auto-bind core 0 on start)");
 
@@ -254,7 +254,7 @@ bool test_default_realtime_cpu_affinity_is_adaptive_sentinel() {
 bool test_explicit_realtime_cpu_affinity_is_respected() {
     std::cout << "Testing explicit RealtimeThreadConfig::cpu_affinity is preserved..." << std::endl;
 
-    executor::RealtimeThreadConfig cfg;
+    kairo::RealtimeThreadConfig cfg;
     cfg.cpu_affinity = {1, 2};
     TEST_ASSERT(cfg.cpu_affinity.size() == 2, "Explicit realtime cpu_affinity should have 2 entries");
     TEST_ASSERT(cfg.cpu_affinity[0] == 1, "First cpu should be 1");
@@ -270,7 +270,7 @@ bool test_explicit_realtime_cpu_affinity_is_respected() {
 bool test_realtime_round_robin_auto_affinity() {
     std::cout << "Testing RT threads round-robin across cores (P-005)..." << std::endl;
 
-    auto allowed_cpus = executor::util::get_current_thread_affinity();
+    auto allowed_cpus = kairo::util::get_current_thread_affinity();
     if (allowed_cpus.size() < 2) {
         std::cout << "  skipped (allowed CPU affinity < 2)" << std::endl;
         return true;
@@ -280,7 +280,7 @@ bool test_realtime_round_robin_auto_affinity() {
     // (runs inside the worker thread itself). The first cycle after
     // start() runs the callback once; we read once and latch.
     constexpr int kThreads = 4;
-    std::vector<std::unique_ptr<executor::RealtimeThreadExecutor>> execs;
+    std::vector<std::unique_ptr<kairo::RealtimeThreadExecutor>> execs;
     std::vector<std::atomic<bool>> captured(kThreads);
     std::vector<std::vector<int>> affinities(kThreads);
     std::vector<std::atomic<bool>> first_cycle_done(kThreads);
@@ -290,7 +290,7 @@ bool test_realtime_round_robin_auto_affinity() {
     }
 
     for (int i = 0; i < kThreads; ++i) {
-        executor::RealtimeThreadConfig cfg;
+        kairo::RealtimeThreadConfig cfg;
         cfg.cycle_period_ns = 20'000'000;  // avoid auto SCHED_FIFO in unprivileged CI
         cfg.enable_process_memory_lock = false; // test affinity only; mlockall is process-wide
         cfg.timer_slack_ns = 50000;        // keep CI timer behavior conservative
@@ -298,12 +298,12 @@ bool test_realtime_round_robin_auto_affinity() {
         cfg.thread_name = "p005_rt_" + std::to_string(i);
         cfg.cycle_callback = [&, i]() {
             if (!captured[i].exchange(true)) {
-                affinities[i] = executor::util::get_current_thread_affinity();
+                affinities[i] = kairo::util::get_current_thread_affinity();
                 first_cycle_done[i].store(true);
             }
         };
         try {
-            execs.push_back(std::make_unique<executor::RealtimeThreadExecutor>(
+            execs.push_back(std::make_unique<kairo::RealtimeThreadExecutor>(
                 "p005_rt_" + std::to_string(i), cfg));
         } catch (const std::exception& e) {
             std::cout << "  skipped (RT executor construction failed: "

@@ -9,7 +9,7 @@ description: 从任务不执行、排队变长、等待超时、关闭卡住、�
 
 发生故障时，不要先增加线程数、扩大队列或改成更高优先级。先记录同一时刻的生命周期、工作量和失败信息；否则修改配置后，最有价值的现场也会消失。
 
-优先采集完整 Executor 现场：
+优先采集完整 Kairo 现场：
 
 ```cpp
 const auto snapshot = executor.get_snapshot();
@@ -26,7 +26,7 @@ const auto snapshot = executor.get_snapshot();
 1. 保留并等待该次提交返回的 `future`，用有界 `wait_for()` 区分“尚未完成”和“已经以异常结束”。
 2. 检查 `CompletionStatus::is_initialized` 与 `is_running`。
 3. 检查 `submit_rejected_count` 是否增长，并读取最近的 `SubmitRejected` 事件。
-4. 如果使用任务依赖，确认所有 `TaskHandle` 有效、来自同一个 Executor，且前置任务本身能够结束。
+4. 如果使用任务依赖，确认所有 `TaskHandle` 有效、来自同一个 Kairo，且前置任务本身能够结束。
 5. 如果使用周期任务，改查 `get_periodic_task_status()` 的 `is_running`、`execution_count`、`failed_count` 和 `last_error_message`。
 
 ### 如何判读
@@ -34,7 +34,7 @@ const auto snapshot = executor.get_snapshot();
 | 观察结果 | 更可能的原因 | 下一步 |
 | --- | --- | --- |
 | `is_initialized=false` | 尚未初始化，或首次提交路径没有成功建立默认执行器 | 在第一次提交前调用 `initialize_ex()` 并检查 `error_code`、`message`。 |
-| `is_running=false` | 已关闭，或初始化失败 | 不要复用已 shutdown 的实例；重建拥有独立 Executor 的业务组件。 |
+| `is_running=false` | 已关闭，或初始化失败 | 不要复用已 shutdown 的实例；重建拥有独立 Kairo 的业务组件。 |
 | 拒绝计数增长 | 空任务、停止后提交或入口不可用 | 从最近失败事件定位调用点；让请求层返回明确失败。 |
 | `queued_tasks>0` 且 `active_tasks` 长期不变 | worker 被阻塞，或任务图等待无法满足的前置 | 检查正在运行任务的 I/O、锁和依赖所有权。 |
 | future 已就绪但 `get()` 抛异常 | 任务执行过，并非“没有执行” | 按业务异常处理，不要通过重复提交掩盖根因。 |
@@ -104,7 +104,7 @@ flowchart TD
     E --> F[销毁任务捕获的业务对象]
 ```
 
-最常见的原因不是 Executor 自身在“死锁”，而是业务任务永久阻塞、producer 在排空期间继续提交，或任务捕获对象先于任务被析构。
+最常见的原因不是 Kairo 自身在“死锁”，而是业务任务永久阻塞、producer 在排空期间继续提交，或任务捕获对象先于任务被析构。
 
 ### 现场检查
 

@@ -15,13 +15,13 @@
 #endif
 
 // 包含 CUDA 执行器的头文件
-#include <executor/config.hpp>
-#include <executor/types.hpp>
-#include <executor/interfaces.hpp>
-#include "executor/gpu/cuda_executor.hpp"
+#include <kairo/config.hpp>
+#include <kairo/types.hpp>
+#include <kairo/interfaces.hpp>
+#include "kairo/gpu/cuda_executor.hpp"
 
-using namespace executor;
-using namespace executor::gpu;
+using namespace kairo;
+using namespace kairo::gpu;
 
 // 测试辅助宏
 #define TEST_ASSERT(condition, message) \
@@ -58,7 +58,7 @@ bool test_cuda_executor_batch_submit_returns_future_per_input();
 bool test_cuda_executor_creation() {
     std::cout << "Testing CudaExecutor creation and destruction..." << std::endl;
     
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     // 创建配置
     GpuExecutorConfig config;
     config.name = "test_cuda_executor";
@@ -101,7 +101,7 @@ bool test_cuda_executor_creation() {
 bool test_cuda_executor_device_info() {
     std::cout << "Testing CudaExecutor device info..." << std::endl;
     
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_executor";
     config.backend = GpuBackend::CUDA;
@@ -135,7 +135,7 @@ bool test_cuda_executor_device_info() {
 bool test_cuda_executor_memory_management() {
     std::cout << "Testing CudaExecutor memory management..." << std::endl;
     
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_executor";
     config.backend = GpuBackend::CUDA;
@@ -187,7 +187,7 @@ bool test_cuda_executor_memory_management() {
 bool test_cuda_executor_memory_pool() {
     std::cout << "Testing CudaExecutor memory pool (memory_pool_size > 0)..." << std::endl;
 
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_executor_pool";
     config.backend = GpuBackend::CUDA;
@@ -231,7 +231,7 @@ bool test_cuda_executor_memory_pool() {
 bool CudaExecutorMemoryPoolStatusReportsUsage() {
     std::cout << "Testing CudaExecutorMemoryPoolStatusReportsUsage..." << std::endl;
 
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_executor_pool_status";
     config.backend = GpuBackend::CUDA;
@@ -278,7 +278,7 @@ bool CudaExecutorMemoryPoolStatusReportsUsage() {
 bool test_cuda_executor_memory_copy() {
     std::cout << "Testing CudaExecutor memory copy..." << std::endl;
     
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_executor";
     config.backend = GpuBackend::CUDA;
@@ -330,7 +330,7 @@ bool test_cuda_executor_memory_copy() {
 bool test_cuda_executor_kernel_submit() {
     std::cout << "Testing CudaExecutor kernel submit..." << std::endl;
     
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_executor";
     config.backend = GpuBackend::CUDA;
@@ -379,7 +379,7 @@ bool test_cuda_executor_kernel_submit() {
 bool test_cuda_executor_synchronize() {
     std::cout << "Testing CudaExecutor synchronize..." << std::endl;
     
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_executor";
     config.backend = GpuBackend::CUDA;
@@ -410,7 +410,7 @@ bool test_cuda_executor_synchronize() {
 bool test_cuda_executor_status() {
     std::cout << "Testing CudaExecutor status..." << std::endl;
     
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_executor";
     config.backend = GpuBackend::CUDA;
@@ -446,7 +446,7 @@ bool test_cuda_executor_status() {
 bool test_cuda_executor_stream_management() {
     std::cout << "Testing CudaExecutor stream management..." << std::endl;
     
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_executor";
     config.backend = GpuBackend::CUDA;
@@ -504,7 +504,7 @@ bool test_cuda_executor_stream_management() {
 bool test_cuda_executor_multi_stream_parallel() {
     std::cout << "Testing CudaExecutor multi-stream parallel..." << std::endl;
     
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_executor";
     config.backend = GpuBackend::CUDA;
@@ -555,7 +555,7 @@ bool test_cuda_executor_multi_stream_parallel() {
 bool test_cuda_executor_stream_sync() {
     std::cout << "Testing CudaExecutor stream sync..." << std::endl;
     
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_executor";
     config.backend = GpuBackend::CUDA;
@@ -598,7 +598,7 @@ bool test_cuda_executor_stream_sync() {
 bool test_cuda_executor_async_copy_overlap() {
     std::cout << "Testing CudaExecutor async copy with stream (overlap)..." << std::endl;
 
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_executor";
     config.backend = GpuBackend::CUDA;
@@ -667,7 +667,7 @@ bool test_cuda_executor_async_copy_overlap() {
 bool test_cuda_executor_stream_callback() {
     std::cout << "Testing CudaExecutor stream callback..." << std::endl;
 
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_executor";
     config.backend = GpuBackend::CUDA;
@@ -741,7 +741,7 @@ bool test_cuda_executor_stream_callback() {
 
 bool test_cuda_exception_propagation() {
     std::cout << "Testing CudaExecutor exception propagation..." << std::endl;
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_exception";
     config.backend = GpuBackend::CUDA;
@@ -778,7 +778,7 @@ bool test_cuda_exception_propagation() {
 
 bool test_cuda_error_handling() {
     std::cout << "Testing CudaExecutor CUDA error handling..." << std::endl;
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_error";
     config.backend = GpuBackend::CUDA;
@@ -816,7 +816,7 @@ bool test_cuda_error_handling() {
 
 bool test_cuda_exception_callback() {
     std::cout << "Testing CudaExecutor exception callback..." << std::endl;
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_callback";
     config.backend = GpuBackend::CUDA;
@@ -855,7 +855,7 @@ bool test_cuda_exception_callback() {
 
 bool test_cuda_executor_priority_queue() {
     std::cout << "Testing CudaExecutor priority queue..." << std::endl;
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_priority";
     config.device_id = 0;
@@ -918,7 +918,7 @@ static double median_of_five(double a, double b, double c, double d, double e) {
 
 bool test_cuda_executor_batch_submit() {
     std::cout << "Testing CudaExecutor batch submit..." << std::endl;
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_batch";
     config.device_id = 0;
@@ -1049,7 +1049,7 @@ bool test_cuda_executor_batch_submit() {
 
 bool test_cuda_executor_task_dependency() {
     std::cout << "Testing CudaExecutor task dependency (submit_kernel_after)..." << std::endl;
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig config;
     config.name = "test_cuda_dep";
     config.device_id = 0;
@@ -1142,14 +1142,14 @@ bool test_cuda_executor_batch_submit_returns_future_per_input() {
         }
     }
 
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     {
         // Path B: stop-during-batch. With CUDA enabled, run a real executor and
         // call stop() from another thread while submit_kernels_batch is
         // iterating the chunk loop. The fix at cuda_executor.cpp:1147 turns
         // `j < end` into `j < tasks.size()` so the result vector is always
         // sized to N. This test is best-effort on hosts without a GPU (the
-        // outer block is compiled out below EXECUTOR_ENABLE_CUDA).
+        // outer block is compiled out below KAIRO_ENABLE_CUDA).
         GpuExecutorConfig cfg2;
         cfg2.name = "test_p001";
         cfg2.device_id = 0;

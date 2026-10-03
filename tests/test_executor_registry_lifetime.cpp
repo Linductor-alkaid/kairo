@@ -4,9 +4,9 @@
 #include <iostream>
 #include <thread>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 #define TEST_ASSERT(condition, message)                                      \

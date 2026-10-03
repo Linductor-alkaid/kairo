@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include "executor/gpu/opencl_executor.hpp"
-#include "executor/gpu/opencl_loader.hpp"
-#include "executor/types.hpp"
+#include "kairo/gpu/opencl_executor.hpp"
+#include "kairo/gpu/opencl_loader.hpp"
+#include "kairo/types.hpp"
 #include <atomic>
 #include <stdexcept>
 #include <thread>
@@ -12,7 +12,7 @@
 #include <thread>
 #include <vector>
 
-using namespace executor::gpu;
+using namespace kairo::gpu;
 
 class OpenCLExecutorTest : public ::testing::Test {
 protected:
@@ -339,7 +339,7 @@ TEST_F(OpenCLExecutorTest, StopDrainsOrFailsPendingFutures) {
 
     EXPECT_NO_THROW(first.get());
     for (auto& future : trailing_futures) {
-        EXPECT_THROW(future.get(), executor::ExecutorStopping);
+        EXPECT_THROW(future.get(), kairo::ExecutorStopping);
     }
 }
 

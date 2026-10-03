@@ -37,10 +37,10 @@
 #include <memory>
 #include <thread>
 
-#include <executor/config.hpp>
-#include <executor/executor_manager.hpp>
+#include <kairo/config.hpp>
+#include <kairo/executor_manager.hpp>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 #define TEST_ASSERT(condition, message)                                       \

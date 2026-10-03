@@ -3,12 +3,12 @@
 #include <iostream>
 #include <stdexcept>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 int main() {
-    auto& executor = executor::Executor::instance();
+    auto& executor = kairo::Executor::instance();
     std::atomic<int> callbacks{0};
-    executor.set_failure_callback([&](const executor::ExecutorFailureEvent&) { ++callbacks; });
+    executor.set_failure_callback([&](const kairo::ExecutorFailureEvent&) { ++callbacks; });
 
     auto failed = executor.submit([]() -> int {
         throw std::runtime_error("expected observability failure");

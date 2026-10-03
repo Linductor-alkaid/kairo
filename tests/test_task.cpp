@@ -7,11 +7,11 @@
 #include <algorithm>
 
 // 包含 task 模块的头文件
-#include <executor/types.hpp>
-#include "executor/task/task.hpp"
-#include "executor/task/task_dependency_manager.hpp"
+#include <kairo/types.hpp>
+#include "kairo/task/task.hpp"
+#include "kairo/task/task_dependency_manager.hpp"
 
-using namespace executor;
+using namespace kairo;
 
 // 测试辅助宏
 #define TEST_ASSERT(condition, message) \

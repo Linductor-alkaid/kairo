@@ -7,15 +7,15 @@ description: 从公开 Facade 了解 Manager、线程池、任务图、实时执
 
 ## 这页解决什么问题
 
-当你需要判断一个行为究竟来自 Facade、线程池、任务图还是平台层时，不要从所有头文件开始浏览。Executor 的源码按“公开契约、资源拥有者、执行路径、诊断路径”分层；先找到边界，再追一条任务的生命周期，效率最高。
+当你需要判断一个行为究竟来自 Facade、线程池、任务图还是平台层时，不要从所有头文件开始浏览。Kairo 的源码按“公开契约、资源拥有者、执行路径、诊断路径”分层；先找到边界，再追一条任务的生命周期，效率最高。
 
-这页描述当前源码组织。`include/executor/` 中的 Facade 和类型是用户可依赖入口；`src/executor/` 中的调度器、队列和同步实现可能重构，但其外部可观察行为应由测试和状态 API 固定。
+这页描述当前源码组织。`include/kairo/` 中的 Facade 和类型是用户可依赖入口；`src/kairo/` 中的调度器、队列和同步实现可能重构，但其外部可观察行为应由测试和状态 API 固定。
 
 ## 四层结构
 
 ```mermaid
 flowchart TD
-    A[应用<br/>submit / future / status / shutdown] --> B[公开 Facade<br/>include/executor/executor.hpp]
+    A[应用<br/>submit / future / status / shutdown] --> B[公开 Facade<br/>include/kairo/executor.hpp]
     B --> C[资源拥有者<br/>executor_manager.cpp]
     C --> D[ThreadPoolExecutor]
     C --> E[RealtimeThreadExecutor]
@@ -42,14 +42,14 @@ flowchart TD
 
 | 你看到的行为 | 首先读 | 然后读 | 验证证据 |
 | --- | --- | --- | --- |
-| `submit_auto(lambda)` 返回 future | `include/executor/executor.hpp` 的路由和模板 API | `src/executor/thread_pool_executor.cpp`、`thread_pool.cpp` | Facade/routing、异常和超时测试 |
-| 依赖任务未执行 | Facade 的 `TaskGraphState` 和 `submit_after_with_handle` | `src/executor/task/task_dependency_manager.cpp` | `tests/test_executor_facade*`、依赖教程 smoke |
+| `submit_auto(lambda)` 返回 future | `include/kairo/executor.hpp` 的路由和模板 API | `src/kairo/thread_pool_executor.cpp`、`thread_pool.cpp` | Facade/routing、异常和超时测试 |
+| 依赖任务未执行 | Facade 的 `TaskGraphState` 和 `submit_after_with_handle` | `src/kairo/task/task_dependency_manager.cpp` | `tests/test_executor_facade*`、依赖教程 smoke |
 | 优先级没有抢占 | `PriorityScheduler::dequeue()` | `TaskDispatcher::dispatch()`、worker loop | 优先级测试和队列状态 |
 | resize 后任务没有丢失 | `ThreadPool::resize_local_queues()` | `TaskDispatcher::dispatch_batch()` 回入队分支 | resize/并发停止测试 |
 | 实时任务 drop | `Executor::push_realtime_task()` | `RealtimeThreadExecutor::push_task_ex()` | realtime push overflow 测试、状态计数 |
-| 无锁队列“偶发空/满” | `src/executor/util/lockfree_queue.hpp` | 调用方的容量和对象池逻辑 | MPSC benchmark、TSAN/压力测试 |
+| 无锁队列“偶发空/满” | `src/kairo/util/lockfree_queue.hpp` | 调用方的容量和对象池逻辑 | MPSC benchmark、TSAN/压力测试 |
 
-源码阅读时先找“谁拥有对象”和“谁能让它退出”：`Executor` 拥有实例化模式的 Manager，Manager 拥有执行器，Adapter 用 `shared_ptr` 快照保护 stop/submit 竞争；实时 `cycle_manager` 则由调用方拥有，Executor 只借用指针。
+源码阅读时先找“谁拥有对象”和“谁能让它退出”：`Executor` 拥有实例化模式的 Manager，Manager 拥有执行器，Adapter 用 `shared_ptr` 快照保护 stop/submit 竞争；实时 `cycle_manager` 则由调用方拥有，Kairo 只借用指针。
 
 ## 同步域不是一把全局锁
 

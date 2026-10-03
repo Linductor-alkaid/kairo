@@ -8,12 +8,12 @@
 #include <algorithm>
 
 // 包含 ExecutorManager 的头文件
-#include <executor/executor_manager.hpp>
-#include <executor/config.hpp>
-#include <executor/types.hpp>
-#include <executor/interfaces.hpp>
+#include <kairo/executor_manager.hpp>
+#include <kairo/config.hpp>
+#include <kairo/types.hpp>
+#include <kairo/interfaces.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 // 测试辅助宏
 #define TEST_ASSERT(condition, message) \
@@ -317,7 +317,7 @@ bool test_create_gpu_executor() {
     
     ExecutorManager manager;
     
-#ifdef EXECUTOR_ENABLE_GPU
+#ifdef KAIRO_ENABLE_GPU
     // 创建有效的 GPU 配置
     gpu::GpuExecutorConfig config;
     config.name = "cuda_test";

@@ -1,4 +1,4 @@
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <gtest/gtest.h>
 
@@ -14,8 +14,8 @@ using namespace std::chrono_literals;
 
 namespace {
 
-executor::ExecutorConfig config() {
-    executor::ExecutorConfig cfg;
+kairo::ExecutorConfig config() {
+    kairo::ExecutorConfig cfg;
     cfg.min_threads = 2;
     cfg.max_threads = 2;
     cfg.queue_capacity = 64;
@@ -23,7 +23,7 @@ executor::ExecutorConfig config() {
 }
 
 TEST(ExecutorTaskGraphTest, SubmitAfterRunsAfterDependency) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(config()));
 
     std::atomic<int> order{0};
@@ -45,7 +45,7 @@ TEST(ExecutorTaskGraphTest, SubmitAfterRunsAfterDependency) {
 }
 
 TEST(ExecutorTaskGraphTest, SnapshotIdentifiesDependencyBlockedHandle) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(config()));
     executor.set_in_flight_task_capacity(16);
 
@@ -63,19 +63,19 @@ TEST(ExecutorTaskGraphTest, SnapshotIdentifiesDependencyBlockedHandle) {
     const auto snapshot = executor.get_snapshot();
     const auto blocked = std::find_if(
         snapshot.in_flight_tasks.begin(), snapshot.in_flight_tasks.end(),
-        [&](const executor::TaskLifecycleSnapshot& task) {
+        [&](const kairo::TaskLifecycleSnapshot& task) {
             return task.task_id == dependent.handle.id();
         });
     ASSERT_NE(blocked, snapshot.in_flight_tasks.end());
     EXPECT_EQ(blocked->task_type, "task_graph");
-    EXPECT_EQ(blocked->state, executor::TaskLifecycleState::DependencyBlocked);
+    EXPECT_EQ(blocked->state, kairo::TaskLifecycleState::DependencyBlocked);
 
     release_root.set_value();
     EXPECT_EQ(root.future.get(), 1);
     EXPECT_EQ(dependent.future.get(), 2);
     const auto completed = executor.get_snapshot();
     EXPECT_EQ(std::count_if(completed.in_flight_tasks.begin(), completed.in_flight_tasks.end(),
-                            [&](const executor::TaskLifecycleSnapshot& task) {
+                            [&](const kairo::TaskLifecycleSnapshot& task) {
                                 return task.task_id == root.handle.id() ||
                                        task.task_id == dependent.handle.id();
                             }),
@@ -84,7 +84,7 @@ TEST(ExecutorTaskGraphTest, SnapshotIdentifiesDependencyBlockedHandle) {
 }
 
 TEST(ExecutorTaskGraphTest, WhenAllWaitsForAllDependencies) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(config()));
 
     std::atomic<int> completed{0};
@@ -111,7 +111,7 @@ TEST(ExecutorTaskGraphTest, WhenAllWaitsForAllDependencies) {
 }
 
 TEST(ExecutorTaskGraphTest, NestedWhenAllPropagatesCompletion) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(config()));
 
     auto first = executor.submit_with_handle([] {
@@ -136,7 +136,7 @@ TEST(ExecutorTaskGraphTest, NestedWhenAllPropagatesCompletion) {
 }
 
 TEST(ExecutorTaskGraphTest, DependencyFailureSkipsDependentTask) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(config()));
 
     auto failing = executor.submit_with_handle([]() -> int {
@@ -158,7 +158,7 @@ TEST(ExecutorTaskGraphTest, DependencyFailureSkipsDependentTask) {
 }
 
 TEST(ExecutorTaskGraphTest, WhenAllFailureSkipsDependentTask) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(config()));
 
     auto successful = executor.submit_with_handle([] { return 1; });
@@ -182,8 +182,8 @@ TEST(ExecutorTaskGraphTest, WhenAllFailureSkipsDependentTask) {
 }
 
 TEST(ExecutorTaskGraphTest, RejectsHandleFromAnotherExecutor) {
-    executor::Executor first_executor;
-    executor::Executor second_executor;
+    kairo::Executor first_executor;
+    kairo::Executor second_executor;
     ASSERT_TRUE(first_executor.initialize(config()));
     ASSERT_TRUE(second_executor.initialize(config()));
 
@@ -203,7 +203,7 @@ TEST(ExecutorTaskGraphTest, RejectsHandleFromAnotherExecutor) {
 }
 
 TEST(ExecutorTaskGraphTest, CompletedHandleCanStillCreateDependentTask) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(config()));
 
     auto completed = executor.submit_with_handle([] { return 7; });
@@ -216,7 +216,7 @@ TEST(ExecutorTaskGraphTest, CompletedHandleCanStillCreateDependentTask) {
 }
 
 TEST(ExecutorTaskGraphTest, TerminalHandleRetentionIsBounded) {
-    executor::Executor executor;
+    kairo::Executor executor;
     auto cfg = config();
     cfg.task_graph_retention_capacity = 1;
     ASSERT_TRUE(executor.initialize(cfg));
@@ -238,7 +238,7 @@ TEST(ExecutorTaskGraphTest, TerminalHandleRetentionIsBounded) {
 }
 
 TEST(ExecutorTaskGraphTest, ZeroRetentionExpiresTerminalHandlesImmediately) {
-    executor::Executor executor;
+    kairo::Executor executor;
     auto cfg = config();
     cfg.task_graph_retention_capacity = 0;
     ASSERT_TRUE(executor.initialize(cfg));
@@ -253,7 +253,7 @@ TEST(ExecutorTaskGraphTest, ZeroRetentionExpiresTerminalHandlesImmediately) {
 }
 
 TEST(ExecutorTaskGraphTest, ActiveDependentPreventsEarlyHandleExpiration) {
-    executor::Executor executor;
+    kairo::Executor executor;
     auto cfg = config();
     cfg.task_graph_retention_capacity = 0;
     ASSERT_TRUE(executor.initialize(cfg));
@@ -278,11 +278,11 @@ TEST(ExecutorTaskGraphTest, ActiveDependentPreventsEarlyHandleExpiration) {
 }
 
 TEST(ExecutorTaskGraphTest, InvalidHandleReturnsReadyExceptionalFuture) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(config()));
 
     std::atomic<bool> ran{false};
-    auto future = executor.submit_after(executor::TaskHandle{}, [&] {
+    auto future = executor.submit_after(kairo::TaskHandle{}, [&] {
         ran.store(true, std::memory_order_release);
     });
 
@@ -294,10 +294,10 @@ TEST(ExecutorTaskGraphTest, InvalidHandleReturnsReadyExceptionalFuture) {
 }
 
 TEST(ExecutorTaskGraphTest, ShutdownMakesPendingDependencyObservable) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(config()));
 
-    executor::TaskHandle invalid;
+    kairo::TaskHandle invalid;
     auto future = executor.submit_after(invalid, [] {
         return 1;
     });

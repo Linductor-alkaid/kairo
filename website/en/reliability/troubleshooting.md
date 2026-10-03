@@ -58,7 +58,7 @@ message/status and `get_snapshot()` before the predetermined degradation policy.
 | `active_tasks>0`, `queued_tasks=0` | Started work exceeds budget | Check deadline, locks, blocking I/O, cooperative stop |
 | `active_tasks>0`, `queued_tasks>0` | Long work plus backlog | Stop intake, then choose continued drain or persistence |
 | `active_tasks=0`, `pending_tasks>0` | Work relationship remains unsettled | Inspect dependency chains, submission race, related future |
-| `is_running=false` | Executor stopped | Do not keep waiting/submitting; inspect lifecycle order |
+| `is_running=false` | Kairo stopped | Do not keep waiting/submitting; inspect lifecycle order |
 
 Timeout neither kills arbitrary C++ work nor rolls back effects. Decide whether to keep waiting, abandon the response while allowing background completion, persist/retry input, or accept fast-shutdown consequences. Retriable effects need idempotency keys.
 

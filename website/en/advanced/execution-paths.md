@@ -1,9 +1,9 @@
 ---
-title: How Tasks Travel Through Executor
+title: How Tasks Travel Through Kairo
 description: Explain current ordinary and realtime task scheduling, execution, state, and shutdown paths while separating implementation from stable API.
 ---
 
-# How Tasks Travel Through Executor
+# How Tasks Travel Through Kairo
 
 ## Goal
 
@@ -13,7 +13,7 @@ Understand how work runs and completes while keeping current internal paths dist
 
 ```mermaid
 flowchart LR
-    A[Executor Facade] --> B[ExecutorManager]
+    A[Kairo Facade] --> B[ExecutorManager]
     B --> C[ThreadPoolExecutor\nIAsyncExecutor]
     C --> D[ThreadPool]
     D --> E[PriorityScheduler]
@@ -73,7 +73,7 @@ global scheduler empty
 
 ```mermaid
 flowchart LR
-    A[Executor Facade] --> B[ExecutorManager]
+    A[Kairo Facade] --> B[ExecutorManager]
     B --> C[RealtimeThreadExecutor]
     C --> D[cycle trigger\nsleep_until or ICycleManager]
     D --> E[cycle_callback]
@@ -93,6 +93,6 @@ Normal `wait_for_completion_ex()` cannot prove realtime callback/queue completio
 
 `ThreadPoolExecutor` copies a local pool `shared_ptr` under mutex; stop clears its member then shuts down the local copy. Concurrent submission therefore gets a still-live pool or a rejection, never freed memory. `stop(false)` may move pool shutdown to a detached resource-reclamation thread; it does not kill running user work or define recovery semantics.
 
-`ThreadPool`, `PriorityScheduler`, `TaskDispatcher`, worker queues, and steal policy can change while public behavior remains stable. Treat this as current implementation explanation, not a callable integration API. See current source entries [`executor.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/executor.cpp), [`executor_manager.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/executor_manager.cpp), [`thread_pool.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/thread_pool/thread_pool.cpp), and [`task_dispatcher.hpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/thread_pool/task_dispatcher.hpp).
+`ThreadPool`, `PriorityScheduler`, `TaskDispatcher`, worker queues, and steal policy can change while public behavior remains stable. Treat this as current implementation explanation, not a callable integration API. See current source entries [`executor.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/executor.cpp), [`executor_manager.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/executor_manager.cpp), [`thread_pool.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/thread_pool/thread_pool.cpp), and [`task_dispatcher.hpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/thread_pool/task_dispatcher.hpp).
 
 Next: [lock-free and performance experiments](/en/advanced/lockfree-and-performance) or [performance measurement](/en/advanced/performance-measurement).

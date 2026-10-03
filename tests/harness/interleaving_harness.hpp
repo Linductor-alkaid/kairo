@@ -9,7 +9,7 @@
 #include <string_view>
 #include <unordered_map>
 
-namespace executor::test::harness {
+namespace kairo::test::harness {
 
 class Stepper {
 public:
@@ -127,4 +127,4 @@ private:
     std::unordered_map<std::string, PointState> points_;
 };
 
-} // namespace executor::test::harness
+} // namespace kairo::test::harness

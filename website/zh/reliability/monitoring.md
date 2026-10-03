@@ -1,6 +1,6 @@
 ---
 title: 监控与采样
-description: 使用任务统计与采样率，在可接受开销内观察 Executor 的长期趋势。
+description: 使用任务统计与采样率，在可接受开销内观察 Kairo 的长期趋势。
 ---
 
 # 监控与采样
@@ -23,11 +23,11 @@ const auto all_stats = executor.get_all_task_statistics();
 
 `TaskStatistics` 包含总数、成功、失败、超时、总执行时间及最大/最小执行时间。未知任务类型返回零值统计；关闭监控期间新完成的任务不会增加计数。
 
-完整示例：[`examples/monitoring_sampling_example.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/monitoring_sampling_example.cpp)。
+完整示例：[`examples/monitoring_sampling_example.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/monitoring_sampling_example.cpp)。
 
 ## 完整生命周期快照
 
-需要一次保存 Executor 整体现场时，使用 `get_snapshot()`：
+需要一次保存 Kairo 整体现场时，使用 `get_snapshot()`：
 
 ```cpp
 const auto snapshot = executor.get_snapshot();

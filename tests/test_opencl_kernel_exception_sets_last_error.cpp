@@ -10,16 +10,16 @@
 #include <vector>
 
 #define private public
-#include "executor/gpu/opencl_executor.hpp"
-#include "executor/gpu/opencl_loader.hpp"
+#include "kairo/gpu/opencl_executor.hpp"
+#include "kairo/gpu/opencl_loader.hpp"
 #undef private
 
-using executor::gpu::GpuBackend;
-using executor::gpu::GpuExecutorConfig;
-using executor::gpu::GpuTaskConfig;
-using executor::gpu::OpenCLExecutor;
-using executor::gpu::OpenCLFunctionPointers;
-using executor::gpu::OpenCLLoader;
+using kairo::gpu::GpuBackend;
+using kairo::gpu::GpuExecutorConfig;
+using kairo::gpu::GpuTaskConfig;
+using kairo::gpu::OpenCLExecutor;
+using kairo::gpu::OpenCLFunctionPointers;
+using kairo::gpu::OpenCLLoader;
 
 namespace {
 

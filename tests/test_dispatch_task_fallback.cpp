@@ -1,7 +1,7 @@
-#include "executor/thread_pool/task_dispatcher.hpp"
-#include "executor/thread_pool/thread_pool.hpp"
-#include "executor/thread_pool/load_balancer.hpp"
-#include "executor/thread_pool/priority_scheduler.hpp"
+#include "kairo/thread_pool/task_dispatcher.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
+#include "kairo/thread_pool/load_balancer.hpp"
+#include "kairo/thread_pool/priority_scheduler.hpp"
 
 #include <gtest/gtest.h>
 
@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 
 namespace {
 

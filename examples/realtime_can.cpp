@@ -19,11 +19,11 @@
 #include <thread>
 #include <unordered_map>
 
-#include <executor/executor.hpp>
-#include <executor/interfaces.hpp>
-#include <executor/types.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/interfaces.hpp>
+#include <kairo/types.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 // ========== SimpleCycleManager：基于 sleep_until 的 ICycleManager 实现 ==========
 

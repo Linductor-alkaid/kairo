@@ -1,4 +1,4 @@
-#include <executor/comm.hpp>
+#include <kairo/comm.hpp>
 
 #include <gtest/gtest.h>
 
@@ -9,7 +9,7 @@
 
 namespace {
 
-using namespace executor::comm;
+using namespace kairo::comm;
 
 template <class Primitive>
 void expect_lock_free_contract(const Primitive& primitive) {

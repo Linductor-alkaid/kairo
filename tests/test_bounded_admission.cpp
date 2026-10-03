@@ -6,7 +6,7 @@
 // ex.initialize() 将不执行、facade 懒初始化为默认配置（admission 关闭），
 // 测试既空转也可能与自身的 blocker 释放顺序死锁。ADM_CHECK 显式求值并在
 // 失败时打印退出，保证 Release 运行同等地验证验收标准。
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -37,9 +37,9 @@ bool settled_soon(Future& future, std::chrono::seconds budget) {
 }  // namespace
 
 int main() {
-    using executor::CapacityExhaustedException;
-    using executor::Executor;
-    using executor::ExecutorConfig;
+    using kairo::CapacityExhaustedException;
+    using kairo::Executor;
+    using kairo::ExecutorConfig;
 
     // 验收 1：单 worker、总容量 N 时第 N+1 个未结算 submit 明确拒绝且 future
     // 就绪；解除后恢复。验收 4 前半：failure 计数可观测。
@@ -87,7 +87,7 @@ int main() {
         ADM_CHECK(failure_status.total_count >= 1);
         const auto recent = ex.get_recent_failures(8);
         ADM_CHECK(!recent.empty());
-        ADM_CHECK(recent.front().kind == executor::FailureKind::CapacityExhausted);
+        ADM_CHECK(recent.front().kind == kairo::FailureKind::CapacityExhausted);
         ex.shutdown();
     }
 
@@ -123,10 +123,10 @@ int main() {
         cancel_blocker_started_future.wait();
         auto cancelled = ex.submit_with_handle([] { ADM_CHECK(false && "cancelled before start"); });
         const auto response = ex.request_task_cancel(cancelled.handle);
-        ADM_CHECK(response.result == executor::TaskCancellationResult::RequestedBeforeStart);
+        ADM_CHECK(response.result == kairo::TaskCancellationResult::RequestedBeforeStart);
         bool saw_cancel = false;
         try { (void)cancelled.future.get(); }
-        catch (const executor::TaskCancelled&) { saw_cancel = true; }
+        catch (const kairo::TaskCancelled&) { saw_cancel = true; }
         ADM_CHECK(saw_cancel);
         ADM_CHECK(ex.get_in_flight_submissions() == 1);  // 仅剩 blocker
         release_cancel.set_value();
@@ -140,7 +140,7 @@ int main() {
         auto timed_out = ex.submit([] { ADM_CHECK(false && "must time out"); });
         bool saw_timeout = false;
         try { (void)timed_out.get(); }
-        catch (const executor::TimedOutException&) { saw_timeout = true; }
+        catch (const kairo::TimedOutException&) { saw_timeout = true; }
         ADM_CHECK(saw_timeout);
         sleeper.get();
         ADM_CHECK(ex.get_in_flight_submissions() == 0);
@@ -155,7 +155,7 @@ int main() {
         config.max_threads = 1;
         config.max_in_flight_tasks = 2;
         ADM_CHECK(ex.initialize(config));
-        executor::SerialExecutionContext context;
+        kairo::SerialExecutionContext context;
 
         std::promise<void> release;
         auto release_future = release.get_future().share();
@@ -233,8 +233,8 @@ int main() {
         ADM_CHECK(ex.initialize(config));
 
         std::atomic<uint64_t> capacity_rejections{0};
-        ex.set_failure_callback([&](const executor::ExecutorFailureEvent& event) {
-            if (event.kind == executor::FailureKind::CapacityExhausted) {
+        ex.set_failure_callback([&](const kairo::ExecutorFailureEvent& event) {
+            if (event.kind == kairo::FailureKind::CapacityExhausted) {
                 capacity_rejections.fetch_add(1, std::memory_order_relaxed);
             }
         });
@@ -260,7 +260,7 @@ int main() {
             bool settled = false;
             try { future.get(); settled = true; }
             catch (const CapacityExhaustedException&) { settled = true; }
-            catch (const executor::ExecutorStopping&) { settled = true; }
+            catch (const kairo::ExecutorStopping&) { settled = true; }
             catch (const std::runtime_error&) {
                 // 池停止后的 SubmitRejected 结算路径。
                 settled = true;

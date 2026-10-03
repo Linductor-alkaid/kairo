@@ -1,4 +1,4 @@
-#include <executor/comm.hpp>
+#include <kairo/comm.hpp>
 
 #include <gtest/gtest.h>
 
@@ -12,10 +12,10 @@ using namespace std::chrono_literals;
 
 namespace {
 
-using executor::comm::CommErrorCode;
-using executor::comm::CommEventKind;
-using executor::comm::PhaseGate;
-using executor::comm::Sequencer;
+using kairo::comm::CommErrorCode;
+using kairo::comm::CommEventKind;
+using kairo::comm::PhaseGate;
+using kairo::comm::Sequencer;
 
 TEST(CommPhaseGateTest, WaitBeforeAdvanceWakesWhenPhaseReached) {
     PhaseGate gate("startup");
@@ -76,7 +76,7 @@ TEST(CommPhaseGateTest, CloseWakesWaiter) {
 TEST(CommPhaseGateTest, AdvanceToRejectsRollbackAndCountsMissedPhase) {
     PhaseGate gate("phase");
     int missed_events = 0;
-    gate.set_event_callback([&](const executor::comm::CommEvent& event) noexcept {
+    gate.set_event_callback([&](const kairo::comm::CommEvent& event) noexcept {
         if (event.kind == CommEventKind::MissedPhase) {
             ++missed_events;
             EXPECT_EQ(event.component_name, "phase");
@@ -163,7 +163,7 @@ TEST(CommPhaseGateTest, DirectWriterLeaseBlocksAdvanceWithoutBinding) {
 
 TEST(CommPhaseGateTest, WriterLeaseBlocksAdvanceUntilReleased) {
     PhaseGate gate;
-    executor::comm::DoubleBuffer<int> buffer(0);
+    kairo::comm::DoubleBuffer<int> buffer(0);
     ASSERT_TRUE(buffer.bind_to_phase_gate(gate));
     auto lease = gate.try_begin_let_write();
     ASSERT_TRUE(lease.has_value());
@@ -176,7 +176,7 @@ TEST(CommPhaseGateTest, LeaseOutlivesBindingAndStillBlocksAdvance) {
     PhaseGate gate;
     std::optional<PhaseGate::LetWriteLease> lease;
     {
-        executor::comm::DoubleBuffer<int> buffer(0);
+        kairo::comm::DoubleBuffer<int> buffer(0);
         ASSERT_TRUE(buffer.bind_to_phase_gate(gate));
         lease = gate.try_begin_let_read();
         ASSERT_TRUE(lease.has_value());
@@ -189,7 +189,7 @@ TEST(CommPhaseGateTest, LeaseOutlivesBindingAndStillBlocksAdvance) {
 
 TEST(CommPhaseGateTest, ReaderLeaseBlocksAdvanceUntilReleased) {
     PhaseGate gate;
-    executor::comm::DoubleBuffer<int> buffer(0);
+    kairo::comm::DoubleBuffer<int> buffer(0);
     ASSERT_TRUE(buffer.bind_to_phase_gate(gate));
     auto lease = gate.try_begin_let_read();
     ASSERT_TRUE(lease.has_value());
@@ -200,7 +200,7 @@ TEST(CommPhaseGateTest, ReaderLeaseBlocksAdvanceUntilReleased) {
 
 TEST(CommPhaseGateTest, AdvanceAndAdvanceToShareLetTransitionPath) {
     PhaseGate gate;
-    executor::comm::DoubleBuffer<int> buffer(0);
+    kairo::comm::DoubleBuffer<int> buffer(0);
     ASSERT_TRUE(buffer.bind_to_phase_gate(gate));
     EXPECT_TRUE(gate.advance());
     EXPECT_EQ(gate.current_phase(), 1U);
@@ -212,8 +212,8 @@ TEST(CommPhaseGateTest, AdvanceAndAdvanceToShareLetTransitionPath) {
 TEST(CommPhaseGateTest, LetBindingRejectsSnapshotSentinelPhase) {
     constexpr uint64_t kLetSentinel = (uint64_t{1} << 63U) - 1U;
     PhaseGate gate;
-    executor::comm::LatestMailbox<int> mailbox;
-    executor::comm::DoubleBuffer<int> buffer(0);
+    kairo::comm::LatestMailbox<int> mailbox;
+    kairo::comm::DoubleBuffer<int> buffer(0);
     ASSERT_TRUE(mailbox.bind_to_phase_gate(gate));
     ASSERT_TRUE(buffer.bind_to_phase_gate(gate));
 
@@ -226,7 +226,7 @@ TEST(CommPhaseGateTest, LetBindingRejectsSnapshotSentinelPhase) {
 
 TEST(CommPhaseGateTest, ConcurrentLetAdvancesAllowOnlyOneSuccess) {
     PhaseGate gate;
-    executor::comm::DoubleBuffer<int> buffer(0);
+    kairo::comm::DoubleBuffer<int> buffer(0);
     ASSERT_TRUE(buffer.bind_to_phase_gate(gate));
     constexpr int kThreads = 8;
     std::atomic<int> successes{0};
@@ -246,7 +246,7 @@ TEST(CommPhaseGateTest, ConcurrentLetAdvancesAllowOnlyOneSuccess) {
 
 TEST(CommPhaseGateTest, ConcurrentLeasePressurePreservesMonotonicPhases) {
     PhaseGate gate;
-    executor::comm::DoubleBuffer<int> buffer(0);
+    kairo::comm::DoubleBuffer<int> buffer(0);
     ASSERT_TRUE(buffer.bind_to_phase_gate(gate));
     std::atomic<bool> stop{false};
     std::vector<std::thread> workers;
@@ -283,7 +283,7 @@ TEST(CommPhaseGateTest, ConcurrentLeasePressurePreservesMonotonicPhases) {
 
 TEST(CommPhaseGateTest, LeaseLifecycleAndCloseAreObservable) {
     PhaseGate gate;
-    executor::comm::DoubleBuffer<int> buffer(0);
+    kairo::comm::DoubleBuffer<int> buffer(0);
     ASSERT_TRUE(buffer.bind_to_phase_gate(gate));
     {
         auto reader = gate.try_begin_let_read();

@@ -3,12 +3,12 @@
  * 检查 LockFreeQueue 的内存布局，识别 false sharing 风险
  */
 
-#include "executor/util/lockfree_queue.hpp"
+#include "kairo/util/lockfree_queue.hpp"
 #include <iostream>
 #include <iomanip>
 #include <functional>
 
-using namespace executor::util;
+using namespace kairo::util;
 
 template<typename T>
 void analyze_layout() {

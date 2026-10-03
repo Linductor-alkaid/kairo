@@ -18,10 +18,10 @@
 #include <vector>
 
 #define private public
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #undef private
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message)                                           \
     do {                                                                         \

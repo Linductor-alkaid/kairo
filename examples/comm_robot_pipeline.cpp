@@ -1,5 +1,5 @@
 /**
- * @brief Robot control pipeline using executor::comm facade.
+ * @brief Robot control pipeline using kairo::comm facade.
  *
  * Scenario:
  * - A sensor thread publishes frames to a planner and recorder through Topic.
@@ -10,8 +10,8 @@
  * - CPU bootstrap tasks use TaskHandle / when_all before the pipeline starts.
  */
 
-#include <executor/comm.hpp>
-#include <executor/executor.hpp>
+#include <kairo/comm.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -48,7 +48,7 @@ struct SystemState {
     double throttle = 0.0;
 };
 
-void print_stats(const char* name, const executor::comm::CommStats& stats) {
+void print_stats(const char* name, const kairo::comm::CommStats& stats) {
     std::cout << name
               << ": sent=" << stats.sent_count
               << ", received=" << stats.received_count
@@ -68,31 +68,31 @@ void print_stats(const char* name, const executor::comm::CommStats& stats) {
 } // namespace
 
 int main() {
-    executor::comm::TopicSubscriptionOptions planner_options;
+    kairo::comm::TopicSubscriptionOptions planner_options;
     planner_options.capacity = 16;
     planner_options.name = "planner_frames";
 
-    executor::comm::TopicSubscriptionOptions recorder_options;
+    kairo::comm::TopicSubscriptionOptions recorder_options;
     recorder_options.capacity = 2;
-    recorder_options.drop_policy = executor::comm::DropPolicy::KeepLatest;
+    recorder_options.drop_policy = kairo::comm::DropPolicy::KeepLatest;
     recorder_options.name = "recorder_frames";
 
-    executor::comm::RealtimeChannelOptions command_options;
+    kairo::comm::RealtimeChannelOptions command_options;
     command_options.capacity = 8;
     command_options.max_items_per_cycle = 2;
     command_options.name = "control_commands";
 
-    executor::comm::Topic<SensorFrame> sensor_frames("sensor_frames");
+    kairo::comm::Topic<SensorFrame> sensor_frames("sensor_frames");
     auto planner_frames = sensor_frames.subscribe(planner_options);
     auto recorder_frames = sensor_frames.subscribe(recorder_options);
-    executor::comm::LatestMailbox<ControlConfig> control_config("control_config");
-    executor::comm::RealtimeChannel<ControlCommand> control_commands(command_options);
-    executor::comm::PhaseGate startup("startup");
-    executor::comm::DoubleBuffer<SystemState> system_state(SystemState{}, "system_state");
+    kairo::comm::LatestMailbox<ControlConfig> control_config("control_config");
+    kairo::comm::RealtimeChannel<ControlCommand> control_commands(command_options);
+    kairo::comm::PhaseGate startup("startup");
+    kairo::comm::DoubleBuffer<SystemState> system_state(SystemState{}, "system_state");
 
-    auto comm_event_logger = [](const executor::comm::CommEvent& event) {
+    auto comm_event_logger = [](const kairo::comm::CommEvent& event) {
         std::cout << "[comm] " << event.component_name << ": "
-                  << executor::comm::comm_event_kind_to_string(event.kind)
+                  << kairo::comm::comm_event_kind_to_string(event.kind)
                   << " (" << event.message << ")\n";
     };
     planner_frames.set_event_callback(comm_event_logger);
@@ -102,8 +102,8 @@ int main() {
     startup.set_event_callback(comm_event_logger);
     system_state.set_event_callback(comm_event_logger);
 
-    executor::Executor executor;
-    executor::ExecutorConfig executor_config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig executor_config;
     executor_config.min_threads = 2;
     executor_config.max_threads = 2;
     executor_config.queue_capacity = 64;
@@ -203,7 +203,7 @@ int main() {
         }
 
         uint64_t last_seen = 0;
-        executor::comm::Snapshot<SystemState> snapshot;
+        kairo::comm::Snapshot<SystemState> snapshot;
         while (!planner_done.load(std::memory_order_acquire)) {
             if (system_state.load_newer_than(last_seen, snapshot)) {
                 last_seen = snapshot.sequence;

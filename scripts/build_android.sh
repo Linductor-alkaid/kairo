@@ -1,6 +1,6 @@
 #!/bin/bash
 # Android 交叉编译脚本
-# 构建 executor 静态库和/或共享库，并安装到统一输出目录。
+# 构建 kairo 静态库和/或共享库，并安装到统一输出目录。
 #
 # 用法：
 #   scripts/build_android.sh --ndk /path/to/android-ndk [options]
@@ -100,7 +100,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "========================================"
-echo "Executor Android Build Script"
+echo "Kairo Android Build Script"
 echo "========================================"
 echo "NDK:              $NDK_PATH"
 echo "ABIs:             $ANDROID_ABIS"
@@ -140,12 +140,12 @@ build_variant() {
         -DANDROID_ABI="$abi" \
         -DANDROID_PLATFORM="android-$ANDROID_API" \
         -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-        -DEXECUTOR_BUILD_SHARED="$shared" \
-        -DEXECUTOR_BUILD_TESTS="$BUILD_TESTS" \
-        -DEXECUTOR_BUILD_EXAMPLES="$BUILD_EXAMPLES" \
-        -DEXECUTOR_ENABLE_GPU=OFF \
-        -DEXECUTOR_ENABLE_CUDA=OFF \
-        -DEXECUTOR_ENABLE_OPENCL=OFF \
+        -DKAIRO_BUILD_SHARED="$shared" \
+        -DKAIRO_BUILD_TESTS="$BUILD_TESTS" \
+        -DKAIRO_BUILD_EXAMPLES="$BUILD_EXAMPLES" \
+        -DKAIRO_ENABLE_GPU=OFF \
+        -DKAIRO_ENABLE_CUDA=OFF \
+        -DKAIRO_ENABLE_OPENCL=OFF \
         -DCMAKE_INSTALL_PREFIX="$build_dir/install" \
         $ANDROID_CMAKE_FLAGS
 

@@ -1,6 +1,6 @@
 ---
 title: 循序教程
-description: 通过机器人数据流水线与服务端数据导入逐步学习 Executor Facade。
+description: 通过机器人数据流水线与服务端数据导入逐步学习 Kairo Facade。
 ---
 
 # 循序教程

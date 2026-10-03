@@ -1,4 +1,4 @@
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <iostream>
 #include <vector>
 
@@ -6,12 +6,12 @@ int main() {
     std::cout << "OpenCL Executor Example\n";
     std::cout << "======================\n\n";
 
-    auto& exec = executor::Executor::instance();
+    auto& exec = kairo::Executor::instance();
 
     // 注册 OpenCL 执行器
-    executor::gpu::GpuExecutorConfig config;
+    kairo::gpu::GpuExecutorConfig config;
     config.name = "opencl0";
-    config.backend = executor::gpu::GpuBackend::OPENCL;
+    config.backend = kairo::gpu::GpuBackend::OPENCL;
     config.device_id = 0;
     config.default_stream_count = 2;
 
@@ -56,7 +56,7 @@ int main() {
     std::cout << "Copied data to device.\n";
 
     // 提交 OpenCL kernel 任务
-    executor::gpu::GpuTaskConfig task_config;
+    kairo::gpu::GpuTaskConfig task_config;
     task_config.stream_id = 0;
 
     auto future = exec.submit_gpu("opencl0",

@@ -5,7 +5,7 @@
  * may skip stale frames, so it retains only its most recent pending frame.
  */
 
-#include <executor/comm.hpp>
+#include <kairo/comm.hpp>
 #include <array>
 
 #include <iostream>
@@ -18,7 +18,7 @@ struct CameraFrame {
 };
 
 void print_publish_result(const CameraFrame& frame,
-                          const executor::comm::TopicPublishResult& result) {
+                          const kairo::comm::TopicPublishResult& result) {
     std::cout << "capture frame=" << frame.sequence
               << " matched=" << result.matched_subscribers
               << " delivered=" << result.delivered_subscribers
@@ -28,9 +28,9 @@ void print_publish_result(const CameraFrame& frame,
 } // namespace
 
 int main() {
-    using executor::comm::DropPolicy;
-    using executor::comm::Topic;
-    using executor::comm::TopicSubscriptionOptions;
+    using kairo::comm::DropPolicy;
+    using kairo::comm::Topic;
+    using kairo::comm::TopicSubscriptionOptions;
 
     Topic<CameraFrame> camera_frames("camera_frames");
 

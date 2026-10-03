@@ -54,7 +54,7 @@ The queue reserves an empty slot and rejects when `enqueue_pos - dequeue_pos >= 
 A monitoring thread should sample `get_status_snapshot()`, which returns a value-copyable `QueueStats`:
 
 ```cpp
-executor::LockFreeTaskExecutor exec(4096, 2, /*enable_stats=*/true);
+kairo::LockFreeTaskExecutor exec(4096, 2, /*enable_stats=*/true);
 exec.start();
 
 std::thread monitor([&] {
@@ -77,9 +77,9 @@ The snapshot is composed of independent atomic loads, so **every field is approx
 | `contention_rejection` | CAS contention exhausted the retry budget | Reduce producer count or raise the backoff multiplier. |
 | `reservation_cancelled_rejections` | Consumer cancelled the producer's reservation | Check producer preemption and the reservation window. |
 | `cancelled_reservation_count` | Consumer cancelled a reservation after the bounded wait (default 64 yields) | Check whether producers get preempted or hold a lock in the `Writing` window. |
-| `submission_rejection` | Executor entry-side reject: empty task, post-stop submit, or object-pool exhaustion | Usually upstream logic or `stop()` race; small empty-task counts are caller bugs. |
+| `submission_rejection` | Kairo entry-side reject: empty task, post-stop submit, or object-pool exhaustion | Usually upstream logic or `stop()` race; small empty-task counts are caller bugs. |
 
-A sustained rise in `reserved_count` while `ready_count` stays flat indicates a producer stuck in the reservation window. A sustained rise in `cancelled_reservation_count` indicates the consumer side is recovering reservations frequently. Rising `submission_rejection` with zero `contention_rejection` points the operator at call-site logic and lifecycle, not the queue itself. See the full field table and the default 64-yield budget in [`docs/API.md` §5.5](https://github.com/Linductor-alkaid/executor/blob/master/docs/API.md) under "状态快照与背压诊断". The new `tests/test_lockfree_queue_status.cpp` covers the by-value copy and concurrent-sampling-doesn't-block-producers contract.
+A sustained rise in `reserved_count` while `ready_count` stays flat indicates a producer stuck in the reservation window. A sustained rise in `cancelled_reservation_count` indicates the consumer side is recovering reservations frequently. Rising `submission_rejection` with zero `contention_rejection` points the operator at call-site logic and lifecycle, not the queue itself. See the full field table and the default 64-yield budget in [`docs/API.md` §5.5](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) under "状态快照与背压诊断". The new `tests/test_lockfree_queue_status.cpp` covers the by-value copy and concurrent-sampling-doesn't-block-producers contract.
 
 ## Backoff, batch, and lifecycle
 
@@ -119,6 +119,6 @@ Object-pool mutex, function-object allocation, task body cost, CPU frequency, an
 
 Performance numbers exist only in their measured environment. Record commit/compiler/build/hardware/power policy/task/concurrency/statistics; never make an API promise from one result. Source changes need protocol correctness (`accepted = completed + rejected`), weak-memory/TSAN stress, then distribution metrics with fixed producers/capacity/task/CPU. Queue size/pending stats are observability values, not completion reconciliation.
 
-See current files [`lockfree_task_executor.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/lockfree_task_executor.cpp), [`lockfree_task_executor.hpp`](https://github.com/Linductor-alkaid/executor/blob/master/include/executor/lockfree_task_executor.hpp), [`lockfree_queue.hpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/util/lockfree_queue.hpp), and [`object_pool.hpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/util/object_pool.hpp).
+See current files [`lockfree_task_executor.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/lockfree_task_executor.cpp), [`lockfree_task_executor.hpp`](https://github.com/Linductor-alkaid/kairo/blob/master/include/kairo/lockfree_task_executor.hpp), [`lockfree_queue.hpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/util/lockfree_queue.hpp), and [`object_pool.hpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/util/object_pool.hpp).
 
 Next: [performance measurement and regression gates](/en/advanced/performance-measurement).

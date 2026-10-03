@@ -11,7 +11,7 @@ description: Verify Linux, Windows, and Android build artifacts, CPU availabilit
 
 1. **Basic correctness:** ordinary tasks, future exceptions, communication, and bounded shutdown work.
 2. **Platform capability:** target machine offers the needed backend, CPU set, and permission.
-3. **Runtime outcome:** Executor status confirms requests applied, and load testing meets latency/jitter targets.
+3. **Runtime outcome:** Kairo status confirms requests applied, and load testing meets latency/jitter targets.
 
 For an ordinary thread pool, the first layer is usually enough. Do not request real-time privilege by default “for speed”; enter the latter layers only for an explicit control-period or tail-latency target.
 
@@ -32,9 +32,9 @@ Linux Release build:
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-  -DEXECUTOR_BUILD_TESTS=ON \
-  -DEXECUTOR_BUILD_EXAMPLES=ON \
-  -DEXECUTOR_ENABLE_GPU=OFF
+  -DKAIRO_BUILD_TESTS=ON \
+  -DKAIRO_BUILD_EXAMPLES=ON \
+  -DKAIRO_ENABLE_GPU=OFF
 cmake --build build -j
 ctest --test-dir build -L tutorial --output-on-failure
 ```
@@ -50,9 +50,9 @@ Windows PowerShell Release build:
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" `
-  -DEXECUTOR_BUILD_TESTS=ON `
-  -DEXECUTOR_BUILD_EXAMPLES=ON `
-  -DEXECUTOR_ENABLE_GPU=OFF
+  -DKAIRO_BUILD_TESTS=ON `
+  -DKAIRO_BUILD_EXAMPLES=ON `
+  -DKAIRO_ENABLE_GPU=OFF
 cmake --build build --config Release
 ctest --test-dir build -C Release -L tutorial --output-on-failure
 ```
@@ -74,7 +74,7 @@ ulimit -l
 grep -E 'Cpus_allowed_list|Mems_allowed_list' /proc/self/status
 ```
 
-`taskset` and `Cpus_allowed_list` identify CPUs actually available to the process; container numbering may not begin at zero. `ulimit -r` bounds requested real-time priority: insufficient `RLIMIT_RTPRIO`/`CAP_SYS_NICE` leaves the thread running but `priority_applied=false`. `ulimit -l` bounds lockable memory: insufficient value/`CAP_IPC_LOCK` makes an explicitly requested process-wide `mlockall` fail; inspect `process_memory_lock_applied` and `process_memory_lock_errno`. `Mems_allowed_list` is not Executor configuration but can affect locality and jitter.
+`taskset` and `Cpus_allowed_list` identify CPUs actually available to the process; container numbering may not begin at zero. `ulimit -r` bounds requested real-time priority: insufficient `RLIMIT_RTPRIO`/`CAP_SYS_NICE` leaves the thread running but `priority_applied=false`. `ulimit -l` bounds lockable memory: insufficient value/`CAP_IPC_LOCK` makes an explicitly requested process-wide `mlockall` fail; inspect `process_memory_lock_applied` and `process_memory_lock_errno`. `Mems_allowed_list` is not Kairo configuration but can affect locality and jitter.
 
 If file capabilities grant authority, inspect `getcap ./your-service`. Do not use running the entire service under `sudo` as a long-term fix. Give minimal capability/resource limits through systemd, container runtime, or security policy. Check `LimitRTPRIO=`, `LimitMEMLOCK=`, `CPUAffinity=`, final user, host cpuset, capability/limits, and orchestration overrides in the final container/service—not only a host shell.
 
@@ -91,7 +91,7 @@ Get-Process -Id $PID |
   Select-Object ProcessName, PriorityClass, ProcessorAffinity
 ```
 
-These record environment but do not replace thread-level Executor state. Windows priority semantics differ from Linux; one 64-bit affinity mask does not cover all processor-group cases on hosts above 64 logical CPUs; false `process_memory_lock_applied` and `timer_slack_applied` are expected in this implementation; short-period threads request 1 ms timer precision (with power cost) during life; thread naming requires Windows 10 1607+ and is diagnostic only. A service account, interactive shell, and CI runner can have different limits.
+These record environment but do not replace thread-level Kairo state. Windows priority semantics differ from Linux; one 64-bit affinity mask does not cover all processor-group cases on hosts above 64 logical CPUs; false `process_memory_lock_applied` and `timer_slack_applied` are expected in this implementation; short-period threads request 1 ms timer precision (with power cost) during life; thread naming requires Windows 10 1607+ and is diagnostic only. A service account, interactive shell, and CI runner can have different limits.
 
 ## Android: check the final device or emulator
 
@@ -119,7 +119,7 @@ Interpretation notes:
 
 ## Confirm requests through runtime status
 
-Platform inspection shows possible capability. Executor status shows this run's result:
+Platform inspection shows possible capability. Kairo status shows this run's result:
 
 ```cpp
 const auto status = executor.get_realtime_executor_status("control-loop");
@@ -151,7 +151,7 @@ If tuning falls back, the library runs safely and records it. Business requireme
 
 ## Affinity, GPU, and deployment record
 
-With empty `RealtimeThreadConfig::cpu_affinity`, Executor round-robins among CPUs allowed to the current thread and auto-binds only if at least two are allowed. For explicit affinity: read the final allowed set, reserve capacity for OS/interrupts/ordinary workers, verify `cpu_affinity_applied`, inspect actual affinity with system tools, and measure under full load. Never copy development-machine CPU numbering into another SKU, VM, or container.
+With empty `RealtimeThreadConfig::cpu_affinity`, Kairo round-robins among CPUs allowed to the current thread and auto-binds only if at least two are allowed. For explicit affinity: read the final allowed set, reserve capacity for OS/interrupts/ordinary workers, verify `cpu_affinity_applied`, inspect actual affinity with system tools, and measure under full load. Never copy development-machine CPU numbering into another SKU, VM, or container.
 
 For GPU, record three layers: CMake CUDA/OpenCL enablement and headers/libraries; driver/runtime/device visibility to the final account; then `register_gpu_executor_ex()` result and post-registration `GpuExecutorStatus::last_error_message`. A real kernel future is still required; validate CPU fallback independently. Android in this stage is CPU-only and does not accept GPU capabilities.
 

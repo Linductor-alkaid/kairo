@@ -11,18 +11,18 @@ description: 使用 ICycleManager 把外部时钟或周期框架接入实时任�
 
 ## 接口契约
 
-`ICycleManager` 有四个责任：`register_cycle(name, period_ns, callback)` 保存周期定义，`start_cycle(name)` 运行周期，`stop_cycle(name)` 请求停止，`get_statistics(name)` 返回周期统计。Executor 不拥有该对象；它必须在实时任务注册、运行和停止的整个期间保持有效。`start_cycle()` 通常在实时线程启动路径中同步运行周期循环，因此实现者还必须保证它只在 `stop_cycle()` 后返回，并且不会意外阻塞调用方的关闭路径。
+`ICycleManager` 有四个责任：`register_cycle(name, period_ns, callback)` 保存周期定义，`start_cycle(name)` 运行周期，`stop_cycle(name)` 请求停止，`get_statistics(name)` 返回周期统计。Kairo 不拥有该对象；它必须在实时任务注册、运行和停止的整个期间保持有效。`start_cycle()` 通常在实时线程启动路径中同步运行周期循环，因此实现者还必须保证它只在 `stop_cycle()` 后返回，并且不会意外阻塞调用方的关闭路径。
 
 最小结构如下：
 
 ```cpp
-class ExternalClock final : public executor::ICycleManager {
+class ExternalClock final : public kairo::ICycleManager {
 public:
     bool register_cycle(const std::string& name, int64_t period_ns,
                         std::function<void()> callback) override;
     bool start_cycle(const std::string& name) override;
     void stop_cycle(const std::string& name) override;
-    executor::CycleStatistics get_statistics(const std::string& name) const override;
+    kairo::CycleStatistics get_statistics(const std::string& name) const override;
 };
 ```
 
@@ -30,7 +30,7 @@ public:
 
 ```cpp
 ExternalClock clock;
-executor::RealtimeThreadConfig config;
+kairo::RealtimeThreadConfig config;
 config.cycle_manager = &clock;
 config.cycle_callback = [] { run_control_cycle(); };
 
@@ -40,13 +40,13 @@ executor.start_realtime_task_ex("control");
 executor.stop_realtime_task("control");
 ```
 
-完整的最小实现见 [`examples/realtime_can.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/realtime_can.cpp)。
+完整的最小实现见 [`examples/realtime_can.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/realtime_can.cpp)。
 
 ## callback 与周期源如何接收输入
 
 `register_cycle()` 收到的是已经绑定输入的 `std::function<void()>`。自定义实现必须按值保存这个 callback，并在周期触发时调用；不能只保存对 `register_cycle()` 参数的引用。业务输入应在 `config.cycle_callback` 中按值或稳定 owner 捕获，规则与内置实时周期一致。
 
-`config.cycle_manager` 则是一个借用的裸指针：Executor 不复制也不拥有 `ExternalClock`。周期源对象、它保存的 callback，以及 callback 捕获的业务对象必须按停止顺序逆序释放：先停止实时任务并让 `start_cycle()` 返回，再销毁业务对象和周期源。若周期源自己启动辅助线程，还要在析构前 join，不能让线程继续调用已经销毁的 callback。
+`config.cycle_manager` 则是一个借用的裸指针：Kairo 不复制也不拥有 `ExternalClock`。周期源对象、它保存的 callback，以及 callback 捕获的业务对象必须按停止顺序逆序释放：先停止实时任务并让 `start_cycle()` 返回，再销毁业务对象和周期源。若周期源自己启动辅助线程，还要在析构前 join，不能让线程继续调用已经销毁的 callback。
 
 ## 生命周期与失败
 

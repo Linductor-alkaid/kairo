@@ -17,11 +17,11 @@
 #include <thread>
 #include <vector>
 
-#include "executor/thread_pool/thread_pool.hpp"
-#include "executor/thread_pool/thread_pool_resizer.hpp"
-#include <executor/config.hpp>
+#include "kairo/thread_pool/thread_pool.hpp"
+#include "kairo/thread_pool/thread_pool_resizer.hpp"
+#include <kairo/config.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message)                                       \
     do {                                                                      \

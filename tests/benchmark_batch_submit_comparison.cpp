@@ -5,7 +5,7 @@
  * 对比返回 future 和不返回 future 的性能差异
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <chrono>
 #include <iostream>
 #include <iomanip>
@@ -13,7 +13,7 @@
 #include <thread>
 #include <atomic>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 struct BenchmarkResult {

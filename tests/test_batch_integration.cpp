@@ -2,12 +2,12 @@
  * 批量操作集成测试
  */
 
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 #include <gtest/gtest.h>
 #include <atomic>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 
 TEST(BatchIntegration, PushTasksBatch) {
     LockFreeTaskExecutor executor(1024);

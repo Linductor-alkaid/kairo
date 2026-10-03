@@ -1,5 +1,5 @@
-#include <executor/comm.hpp>
-#include <executor/executor.hpp>
+#include <kairo/comm.hpp>
+#include <kairo/executor.hpp>
 
 #include <gtest/gtest.h>
 
@@ -16,9 +16,9 @@ struct SensorFrame {
 };
 
 TEST(FacadeCommUsage, SensorProducerPlannerConsumer) {
-    executor::comm::ChannelOptions options;
+    kairo::comm::ChannelOptions options;
     options.capacity = 16;
-    executor::comm::MpscChannel<SensorFrame> frames(options);
+    kairo::comm::MpscChannel<SensorFrame> frames(options);
 
     std::thread sensor([&] {
         for (int i = 0; i < 8; ++i) {
@@ -34,7 +34,7 @@ TEST(FacadeCommUsage, SensorProducerPlannerConsumer) {
     while (true) {
         const auto result = frames.receive_for(frame, std::chrono::milliseconds(500));
         if (!result) {
-            EXPECT_EQ(result.error_code, executor::comm::CommErrorCode::Closed);
+            EXPECT_EQ(result.error_code, kairo::comm::CommErrorCode::Closed);
             break;
         }
         planned_sequences.push_back(frame.sequence);
@@ -51,10 +51,10 @@ TEST(FacadeCommUsage, SensorProducerPlannerConsumer) {
 }
 
 TEST(FacadeCommUsage, SensorFramesFanOutToPlannerAndRecorder) {
-    executor::comm::Topic<SensorFrame> frames("sensor_frames");
+    kairo::comm::Topic<SensorFrame> frames("sensor_frames");
     auto planner = frames.subscribe({.capacity = 8, .name = "planner"});
     auto recorder = frames.subscribe({.capacity = 2,
-                                      .drop_policy = executor::comm::DropPolicy::KeepLatest,
+                                      .drop_policy = kairo::comm::DropPolicy::KeepLatest,
                                       .name = "recorder"});
 
     for (int sequence = 0; sequence < 4; ++sequence) {
@@ -83,7 +83,7 @@ TEST(FacadeCommUsage, ConfigThreadRealtimeControlThread) {
         bool enabled = false;
     };
 
-    executor::comm::LatestMailbox<ControlConfig> config_box("control_config");
+    kairo::comm::LatestMailbox<ControlConfig> config_box("control_config");
     config_box.publish(ControlConfig{.gain = 1, .enabled = true});
     config_box.publish(ControlConfig{.gain = 3, .enabled = true});
 
@@ -99,7 +99,7 @@ TEST(FacadeCommUsage, ConfigThreadRealtimeControlThread) {
 }
 
 TEST(FacadeCommUsage, InitThreadWorkerThread) {
-    executor::comm::PhaseGate startup_gate("startup");
+    kairo::comm::PhaseGate startup_gate("startup");
     std::atomic<bool> worker_started{false};
     std::atomic<bool> worker_completed{false};
 
@@ -129,7 +129,7 @@ TEST(FacadeCommUsage, StateWriterMonitorReader) {
         int checksum = 0;
     };
 
-    executor::comm::DoubleBuffer<SystemState> states(SystemState{.tick = 0, .checksum = 0});
+    kairo::comm::DoubleBuffer<SystemState> states(SystemState{.tick = 0, .checksum = 0});
 
     states.publish(SystemState{.tick = 1, .checksum = 17});
     states.update([](SystemState& state) {
@@ -137,7 +137,7 @@ TEST(FacadeCommUsage, StateWriterMonitorReader) {
         state.checksum = 34;
     });
 
-    executor::comm::Snapshot<SystemState> snapshot;
+    kairo::comm::Snapshot<SystemState> snapshot;
     ASSERT_TRUE(states.load_newer_than(0, snapshot));
     EXPECT_EQ(snapshot.sequence, 2U);
     EXPECT_EQ(snapshot.value.tick, 2);
@@ -148,11 +148,11 @@ TEST(FacadeCommUsage, StateWriterMonitorReader) {
 }
 
 TEST(FacadeCommUsage, RealtimeCycleDrainsMessages) {
-    executor::comm::RealtimeChannelOptions options;
+    kairo::comm::RealtimeChannelOptions options;
     options.capacity = 8;
     options.max_items_per_cycle = 2;
 
-    executor::comm::RealtimeChannel<int> commands(options);
+    kairo::comm::RealtimeChannel<int> commands(options);
     ASSERT_TRUE(commands.try_send(10));
     ASSERT_TRUE(commands.try_send(20));
     ASSERT_TRUE(commands.try_send(30));
@@ -175,8 +175,8 @@ TEST(FacadeCommUsage, RealtimeCycleDrainsMessages) {
 }
 
 TEST(FacadeCommUsage, TaskGraphSubmitAfter) {
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
     ASSERT_TRUE(executor.initialize(config));

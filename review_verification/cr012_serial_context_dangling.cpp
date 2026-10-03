@@ -15,8 +15,8 @@
 // 用 ASAN_OPTIONS=max_free_fill_size=0 保留原 mutex 字节，让锁正常通过、
 // 后续对已释放对象的插桩读（stopping_/mutex_ 所在 chunk）触发
 // heap-use-after-free 报告。
-#include <executor/executor.hpp>
-#include <executor/serial_execution_context.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/serial_execution_context.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -25,7 +25,7 @@
 #include <thread>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 static void log(const char* msg) {

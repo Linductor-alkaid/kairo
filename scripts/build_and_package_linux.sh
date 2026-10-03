@@ -7,7 +7,7 @@ set -e  # 遇到错误立即退出
 # 默认参数
 # CR-085: 版本默认值从根 CMakeLists.txt 的 project(VERSION) 提取（单一来源）；
 # 环境变量 VERSION / --version 参数仍可覆盖。
-_DEFAULT_VERSION="$(sed -n 's/^project(executor[[:space:]][^)]*VERSION \([0-9][0-9.]*\).*/\1/p' \
+_DEFAULT_VERSION="$(sed -n 's/^project(kairo[[:space:]][^)]*VERSION \([0-9][0-9.]*\).*/\1/p' \
     "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/CMakeLists.txt" | head -n1)"
 VERSION="${VERSION:-${_DEFAULT_VERSION:-0.0.0}}"
 unset _DEFAULT_VERSION
@@ -63,7 +63,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "========================================"
-echo "Executor Linux Build and Package"
+echo "Kairo Linux Build and Package"
 echo "========================================"
 echo ""
 

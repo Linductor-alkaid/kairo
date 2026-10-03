@@ -10,9 +10,9 @@ executor 核心库不依赖 asio 或任何第三方事件循环；本指南描�
 哪些派发是 executor 看不见的、以及让盲区保持安全的纪律。
 
 完整指南见
-[`docs/external_event_loop_interop.md`](https://github.com/Linductor-alkaid/executor/blob/master/docs/external_event_loop_interop.md)。
+[`docs/external_event_loop_interop.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/external_event_loop_interop.md)。
 可编译的伴随示例（用互斥量 + 条件变量复现 strand 语义，不引入任何 SDK 依赖）是
-[`examples/event_loop_interop.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/event_loop_interop.cpp)：
+[`examples/event_loop_interop.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/event_loop_interop.cpp)：
 
 <<< @/../examples/event_loop_interop.cpp{14-40}
 

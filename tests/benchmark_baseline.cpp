@@ -2,11 +2,11 @@
  * Performance baseline benchmarks for executor.
  *
  * Covers: submission throughput, task round-trip latency, end-to-end throughput.
- * Config: defaults + env vars (EXECUTOR_BENCHMARK_*) + CLI (--json, --tasks, etc.).
- * Output: human-readable text (default) or JSON (--json or EXECUTOR_BENCHMARK_JSON=1).
+ * Config: defaults + env vars (KAIRO_BENCHMARK_*) + CLI (--json, --tasks, etc.).
+ * Output: human-readable text (default) or JSON (--json or KAIRO_BENCHMARK_JSON=1).
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -54,18 +54,18 @@ bool parse_bool_env(const char* s) {
 }
 
 void apply_env(Config& c) {
-    const char* t = std::getenv("EXECUTOR_BENCHMARK_TASKS");
+    const char* t = std::getenv("KAIRO_BENCHMARK_TASKS");
     if (t) {
         size_t v = parse_size_t(t, c.num_tasks_submit);
         c.num_tasks_submit = c.num_tasks_latency = c.num_tasks_e2e = v;
     }
-    t = std::getenv("EXECUTOR_BENCHMARK_MIN_THREADS");
+    t = std::getenv("KAIRO_BENCHMARK_MIN_THREADS");
     if (t) c.min_threads = parse_size_t(t, c.min_threads);
-    t = std::getenv("EXECUTOR_BENCHMARK_MAX_THREADS");
+    t = std::getenv("KAIRO_BENCHMARK_MAX_THREADS");
     if (t) c.max_threads = parse_size_t(t, c.max_threads);
-    t = std::getenv("EXECUTOR_BENCHMARK_QUEUE_CAPACITY");
+    t = std::getenv("KAIRO_BENCHMARK_QUEUE_CAPACITY");
     if (t) c.queue_capacity = parse_size_t(t, c.queue_capacity);
-    t = std::getenv("EXECUTOR_BENCHMARK_JSON");
+    t = std::getenv("KAIRO_BENCHMARK_JSON");
     if (t && parse_bool_env(t)) c.json_output = true;
 }
 
@@ -96,8 +96,8 @@ void parse_args(int argc, char* argv[], Config& c) {
     }
 }
 
-executor::ExecutorConfig make_executor_config(const Config& c) {
-    executor::ExecutorConfig ec;
+kairo::ExecutorConfig make_executor_config(const Config& c) {
+    kairo::ExecutorConfig ec;
     ec.min_threads = c.min_threads;
     ec.max_threads = c.max_threads;
     ec.queue_capacity = c.queue_capacity;
@@ -130,8 +130,8 @@ LatencyStats compute_latency_stats(std::vector<double>& samples_us) {
 }
 
 void run_submission_throughput(const Config& cfg, bool json_only) {
-    executor::Executor ex;
-    executor::ExecutorConfig ec = make_executor_config(cfg);
+    kairo::Executor ex;
+    kairo::ExecutorConfig ec = make_executor_config(cfg);
     if (!ex.initialize(ec)) {
         std::cerr << "benchmark_baseline: initialize failed" << std::endl;
         std::exit(1);
@@ -176,8 +176,8 @@ void run_submission_throughput(const Config& cfg, bool json_only) {
 }
 
 void run_round_trip_latency(const Config& cfg, bool json_only) {
-    executor::Executor ex;
-    executor::ExecutorConfig ec = make_executor_config(cfg);
+    kairo::Executor ex;
+    kairo::ExecutorConfig ec = make_executor_config(cfg);
     if (!ex.initialize(ec)) {
         std::cerr << "benchmark_baseline: initialize failed" << std::endl;
         std::exit(1);
@@ -226,8 +226,8 @@ void run_round_trip_latency(const Config& cfg, bool json_only) {
 }
 
 void run_e2e_throughput(const Config& cfg, bool json_only) {
-    executor::Executor ex;
-    executor::ExecutorConfig ec = make_executor_config(cfg);
+    kairo::Executor ex;
+    kairo::ExecutorConfig ec = make_executor_config(cfg);
     if (!ex.initialize(ec)) {
         std::cerr << "benchmark_baseline: initialize failed" << std::endl;
         std::exit(1);

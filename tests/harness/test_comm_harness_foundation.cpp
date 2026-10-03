@@ -11,9 +11,9 @@
 #include <thread>
 #include <vector>
 
-using executor::test::harness::Operation;
-using executor::test::harness::OperationHistory;
-using executor::test::harness::Stepper;
+using kairo::test::harness::Operation;
+using kairo::test::harness::OperationHistory;
+using kairo::test::harness::Stepper;
 using namespace std::chrono_literals;
 
 TEST(StepperTest, ArriveWaitRelease) {

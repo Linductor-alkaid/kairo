@@ -1,6 +1,6 @@
 ---
 title: Migrate Existing Thread Code
-description: Gradually migrate std::thread, std::async, and a hand-written queue to Executor while preserving ownership and shutdown semantics.
+description: Gradually migrate std::thread, std::async, and a hand-written queue to Kairo while preserving ownership and shutdown semantics.
 ---
 
 # Migrate Existing Thread Code
@@ -21,7 +21,7 @@ Legacy thread functions often combine input acceptance, execution-resource creat
 | Execution resource | Is it short work, a permanent loop, soft periodic maintenance, or strict periodic control? |
 | Completion | Who owns the future, when retrieves it, and where handles exceptions? |
 | Overload | When input exceeds consumption, should it queue, reject, overwrite, or degrade? |
-| Lifecycle | Who stops producers, drains work, and finally shuts down Executor? |
+| Lifecycle | Who stops producers, drains work, and finally shuts down Kairo? |
 
 Replacing APIs before these answers merely transfers the old races to a new abstraction.
 
@@ -38,16 +38,16 @@ void ParserService::accept(Frame frame) {
 
 This creates input-driven numbers of system threads, can dereference `this` after service destruction, loses a result channel for exceptions, and leaves shutdown unable to identify in-flight frames. First reject new input and define ownership of already accepted work.
 
-## Let the service borrow Executor
+## Let the service borrow Kairo
 
 The application owns the runtime; a service borrows it:
 
 ```cpp
 class ParserService {
 public:
-    explicit ParserService(executor::Executor& executor) : executor_(executor) {}
+    explicit ParserService(kairo::Kairo& executor) : executor_(executor) {}
 private:
-    executor::Executor& executor_;
+    kairo::Kairo& executor_;
 };
 ```
 
@@ -85,9 +85,9 @@ return executor_.submit_auto([frame = std::move(frame)]() mutable {
 });
 ```
 
-The important change is lifecycle: application-owned Executor resources outlive a future destructor, so requests still consume futures and shutdown still stops producers before draining. Do not blindly replace code that depended on an unspecified/deferred `std::async` policy; decide whether it needed asynchronous work or lazy caller-thread evaluation.
+The important change is lifecycle: application-owned Kairo resources outlive a future destructor, so requests still consume futures and shutdown still stops producers before draining. Do not blindly replace code that depended on an unspecified/deferred `std::async` policy; decide whether it needed asynchronous work or lazy caller-thread evaluation.
 
-For a `queue + mutex + condition_variable + workers` implementation, freeze the old entry point and record its capacity/rejection/exit behavior. Migrate one independent short-work class to `submit_auto(lambda)`, compare active/queued state, inject exceptions/backlog/shutdown races, then remove old workers only after every producer moves. Do not use one giant Executor queue to mimic every data path: FIFO messages need a bounded channel; latest-only state needs a mailbox; computations needing results need tasks.
+For a `queue + mutex + condition_variable + workers` implementation, freeze the old entry point and record its capacity/rejection/exit behavior. Migrate one independent short-work class to `submit_auto(lambda)`, compare active/queued state, inject exceptions/backlog/shutdown races, then remove old workers only after every producer moves. Do not use one giant Kairo queue to mimic every data path: FIFO messages need a bounded channel; latest-only state needs a mailbox; computations needing results need tasks.
 
 ## Make dependencies explicit
 
@@ -101,11 +101,11 @@ load.future.get();
 auto result = plan.get();
 ```
 
-The Facade now validates the relationship and propagates prerequisite failure. A handle belongs only to its originating Executor. Current dependent wrappers may still wait in the pool; submit prerequisites first, bound graph size, and pressure-test at the target minimum worker count. Use a specialized scheduler for large nonblocking DAGs.
+The Facade now validates the relationship and propagates prerequisite failure. A handle belongs only to its originating Kairo. Current dependent wrappers may still wait in the pool; submit prerequisites first, bound graph size, and pressure-test at the target minimum worker count. Use a specialized scheduler for large nonblocking DAGs.
 
 ## Keep permanent loops in the right place
 
-Do not submit a never-ending blocking read loop to the shared pool. Use `start_worker(BlockingWorkerSpec)` when Executor should own stop/wake/join lifecycle, or an owned stoppable `std::jthread` otherwise; submit only short post-read computation with `submit_auto(lambda)`. Use `submit_periodic()` for soft maintenance, a dedicated real-time task for a jitter-budgeted loop, and `executor::comm` for sustained cross-thread data transfer.
+Do not submit a never-ending blocking read loop to the shared pool. Use `start_worker(BlockingWorkerSpec)` when Kairo should own stop/wake/join lifecycle, or an owned stoppable `std::jthread` otherwise; submit only short post-read computation with `submit_auto(lambda)`. Use `submit_periodic()` for soft maintenance, a dedicated real-time task for a jitter-budgeted loop, and `kairo::comm` for sustained cross-thread data transfer.
 
 ## Establish a shutdown protocol
 
@@ -127,7 +127,7 @@ if (!drained.completed) log_pending(drained.status.pending_tasks);
 executor.shutdown(drained.completed);
 ```
 
-A wait timeout does not cancel work, and `shutdown(false)` cannot create safe interruption points. I/O and long tasks still need their own timeout or cooperative stop mechanism. A shut-down Executor cannot be reinitialized; rebuild the isolated component/runtime to support restart.
+A wait timeout does not cancel work, and `shutdown(false)` cannot create safe interruption points. I/O and long tasks still need their own timeout or cooperative stop mechanism. A shut-down Kairo cannot be reinitialized; rebuild the isolated component/runtime to support restart.
 
 ## Migration acceptance matrix
 
@@ -137,7 +137,7 @@ A wait timeout does not cancel work, and `shutdown(false)` cannot create safe in
 | Parse throws | `future.get()` throws; failure status/callback observes it |
 | Queue rejects | Future reports submission rejection; rejection count rises |
 | Wait budget expires | `WaitResult.timed_out` with a pending snapshot |
-| Submission after draining | Business entry rejects before Executor |
+| Submission after draining | Business entry rejects before Kairo |
 | Service object destroyed | No in-flight task captures its invalid reference |
 | Process exit | Producers stop, work drains, then task-owned objects are destroyed |
 
@@ -147,9 +147,9 @@ Use low worker counts, small queues, and deliberately blocking work. A normal-pa
 | --- | --- |
 | Long-lived stoppable blocking-I/O owner | `start_worker(BlockingWorkerSpec)` or an owned `std::jthread` |
 | Few local parallel calculations | `std::async` or a synchronous algorithm |
-| Short work across modules with unified capacity/diagnostics | Executor `submit_auto(lambda)` |
-| Bounded multistage work with clear completion relations | Executor task dependencies |
-| Strict periodic loop | Executor real-time task |
-| Sustained cross-thread data | `executor::comm` |
+| Short work across modules with unified capacity/diagnostics | Kairo `submit_auto(lambda)` |
+| Bounded multistage work with clear completion relations | Kairo task dependencies |
+| Strict periodic loop | Kairo real-time task |
+| Sustained cross-thread data | `kairo::comm` |
 
 Continue with the [production readiness checklist](/en/guides/production-readiness), or review suspicious designs against [concurrency architecture antipatterns](/en/guides/concurrency-antipatterns).

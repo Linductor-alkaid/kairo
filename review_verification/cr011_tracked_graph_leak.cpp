@@ -12,7 +12,7 @@
 //   phase 2  对照：同数量成功提交不再增长；
 //   判定：失败提交次数与 registry 容量(65536)吻合 + registry 耗尽 + RSS
 //   阶梯式增长不回落 → 泄漏成立。
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -22,7 +22,7 @@
 #include <thread>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 namespace {

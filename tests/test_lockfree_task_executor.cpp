@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <executor/lockfree_task_executor.hpp>
+#include <kairo/lockfree_task_executor.hpp>
 #include <atomic>
 #include <thread>
 #include <chrono>
@@ -10,19 +10,19 @@
 #include <system_error>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 
 namespace {
 #if defined(__has_feature)
 #  if __has_feature(thread_sanitizer)
-#    define EXECUTOR_TEST_HAS_TSAN 1
+#    define KAIRO_TEST_HAS_TSAN 1
 #  endif
 #endif
 #if defined(__SANITIZE_THREAD__)
-#  define EXECUTOR_TEST_HAS_TSAN 1
+#  define KAIRO_TEST_HAS_TSAN 1
 #endif
-#ifndef EXECUTOR_TEST_HAS_TSAN
-#  define EXECUTOR_TEST_HAS_TSAN 0
+#ifndef KAIRO_TEST_HAS_TSAN
+#  define KAIRO_TEST_HAS_TSAN 0
 #endif
 
 template <typename Predicate>
@@ -491,7 +491,7 @@ TEST(LockFreeTaskExecutorTest, ExceptionHandlerNotCalledWhenNotSet) {
 }
 
 TEST(LockFreeTaskExecutorTest, ConcurrentSetHandler) {
-#if !EXECUTOR_TEST_HAS_TSAN
+#if !KAIRO_TEST_HAS_TSAN
     GTEST_SKIP() << "ConcurrentSetHandler is a ThreadSanitizer regression test";
 #endif
     LockFreeTaskExecutor exec(1024);

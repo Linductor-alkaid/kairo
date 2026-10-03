@@ -1,12 +1,12 @@
 #include <chrono>
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <future>
 #include <iomanip>
 #include <iostream>
 #include <thread>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 
 static void print_task_statistics(const std::string& label,
                                   const TaskStatistics& s) {

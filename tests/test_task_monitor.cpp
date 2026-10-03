@@ -5,9 +5,9 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include "executor/monitor/task_monitor.hpp"
+#include "kairo/monitor/task_monitor.hpp"
 
-using namespace executor::monitor;
+using namespace kairo::monitor;
 
 #define TEST_ASSERT(condition, message)                                      \
     do {                                                                     \

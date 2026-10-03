@@ -11,18 +11,18 @@ The latest release record is `v0.5.3`. This site uses that stable version as its
 
 | What to check | Source of truth |
 | --- | --- |
-| Released versions and breaking changes | [CHANGELOG.md](https://github.com/Linductor-alkaid/executor/blob/master/CHANGELOG.md) |
-| Recommended migrations from older APIs | [MIGRATION.md](https://github.com/Linductor-alkaid/executor/blob/master/docs/MIGRATION.md) |
-| Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/executor/blob/master/docs/BUILD.md) |
-| Complete current signatures | [API.md](https://github.com/Linductor-alkaid/executor/blob/master/docs/API.md) |
+| Released versions and breaking changes | [CHANGELOG.md](https://github.com/Linductor-alkaid/kairo/blob/master/CHANGELOG.md) |
+| Recommended migrations from older APIs | [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) |
+| Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
+| Complete current signatures | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
 ## 0.5.3: review fixes and the event-driven timer
 
-v0.5.3 is a stability-and-performance maintenance release with unchanged public API signatures. It lands all four phases of the 2026-09-30 full code review (9 P0 memory-safety/hang/data-race defects, 24 P1 correctness defects, 8 build/packaging defects, 10 hot-path performance items) and converts the timer thread from 1 kHz polling to event-driven condition waits (idle wait CPU down ~34×, periodic jitter improved 10-27× via grid anchoring). See the "upgrading from 0.5.2 to 0.5.3" section of [MIGRATION.md](https://github.com/Linductor-alkaid/executor/blob/master/docs/MIGRATION.md) for the two observable timer behavior changes; no code changes are required.
+v0.5.3 is a stability-and-performance maintenance release with unchanged public API signatures. It lands all four phases of the 2026-09-30 full code review (9 P0 memory-safety/hang/data-race defects, 24 P1 correctness defects, 8 build/packaging defects, 10 hot-path performance items) and converts the timer thread from 1 kHz polling to event-driven condition waits (idle wait CPU down ~34×, periodic jitter improved 10-27× via grid anchoring). See the "upgrading from 0.5.2 to 0.5.3" section of [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) for the two observable timer behavior changes; no code changes are required.
 
 ## 0.5.2: dependency-driven scheduling
 
-v0.5.2 moves task-graph dependency waiting to dependency-driven scheduling: `submit_after` dependents no longer enter the pool (and occupy workers) while prerequisites are unresolved. See the "upgrading from 0.5.0 to 0.5.2" section of [MIGRATION.md](https://github.com/Linductor-alkaid/executor/blob/master/docs/MIGRATION.md) for the parked timeout and shutdown settlement semantics. Public API signatures are unchanged (one new diagnostic, `closure_graveyard_size()`).
+v0.5.2 moves task-graph dependency waiting to dependency-driven scheduling: `submit_after` dependents no longer enter the pool (and occupy workers) while prerequisites are unresolved. See the "upgrading from 0.5.0 to 0.5.2" section of [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) for the parked timeout and shutdown settlement semantics. Public API signatures are unchanged (one new diagnostic, `closure_graveyard_size()`).
 
 ## Moving from `bool` to `_ex`
 
@@ -73,7 +73,7 @@ x64 static library.
 
 Migration notes for `ExecutorSnapshot` schema 2 → 3, the process memory-lock lease,
 and the shutdown cleanup of pending delayed tasks are in the
-["0.4.0 → 0.5.0"](https://github.com/Linductor-alkaid/executor/blob/master/docs/MIGRATION.md)
+["0.4.0 → 0.5.0"](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md)
 section of MIGRATION.md.
 
 ## 0.4.0: fixed synchronization boundaries and communication observability

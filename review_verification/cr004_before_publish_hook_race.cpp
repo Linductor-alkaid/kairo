@@ -13,7 +13,7 @@
 //   build-tsan/src/libexecutor.a -lpthread -ldl -o cr004_tsan
 // 运行：TSAN_OPTIONS="second_deadlock_stack=1 halt_on_error=0" ./cr004_tsan
 
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 
 #include <atomic>
 #include <cstdio>
@@ -29,7 +29,7 @@ void hookA(void*) {}  // 空函数 hook
 }  // namespace
 
 int main() {
-    executor::LockFreeTaskExecutor exec(1024);
+    kairo::LockFreeTaskExecutor exec(1024);
     if (!exec.start()) {
         std::fprintf(stderr, "FATAL: executor start failed\n");
         return 2;

@@ -11,7 +11,7 @@
 //    returns true) while the future is stranded
 //  - worker survived: after switching to a well-behaved monitor, a new
 //    submitted task completes normally (control)
-#include "executor/thread_pool/thread_pool.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -20,7 +20,7 @@
 #include <stdexcept>
 #include <string>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 namespace {

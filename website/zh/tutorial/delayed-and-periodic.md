@@ -19,7 +19,7 @@ description: 用 Facade 的延迟和软周期任务处理设备重试与后台�
 
 <<< @/../examples/tutorial/03_delayed_periodic.cpp{1-36}
 
-完整源码：[`examples/tutorial/03_delayed_periodic.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/tutorial/03_delayed_periodic.cpp)。
+完整源码：[`examples/tutorial/03_delayed_periodic.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/03_delayed_periodic.cpp)。
 
 ```bash
 ./build/examples/tutorial/tutorial_03_delayed_periodic
@@ -82,7 +82,7 @@ callback 必须可复制，移动独占的 `unique_ptr` lambda 通常不能直�
 3. 让 callback 连续失败，检查 `failed_count`、`consecutive_failure_count` 和 `last_error_message`，并定义达到阈值后的停止或降级。
 4. 在 delayed task 到期前开始 shutdown，确认 future 得到“timer stopped before delayed task execution”的可观察拒绝，而不是永久等待。
 
-推荐退出顺序是：停止创建新的延迟/周期工作，取消所有保存的 task ID，等待已经提交的 callback，最后关闭 Executor。若 callback 内有网络或设备 I/O，它们必须有自己的超时。
+推荐退出顺序是：停止创建新的延迟/周期工作，取消所有保存的 task ID，等待已经提交的 callback，最后关闭 Kairo。若 callback 内有网络或设备 I/O，它们必须有自己的超时。
 
 ## 需求变化时如何演进
 

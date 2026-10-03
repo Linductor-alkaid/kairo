@@ -1,6 +1,6 @@
 ---
 title: Choose a Submission API
-description: Choose by completion, bounded admission, or worker lifecycle before entering default or expert Executor paths.
+description: Choose by completion, bounded admission, or worker lifecycle before entering default or expert Kairo paths.
 ---
 
 # Choose a Submission API
@@ -84,7 +84,7 @@ Permanent listeners, blocking reads, polls, and protocol loops must not occupy t
 
 Batch APIs require independent tasks produced together with equivalent scheduling semantics. They can reduce repeated submission-path overhead, but gains depend on task count/body, worker count, hardware, and build; no fixed speedup is promised. Default to `submit_batch()` and consume every future. Consider `submit_batch_no_future()` only if per-item results are unnecessary, service-level failure observation exists, shutdown has a bounded or explicitly lossy policy, and failures can be associated with a business batch/input.
 
-Use `submit_with_handle()`, `submit_after()`, and `when_all()` for “model load → parallel preprocessing → plan.” A failed prerequisite prevents ordinary dependent execution and appears in its future. Do not hide task relations behind `future.get()` inside arbitrary worker lambdas. Current dependent wrappers may wait in the pool, so submit prerequisites first, cap in-flight graphs, and test at the minimum worker count. Use a dedicated graph scheduler for large dynamic DAGs. Handles are valid only in their originating Executor instance.
+Use `submit_with_handle()`, `submit_after()`, and `when_all()` for “model load → parallel preprocessing → plan.” A failed prerequisite prevents ordinary dependent execution and appears in its future. Do not hide task relations behind `future.get()` inside arbitrary worker lambdas. Current dependent wrappers may wait in the pool, so submit prerequisites first, cap in-flight graphs, and test at the minimum worker count. Use a dedicated graph scheduler for large dynamic DAGs. Handles are valid only in their originating Kairo instance.
 
 ## Time budgets are not cancellation
 

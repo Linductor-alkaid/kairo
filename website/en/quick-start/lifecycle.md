@@ -1,6 +1,6 @@
 ---
 title: Initialization and Shutdown
-description: Configure Executor before first use and stop it deliberately at an application boundary.
+description: Configure Kairo before first use and stop it deliberately at an application boundary.
 ---
 
 # Initialization and Shutdown
@@ -8,11 +8,11 @@ description: Configure Executor before first use and stop it deliberately at an 
 The minimal program can rely on lazy initialization. When you need custom thread counts, queue capacity, or monitoring, fix configuration before the first submission.
 
 ```cpp
-executor::ExecutorConfig config;
+kairo::ExecutorConfig config;
 config.min_threads = 2;
 config.max_threads = 4;
 
-auto& executor = executor::Executor::instance();
+auto& executor = kairo::Executor::instance();
 auto initialized = executor.initialize_ex(config);
 if (!initialized) {
     throw std::runtime_error(initialized.message);

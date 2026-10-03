@@ -20,11 +20,11 @@
 //   - subsequent good submits and cancellation still work.
 //
 // Build (normal):
-//   g++ -std=c++20 -O1 -g -DEXECUTOR_THREAD_POOL_TEST_HOOKS -I include -I src
+//   g++ -std=c++20 -O1 -g -DKAIRO_THREAD_POOL_TEST_HOOKS -I include -I src
 //     review_verification/cr011_tracked_graph_leak_fixed.cpp
 //     build/src/libexecutor.a -lpthread -ldl
 //     -o review_verification/cr011_tracked_graph_leak_fixed
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -33,7 +33,7 @@
 #include <string>
 #include <thread>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 namespace {

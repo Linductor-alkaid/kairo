@@ -14,11 +14,11 @@ Distinguish “every frame must be handled” from “a real-time cycle may hand
 A frame stream from acquisition to planning commonly requires FIFO consumption. `MpscChannel<T>` is a bounded multi-producer/single-consumer channel; an ordinary consumer can use `receive_for()` to bound its wait.
 
 ```cpp
-executor::comm::ChannelOptions options;
+kairo::comm::ChannelOptions options;
 options.capacity = 256;
-options.drop_policy = executor::comm::DropPolicy::RejectNewest;
+options.drop_policy = kairo::comm::DropPolicy::RejectNewest;
 
-executor::comm::MpscChannel<SensorFrame> frames(options);
+kairo::comm::MpscChannel<SensorFrame> frames(options);
 frames.try_send(SensorFrame{});
 
 SensorFrame frame;
@@ -48,11 +48,11 @@ Do not rely on the original contents after moving. A raw pointer, span, or view 
 A real-time thread must not wait on a condition variable or clear unlimited backlog. Bound per-cycle work with `drain_for_cycle()`:
 
 ```cpp
-executor::comm::RealtimeChannelOptions options;
+kairo::comm::RealtimeChannelOptions options;
 options.capacity = 128;
 options.max_items_per_cycle = 8;
 
-executor::comm::RealtimeChannel<ControlCommand> commands(options);
+kairo::comm::RealtimeChannel<ControlCommand> commands(options);
 commands.try_send(ControlCommand{});
 commands.drain_for_cycle([](const ControlCommand& command) {
     apply_command(command);

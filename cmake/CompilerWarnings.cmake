@@ -2,13 +2,13 @@
 # 统一编译器警告配置，支持 GCC、Clang、MSVC
 
 # 选项：是否将警告视为错误
-option(EXECUTOR_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+option(KAIRO_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
-function(executor_enable_warnings target)
+function(kairo_enable_warnings target)
 if(MSVC)
     # MSVC 警告配置
     target_compile_options(${target} PRIVATE /W4)
-    if(EXECUTOR_WARNINGS_AS_ERRORS)
+    if(KAIRO_WARNINGS_AS_ERRORS)
         target_compile_options(${target} PRIVATE /WX)
     endif()
     
@@ -20,7 +20,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
     
     # 额外的有用警告
-    set(_executor_extra_warnings
+    set(_kairo_extra_warnings
         -Wcast-align
         -Wcast-qual
         -Wconversion
@@ -50,14 +50,14 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 
     # NDK clang 不认识部分 GCC 风格 warning，会产生大量 unknown warning option。
     if(ANDROID AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        list(REMOVE_ITEM _executor_extra_warnings
+        list(REMOVE_ITEM _kairo_extra_warnings
             -Wlogical-op
             -Wnoexcept
             -Wstrict-null-sentinel
         )
     endif()
 
-    target_compile_options(${target} PRIVATE ${_executor_extra_warnings})
+    target_compile_options(${target} PRIVATE ${_kairo_extra_warnings})
     
     # Clang 特定警告
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -68,7 +68,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     endif()
     
     # 如果启用警告为错误
-    if(EXECUTOR_WARNINGS_AS_ERRORS)
+    if(KAIRO_WARNINGS_AS_ERRORS)
         target_compile_options(${target} PRIVATE -Werror)
     endif()
 endif()

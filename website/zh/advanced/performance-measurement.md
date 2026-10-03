@@ -14,7 +14,7 @@ description: 用统一实验协议分别测量吞吐、尾延迟、jitter 和正
 - 1ms 控制周期在目标权限和负载下的 p99 jitter 是多少？
 - 持续过载时是否按协议拒绝，并且不会丢失已接受任务？
 
-“Executor 快不快”无法形成实验。至少固定工作负载、并发模型、输入规模、队列策略、目标硬件和通过条件，再选择指标。
+“Kairo 快不快”无法形成实验。至少固定工作负载、并发模型、输入规模、队列策略、目标硬件和通过条件，再选择指标。
 
 ## 五类结果不能互相替代
 
@@ -64,7 +64,7 @@ memory:
 compiler and version:
 CMake version:
 build type and relevant flags:
-Executor configuration:
+Kairo configuration:
 power governor / virtualization / container limits:
 realtime permissions and applied status:
 GPU backend / driver / device, if used:
@@ -127,9 +127,9 @@ timer/realtime precision benchmark 计算实际触发时间相对期望时间点
 ```bash
 cmake -S . -B build-perf \
   -DCMAKE_BUILD_TYPE=Release \
-  -DEXECUTOR_BUILD_TESTS=ON \
-  -DEXECUTOR_BUILD_EXAMPLES=OFF \
-  -DEXECUTOR_ENABLE_GPU=OFF
+  -DKAIRO_BUILD_TESTS=ON \
+  -DKAIRO_BUILD_EXAMPLES=OFF \
+  -DKAIRO_ENABLE_GPU=OFF
 cmake --build build-perf -j --target \
   benchmark_baseline \
   benchmark_timer_precision \

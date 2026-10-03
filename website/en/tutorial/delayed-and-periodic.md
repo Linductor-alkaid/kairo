@@ -44,7 +44,7 @@ Each timer tick submits the same callback to the ordinary pool without waiting f
 
 Periodic exceptions do not return to the `submit_periodic()` call. Check periodic status and configure failure status or a callback in a long-running service. Successful cancellation stops future scheduling only: work already queued or running can still complete.
 
-Stop creating delayed/periodic work, cancel every retained ID, wait within a budget for submitted callbacks, then shut down Executor. Network or device I/O needs its own timeout.
+Stop creating delayed/periodic work, cancel every retained ID, wait within a budget for submitted callbacks, then shut down Kairo. Network or device I/O needs its own timeout.
 
 Inject a retry exception, an overlong health check, repeated callback failures, and shutdown before delayed expiry. Do not use a larger queue to mask overlap. For exponential backoff, schedule the next delayed task after each failure with a capped attempt count; for strict phase or jitter requirements, use a dedicated real-time task instead.
 

@@ -11,7 +11,7 @@
 //   E  submit_after(when_all(when_all(U))) —— 两级 WhenAll
 //   D  上游抛 runtime_error 的对照（两路径均应透传 runtime_error）
 // 若所有路径最终异常类型一致 → 分类差异在 API 层面不可观测 → NOT REPRODUCED。
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -22,7 +22,7 @@
 #include <thread>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 namespace {

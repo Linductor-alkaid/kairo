@@ -5,7 +5,7 @@
  * Periods: 1, 5, 10, 50, 100 ms. Output: human-readable or JSON (--json).
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
@@ -55,7 +55,7 @@ bool parse_bool_env(const char* s) {
 }
 
 void apply_env(Config& c) {
-    const char* t = std::getenv("EXECUTOR_BENCHMARK_JSON");
+    const char* t = std::getenv("KAIRO_BENCHMARK_JSON");
     if (t && parse_bool_env(t)) c.json_output = true;
 }
 
@@ -77,8 +77,8 @@ void parse_args(int argc, char* argv[], Config& c) {
     }
 }
 
-executor::ExecutorConfig make_executor_config(const Config& c) {
-    executor::ExecutorConfig ec;
+kairo::ExecutorConfig make_executor_config(const Config& c) {
+    kairo::ExecutorConfig ec;
     ec.min_threads = c.min_threads;
     ec.max_threads = c.max_threads;
     ec.queue_capacity = c.queue_capacity;
@@ -112,8 +112,8 @@ JitterStats compute_jitter_stats(std::vector<double>& samples_us) {
 }
 
 void run_delayed(const Config& cfg, bool json_only) {
-    executor::Executor ex;
-    executor::ExecutorConfig ec = make_executor_config(cfg);
+    kairo::Executor ex;
+    kairo::ExecutorConfig ec = make_executor_config(cfg);
     if (!ex.initialize(ec)) {
         std::cerr << "benchmark_timer_precision: initialize failed" << std::endl;
         std::exit(1);
@@ -183,8 +183,8 @@ void run_delayed(const Config& cfg, bool json_only) {
 }
 
 void run_periodic(const Config& cfg, bool json_only) {
-    executor::Executor ex;
-    executor::ExecutorConfig ec = make_executor_config(cfg);
+    kairo::Executor ex;
+    kairo::ExecutorConfig ec = make_executor_config(cfg);
     if (!ex.initialize(ec)) {
         std::cerr << "benchmark_timer_precision: initialize failed" << std::endl;
         std::exit(1);

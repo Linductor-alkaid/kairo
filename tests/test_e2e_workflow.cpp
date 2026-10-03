@@ -7,9 +7,9 @@
 #include <future>
 
 // 包含 Executor 的头文件
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 // 测试辅助宏
 #define TEST_ASSERT(condition, message) \

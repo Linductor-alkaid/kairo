@@ -5,14 +5,14 @@
 #include <thread>
 #include <atomic>
 
-#include <executor/config.hpp>
-#include <executor/types.hpp>
-#include <executor/interfaces.hpp>
-#include "executor/realtime_thread_executor.hpp"
+#include <kairo/config.hpp>
+#include <kairo/types.hpp>
+#include <kairo/interfaces.hpp>
+#include "kairo/realtime_thread_executor.hpp"
 #include "mock_cycle_manager.hpp"
 
-using namespace executor;
-using namespace executor::test;
+using namespace kairo;
+using namespace kairo::test;
 
 #define TEST_ASSERT(condition, message) \
     do { \

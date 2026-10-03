@@ -6,7 +6,7 @@
  * 2. 为批量提交 API 优化提供对比数据
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <chrono>
 #include <iostream>
 #include <iomanip>
@@ -14,7 +14,7 @@
 #include <numeric>
 #include <thread>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 struct BenchmarkResult {

@@ -1,6 +1,6 @@
 ---
 title: Step-by-Step Tutorials
-description: Learn the Executor Facade through a robot data pipeline and a server-side import.
+description: Learn the Kairo Facade through a robot data pipeline and a server-side import.
 ---
 
 # Step-by-Step Tutorials

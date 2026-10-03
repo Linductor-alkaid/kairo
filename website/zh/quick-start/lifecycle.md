@@ -1,6 +1,6 @@
 ---
 title: 初始化与关闭
-description: 在需要配置时先初始化，并在程序边界有序关闭 Executor。
+description: 在需要配置时先初始化，并在程序边界有序关闭 Kairo。
 ---
 
 # 初始化与关闭
@@ -12,11 +12,11 @@ description: 在需要配置时先初始化，并在程序边界有序关闭 Exe
 ## 推荐方案
 
 ```cpp
-executor::ExecutorConfig config;
+kairo::ExecutorConfig config;
 config.min_threads = 2;
 config.max_threads = 4;
 
-auto& executor = executor::Executor::instance();
+auto& executor = kairo::Executor::instance();
 auto initialized = executor.initialize_ex(config);
 if (!initialized) {
     throw std::runtime_error(initialized.message);

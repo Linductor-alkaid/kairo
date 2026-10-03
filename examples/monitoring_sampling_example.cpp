@@ -1,9 +1,9 @@
-#include <executor/executor.hpp>
-#include <executor/lockfree_task_executor.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/lockfree_task_executor.hpp>
 #include <iostream>
 #include <iomanip>
 
-using namespace executor;
+using namespace kairo;
 
 void demo_task_monitor_sampling() {
     std::cout << "=== Task Monitor Sampling Demo ===\n\n";

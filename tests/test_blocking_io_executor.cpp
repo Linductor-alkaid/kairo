@@ -9,14 +9,14 @@
 #include <system_error>
 #include <thread>
 
-#include <executor/blocking_io.hpp>
-#include <executor/executor.hpp>
+#include <kairo/blocking_io.hpp>
+#include <kairo/executor.hpp>
 
 #define private public
-#include "executor/blocking_io_executor.hpp"
+#include "kairo/blocking_io_executor.hpp"
 #undef private
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message)                                      \
     do {                                                                     \
@@ -260,7 +260,7 @@ bool test_start_failure_and_timeout_rollback() {
     auto state = std::make_shared<WorkerState>();
     BlockingIoExecutor creation_failure(
         "creation_failure", valid_config(), std::make_unique<BlockingWorker>(state));
-    creation_failure.thread_factory_ = [](std::function<void(StopToken)>) -> executor::detail::JThread {
+    creation_failure.thread_factory_ = [](std::function<void(StopToken)>) -> kairo::detail::JThread {
         throw std::system_error(
             std::make_error_code(std::errc::resource_unavailable_try_again),
             "test thread creation failure");
@@ -276,7 +276,7 @@ bool test_start_failure_and_timeout_rollback() {
     BlockingIoExecutor timeout_executor(
         "startup_timeout", timeout_config, std::make_unique<BlockingWorker>(timeout_state));
     timeout_executor.thread_factory_ = [](std::function<void(StopToken)>) {
-        return executor::detail::JThread([](StopToken stop_token) {
+        return kairo::detail::JThread([](StopToken stop_token) {
             while (!stop_token.stop_requested()) {
                 std::this_thread::yield();
             }

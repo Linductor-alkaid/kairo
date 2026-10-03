@@ -1,6 +1,6 @@
 ---
 title: Blocking I/O Workers
-description: Own, wake, and join a long-lived blocking worker through the Executor Facade.
+description: Own, wake, and join a long-lived blocking worker through the Kairo Facade.
 ---
 
 # Blocking I/O Workers
@@ -44,8 +44,8 @@ blocking worker started=yes, stopped=yes, wakeups=1
 
 `Executor::shutdown()` applies the same stop/wake/join rule to every registered I/O worker, including `shutdown(false)`. Do not detach a worker or retain references to it after shutdown.
 
-## What remains outside Executor
+## What remains outside Kairo
 
 This library deliberately does not decide message ownership, queue policy, data freshness, reconnect behavior, device safety actions, or deployment tuning. Define and test those concerns in the application that implements the worker.
 
-For complete signatures and status fields, see the [API reference](https://github.com/Linductor-alkaid/executor/blob/master/docs/API.md#45-blocking-io-worker-api). Next: return to [real-time control](/en/realtime-and-communication/realtime-control) when the work instead has a fixed-period budget.
+For complete signatures and status fields, see the [API reference](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md#45-blocking-io-worker-api). Next: return to [real-time control](/en/realtime-and-communication/realtime-control) when the work instead has a fixed-period budget.

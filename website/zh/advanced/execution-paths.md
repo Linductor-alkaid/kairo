@@ -13,7 +13,7 @@ description: 以当前实现说明普通与实时任务的调度、执行、状�
 
 ```mermaid
 flowchart LR
-    A[Executor Facade] --> B[ExecutorManager]
+    A[Kairo Facade] --> B[ExecutorManager]
     B --> C[ThreadPoolExecutor<br/>IAsyncExecutor]
     C --> D[ThreadPool]
     D --> E[PriorityScheduler]
@@ -76,7 +76,7 @@ flowchart LR
 
 `when_all()` 是一个没有用户任务体的虚拟图节点。它处于 `WhenAll` 状态，任一依赖完成时由 `resolve_task_graph_dependents_locked()` 重新检查：全部成功则完成，任一失败则失败，并继续唤醒下游节点。完成节点没有 dependents 时会裁剪依赖状态，避免常驻服务无限保存所有历史边。
 
-图状态由 `task_graph_mutex_` 保护，依赖邻接表内部还有 `shared_mutex`。这不是为了让两个锁同时保护同一字段：外层保证节点状态与 dependents 解析的一致快照，内层封装依赖边和完成集合的读写。跨 Executor handle 无法在目标图中找到，因此被视为无效，而不是全局搜索。
+图状态由 `task_graph_mutex_` 保护，依赖邻接表内部还有 `shared_mutex`。这不是为了让两个锁同时保护同一字段：外层保证节点状态与 dependents 解析的一致快照，内层封装依赖边和完成集合的读写。跨 Kairo handle 无法在目标图中找到，因此被视为无效，而不是全局搜索。
 
 ### scheduler、dispatcher 与 worker 是三段路径
 
@@ -128,7 +128,7 @@ global scheduler empty
 
 ```mermaid
 flowchart LR
-    A[Executor Facade] --> B[ExecutorManager]
+    A[Kairo Facade] --> B[ExecutorManager]
     B --> C[RealtimeThreadExecutor]
     C --> D[周期触发<br/>sleep_until 或 ICycleManager]
     D --> E[cycle_callback]
@@ -163,7 +163,7 @@ flowchart LR
 
 路径中的 `ThreadPool`、`PriorityScheduler`、`TaskDispatcher`、worker 队列与实际窃取策略可能在不改变公开行为的版本中重构。把它们当作“当前发生什么”的说明，而不是可以直接调用的 API。
 
-对应源码入口：[`src/executor/executor.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/executor.cpp)、[`src/executor/executor_manager.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/executor_manager.cpp)、[`src/executor/thread_pool/thread_pool.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/thread_pool/thread_pool.cpp)、[`src/executor/thread_pool/task_dispatcher.hpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/thread_pool/task_dispatcher.hpp) 与 [`src/executor/realtime_thread_executor.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/realtime_thread_executor.cpp)。阅读源码时请同时参考测试：它们描述外部可依赖的行为，而不是由本文固定内部结构。
+对应源码入口：[`src/kairo/executor.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/executor.cpp)、[`src/kairo/executor_manager.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/executor_manager.cpp)、[`src/kairo/thread_pool/thread_pool.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/thread_pool/thread_pool.cpp)、[`src/kairo/thread_pool/task_dispatcher.hpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/thread_pool/task_dispatcher.hpp) 与 [`src/kairo/realtime_thread_executor.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/realtime_thread_executor.cpp)。阅读源码时请同时参考测试：它们描述外部可依赖的行为，而不是由本文固定内部结构。
 
 ## 下一步阅读
 

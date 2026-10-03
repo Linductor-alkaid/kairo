@@ -5,23 +5,23 @@
 #include <stdexcept>
 #include <string>
 
-#include <executor/config.hpp>
-#include <executor/types.hpp>
-#ifdef EXECUTOR_ENABLE_CUDA
-#include "executor/gpu/cuda_executor.hpp"
+#include <kairo/config.hpp>
+#include <kairo/types.hpp>
+#ifdef KAIRO_ENABLE_CUDA
+#include "kairo/gpu/cuda_executor.hpp"
 #endif
-#ifdef EXECUTOR_ENABLE_OPENCL
-#include "executor/gpu/opencl_executor.hpp"
+#ifdef KAIRO_ENABLE_OPENCL
+#include "kairo/gpu/opencl_executor.hpp"
 #endif
 
-#ifdef EXECUTOR_ENABLE_CUDA
-using executor::gpu::CudaExecutor;
+#ifdef KAIRO_ENABLE_CUDA
+using kairo::gpu::CudaExecutor;
 #endif
-using executor::gpu::GpuBackend;
-using executor::gpu::GpuExecutorConfig;
-using executor::gpu::GpuTaskConfig;
-#ifdef EXECUTOR_ENABLE_OPENCL
-using executor::gpu::OpenCLExecutor;
+using kairo::gpu::GpuBackend;
+using kairo::gpu::GpuExecutorConfig;
+using kairo::gpu::GpuTaskConfig;
+#ifdef KAIRO_ENABLE_OPENCL
+using kairo::gpu::OpenCLExecutor;
 #endif
 
 namespace {
@@ -54,7 +54,7 @@ bool has_queue_size_error(const std::string& message) {
 }  // namespace
 
 TEST(GpuExecutorDirectConfigValidation, CudaRejectsZeroQueueCapacity) {
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     auto config = make_config(GpuBackend::CUDA, "cuda_zero_queue_direct");
     CudaExecutor executor(config.name, config);
 
@@ -68,7 +68,7 @@ TEST(GpuExecutorDirectConfigValidation, CudaRejectsZeroQueueCapacity) {
 }
 
 TEST(GpuExecutorDirectConfigValidation, OpenCLRejectsZeroQueueCapacity) {
-#ifdef EXECUTOR_ENABLE_OPENCL
+#ifdef KAIRO_ENABLE_OPENCL
     auto config = make_config(GpuBackend::OPENCL, "opencl_zero_queue_direct");
     OpenCLExecutor executor(config.name, config);
 

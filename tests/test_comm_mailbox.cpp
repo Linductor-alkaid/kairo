@@ -1,4 +1,4 @@
-#include <executor/comm.hpp>
+#include <kairo/comm.hpp>
 
 #include <gtest/gtest.h>
 
@@ -13,13 +13,13 @@
 
 namespace {
 
-using executor::comm::CommEventKind;
-using executor::comm::CommErrorCode;
-using executor::comm::DropPolicy;
-using executor::comm::LatestMailbox;
-using executor::comm::PhaseGate;
-using executor::comm::RealtimeChannel;
-using executor::comm::RealtimeChannelOptions;
+using kairo::comm::CommEventKind;
+using kairo::comm::CommErrorCode;
+using kairo::comm::DropPolicy;
+using kairo::comm::LatestMailbox;
+using kairo::comm::PhaseGate;
+using kairo::comm::RealtimeChannel;
+using kairo::comm::RealtimeChannelOptions;
 
 struct NonDefaultValue {
     explicit NonDefaultValue(int value) noexcept : value(value) {}
@@ -101,7 +101,7 @@ TEST(CommMailboxTest, TryLoadNewerThanAvoidsDuplicateConsumption) {
 TEST(CommMailboxTest, EmitsOverwriteAndStaleEventsOutsideLock) {
     LatestMailbox<int> mailbox("control_config");
     std::vector<CommEventKind> events;
-    mailbox.set_event_callback([&](const executor::comm::CommEvent& event) {
+    mailbox.set_event_callback([&](const kairo::comm::CommEvent& event) {
         EXPECT_EQ(event.component_name, "control_config");
         events.push_back(event.kind);
     });
@@ -369,7 +369,7 @@ TEST(CommRealtimeChannelTest, HandlerExceptionStopsCurrentDrainAndRethrows) {
     channel.try_send(2);
 
     std::atomic<int> exception_events{0};
-    channel.set_event_callback([&](const executor::comm::CommEvent& event) noexcept {
+    channel.set_event_callback([&](const kairo::comm::CommEvent& event) noexcept {
         if (event.kind == CommEventKind::HandlerException) {
             exception_events.fetch_add(1, std::memory_order_relaxed);
         }

@@ -3,7 +3,7 @@
  * Measures task submission latency and throughput improvements
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <chrono>
 #include <iostream>
 #include <iomanip>
@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <numeric>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 struct BenchResult {

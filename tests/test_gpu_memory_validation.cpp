@@ -9,20 +9,20 @@
 #include <mutex>
 #include <string>
 
-#include "executor/config.hpp"
+#include "kairo/config.hpp"
 #define private public
-#include "executor/gpu/cuda_executor.hpp"
+#include "kairo/gpu/cuda_executor.hpp"
 #undef private
 
-using executor::gpu::CudaExecutor;
-using executor::gpu::GpuExecutorConfig;
+using kairo::gpu::CudaExecutor;
+using kairo::gpu::GpuExecutorConfig;
 
 namespace {
 
 GpuExecutorConfig make_cuda_config() {
     GpuExecutorConfig config;
     config.name = "cuda_memory_validation";
-    config.backend = executor::gpu::GpuBackend::CUDA;
+    config.backend = kairo::gpu::GpuBackend::CUDA;
     config.device_id = 0;
     config.max_queue_size = 16;
     return config;

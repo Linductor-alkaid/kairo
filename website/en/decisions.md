@@ -9,11 +9,11 @@ aside: false
 
 | Item | Decision | Reason |
 | --- | --- | --- |
-| Site name | Executor Guide | Matches the repository name and clearly signals a learning resource. |
+| Site name | Kairo Guide | Matches the repository name and clearly signals a learning resource. |
 | Audience promise | Complete a first observable asynchronous task in ten minutes | The shortest successful MVP path. |
 | Source directory | `website/` | Separates the site from C++ source, examples, and reference documents. |
 | Toolchain | VitePress 1.6.3, Node.js 20 LTS, npm | Static generation, built-in search, and low maintenance. |
-| URL | GitHub Pages project site at `/executor/`; no custom domain initially | Matches `Linductor-alkaid/executor` and avoids launch DNS dependency. |
+| URL | GitHub Pages project site at `/kairo/`; no custom domain initially | Matches `Linductor-alkaid/executor` and avoids launch DNS dependency. |
 | Language policy | Chinese root home page; `/zh/` and `/en/` content trees | Root never redirects by browser language, preserving predictable deep links. |
 | Version policy | Stable `v0.5.3` baseline | Pages follow current repository API; unreleased features are not stable-version promises. |
 | Diagram policy | Markdown text diagrams initially | Avoids extra Mermaid dependency and build risk. |
@@ -39,9 +39,9 @@ aside: false
 | Page | Fact source | Complete example | Acceptance owner |
 | --- | --- | --- | --- |
 | Home | `README_zh.md`, public Facade | `examples/tutorial/01_first_task.cpp` | Project maintainer |
-| What is Executor? | `docs/design/user_guide_website.md` | — | Architecture maintainer |
+| What is Kairo? | `docs/design/user_guide_website.md` | — | Architecture maintainer |
 | Build and install | `docs/BUILD.md`, root `CMakeLists.txt` | `01_first_task.cpp` | Build maintainer |
-| Your first task | `include/executor/executor.hpp` | `01_first_task.cpp` | Tutorial maintainer |
+| Your first task | `include/kairo/executor.hpp` | `01_first_task.cpp` | Tutorial maintainer |
 | Return values and errors | `Executor::submit_auto()`, future | `01_first_task.cpp` | Tutorial maintainer |
 | Initialization and shutdown | `Executor::initialize_ex()`, `shutdown()` | `01_first_task.cpp` | API maintainer |
 | Versions and migration | `docs/MIGRATION.md`, `CHANGELOG.md` | — | Release maintainer |

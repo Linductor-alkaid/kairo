@@ -14,7 +14,7 @@
 // 另观察 priority=10（1-99 → SCHED_FIFO 路径）在 RLIMIT_RTPRIO=0 非 root 下
 // 的实际行为。
 
-#include "executor/util/thread_utils.hpp"
+#include "kairo/util/thread_utils.hpp"
 
 #include <sys/resource.h>
 #include <sys/syscall.h>
@@ -30,7 +30,7 @@
 #include <string>
 #include <thread>
 
-using executor::util::set_thread_priority;
+using kairo::util::set_thread_priority;
 
 static int read_own_nice_getpriority() {
     errno = 0;

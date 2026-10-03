@@ -8,13 +8,13 @@ class UnifiedMemoryTest : public ::testing::Test {
 protected:
     void SetUp() override {
         config_.name = "test_unified_cuda";
-        config_.backend = executor::gpu::GpuBackend::CUDA;
+        config_.backend = kairo::gpu::GpuBackend::CUDA;
         config_.device_id = 0;
         config_.enable_unified_memory = true;
         config_.enable_monitoring = false;
 
-        executor_ = std::make_unique<executor::gpu::CudaExecutor>("test_unified", config_);
-#ifndef EXECUTOR_ENABLE_CUDA
+        executor_ = std::make_unique<kairo::gpu::CudaExecutor>("test_unified", config_);
+#ifndef KAIRO_ENABLE_CUDA
         GTEST_SKIP() << "CUDA support not enabled";
 #else
         if (!executor_->start()) {
@@ -34,8 +34,8 @@ protected:
         }
     }
 
-    executor::gpu::GpuExecutorConfig config_;
-    std::unique_ptr<executor::gpu::CudaExecutor> executor_;
+    kairo::gpu::GpuExecutorConfig config_;
+    std::unique_ptr<kairo::gpu::CudaExecutor> executor_;
 };
 
 TEST_F(UnifiedMemoryTest, AllocateAndFree) {
@@ -79,7 +79,7 @@ TEST_F(UnifiedMemoryTest, PrefetchMemory) {
 
     executor_->synchronize();
 
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     // 预取回主机
     success = executor_->prefetch_memory(ptr, size, cudaCpuDeviceId, 0);
     EXPECT_TRUE(success);

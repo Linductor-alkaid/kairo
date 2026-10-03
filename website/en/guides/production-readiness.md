@@ -1,15 +1,15 @@
 ---
 title: Production Readiness Checklist
-description: Define Executor ownership, failure observation, capacity, waiting, and shutdown policy for a long-running service.
+description: Define Kairo ownership, failure observation, capacity, waiting, and shutdown policy for a long-running service.
 ---
 
 # Production Readiness Checklist
 
-A passing tutorial proves compilation, linking, and basic semantics—not production integration. Put Executor into the application's lifecycle, capacity, and failure model before deployment. If you still use detached threads, `std::async`, or a hand-written queue, start with [migrating existing thread code](/en/guides/migrating-existing-threads); use [antipatterns](/en/guides/concurrency-antipatterns) to inspect an existing design by symptom.
+A passing tutorial proves compilation, linking, and basic semantics—not production integration. Put Kairo into the application's lifecycle, capacity, and failure model before deployment. If you still use detached threads, `std::async`, or a hand-written queue, start with [migrating existing thread code](/en/guides/migrating-existing-threads); use [antipatterns](/en/guides/concurrency-antipatterns) to inspect an existing design by symptom.
 
 ## 1. Name the runtime owner
 
-The singleton fits a shared process pool; an independent `Executor` fits test/plugin isolation or a component that needs separate shutdown. Do not construct an Executor per request, and do not let several modules believe they may shut down the shared singleton.
+The singleton fits a shared process pool; an independent `Executor` fits test/plugin isolation or a component that needs separate shutdown. Do not construct an Kairo per request, and do not let several modules believe they may shut down the shared singleton.
 
 Document who initializes before first submission, who updates failure/monitoring configuration, who begins draining and shutdown after intake stops, and which components only borrow the runtime.
 
@@ -66,7 +66,7 @@ Before release, create temporary input faster than consumption, task and callbac
 ## Minimum review record
 
 ```text
-Executor owner:
+Kairo owner:
 Initialization configuration and rationale:
 Work classes and submission APIs:
 Future / task-ID owners:

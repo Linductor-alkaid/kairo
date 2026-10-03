@@ -6,13 +6,13 @@
  * 2. 使用 submit_batch()（优化）
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <chrono>
 #include <iostream>
 #include <iomanip>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 struct BenchmarkResult {

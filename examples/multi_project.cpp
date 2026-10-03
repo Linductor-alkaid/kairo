@@ -13,9 +13,9 @@
 #include <chrono>
 #include <vector>
 #include <atomic>
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 // ========== 场景 1：单例共享模式 ==========
 

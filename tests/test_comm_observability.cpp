@@ -1,4 +1,4 @@
-#include <executor/comm.hpp>
+#include <kairo/comm.hpp>
 
 #include <gtest/gtest.h>
 
@@ -10,21 +10,21 @@ using namespace std::chrono_literals;
 
 namespace {
 
-executor::comm::ChannelOptions channel_options(size_t capacity) {
-    executor::comm::ChannelOptions options;
+kairo::comm::ChannelOptions channel_options(size_t capacity) {
+    kairo::comm::ChannelOptions options;
     options.capacity = capacity;
     return options;
 }
 
-executor::comm::RealtimeChannelOptions realtime_options(size_t capacity) {
-    executor::comm::RealtimeChannelOptions options;
+kairo::comm::RealtimeChannelOptions realtime_options(size_t capacity) {
+    kairo::comm::RealtimeChannelOptions options;
     options.capacity = capacity;
     options.max_items_per_cycle = 8;
     return options;
 }
 
 TEST(CommObservabilityTest, CountsDropOverwriteStaleMissedAndTimeout) {
-    executor::comm::MpscChannel<int> channel(channel_options(1));
+    kairo::comm::MpscChannel<int> channel(channel_options(1));
     EXPECT_TRUE(channel.try_send(1));
     EXPECT_FALSE(channel.try_send(2));
     int value = 0;
@@ -33,7 +33,7 @@ TEST(CommObservabilityTest, CountsDropOverwriteStaleMissedAndTimeout) {
     EXPECT_EQ(channel.stats().dropped_count, 1U);
     EXPECT_EQ(channel.stats().timeout_count, 1U);
 
-    executor::comm::LatestMailbox<int> mailbox("mailbox");
+    kairo::comm::LatestMailbox<int> mailbox("mailbox");
     mailbox.publish(1);
     mailbox.publish(2);
     uint64_t sequence = mailbox.sequence();
@@ -41,18 +41,18 @@ TEST(CommObservabilityTest, CountsDropOverwriteStaleMissedAndTimeout) {
     EXPECT_EQ(mailbox.stats().overwritten_count, 1U);
     EXPECT_EQ(mailbox.stats().stale_read_count, 1U);
 
-    executor::comm::PhaseGate gate("phase");
+    kairo::comm::PhaseGate gate("phase");
     EXPECT_TRUE(gate.advance_to(2));
     EXPECT_FALSE(gate.advance_to(1));
     EXPECT_EQ(gate.stats().missed_phase_count, 1U);
 }
 
 TEST(CommObservabilityTest, CallbackExceptionsAreIsolatedFromDataPath) {
-    auto throwing_callback = [](const executor::comm::CommEvent&) {
+    auto throwing_callback = [](const kairo::comm::CommEvent&) {
         throw std::runtime_error("diagnostic sink failed");
     };
 
-    executor::comm::MpscChannel<int> channel(channel_options(1));
+    kairo::comm::MpscChannel<int> channel(channel_options(1));
     channel.set_event_callback(throwing_callback);
     EXPECT_TRUE(channel.try_send(1));
     EXPECT_NO_THROW({
@@ -60,13 +60,13 @@ TEST(CommObservabilityTest, CallbackExceptionsAreIsolatedFromDataPath) {
     });
     EXPECT_EQ(channel.stats().dropped_count, 1U);
 
-    executor::comm::LatestMailbox<int> mailbox("mailbox");
+    kairo::comm::LatestMailbox<int> mailbox("mailbox");
     mailbox.set_event_callback(throwing_callback);
     mailbox.publish(1);
     EXPECT_NO_THROW(mailbox.publish(2));
     EXPECT_EQ(mailbox.stats().overwritten_count, 1U);
 
-    executor::comm::PhaseGate gate("phase");
+    kairo::comm::PhaseGate gate("phase");
     gate.set_event_callback(throwing_callback);
     EXPECT_TRUE(gate.advance_to(2));
     EXPECT_NO_THROW({
@@ -75,7 +75,7 @@ TEST(CommObservabilityTest, CallbackExceptionsAreIsolatedFromDataPath) {
     });
     EXPECT_EQ(gate.stats().missed_phase_count, 1U);
 
-    executor::comm::RealtimeChannel<int> realtime(realtime_options(1));
+    kairo::comm::RealtimeChannel<int> realtime(realtime_options(1));
     realtime.set_event_callback(throwing_callback);
     EXPECT_TRUE(realtime.try_send(1));
     EXPECT_NO_THROW({
@@ -85,7 +85,7 @@ TEST(CommObservabilityTest, CallbackExceptionsAreIsolatedFromDataPath) {
 }
 
 TEST(CommObservabilityTest, LatencyAndLagStatsAreObservable) {
-    executor::comm::MpscChannel<int> channel(channel_options(4));
+    kairo::comm::MpscChannel<int> channel(channel_options(4));
     EXPECT_TRUE(channel.try_send(1));
     std::this_thread::sleep_for(1ms);
     int value = 0;
@@ -96,7 +96,7 @@ TEST(CommObservabilityTest, LatencyAndLagStatsAreObservable) {
     EXPECT_GT(channel_stats.max_latency.count(), 0);
     EXPECT_GT(channel_stats.avg_latency.count(), 0);
 
-    executor::comm::LatestMailbox<int> mailbox("mailbox");
+    kairo::comm::LatestMailbox<int> mailbox("mailbox");
     mailbox.publish(1);
     EXPECT_TRUE(mailbox.try_load(value));
     EXPECT_EQ(mailbox.stats().consumer_lag, 0U);
@@ -110,7 +110,7 @@ TEST(CommObservabilityTest, LatencyAndLagStatsAreObservable) {
     EXPECT_EQ(mailbox_stats.consumer_lag, 2U);
     EXPECT_GT(mailbox_stats.max_latency.count(), 0);
 
-    executor::comm::RealtimeChannel<int> realtime(realtime_options(4));
+    kairo::comm::RealtimeChannel<int> realtime(realtime_options(4));
     EXPECT_TRUE(realtime.try_send(5));
     std::this_thread::sleep_for(1ms);
     EXPECT_EQ(realtime.drain_for_cycle([&](int item) { value = item; }), 1U);
@@ -118,7 +118,7 @@ TEST(CommObservabilityTest, LatencyAndLagStatsAreObservable) {
     EXPECT_EQ(realtime_stats.current_depth, 0U);
     EXPECT_GT(realtime_stats.max_latency.count(), 0);
 
-    executor::comm::DoubleBuffer<int> buffer(0, "state");
+    kairo::comm::DoubleBuffer<int> buffer(0, "state");
     auto snapshot = buffer.load();
     EXPECT_EQ(snapshot.value, 0);
     EXPECT_EQ(buffer.stats().consumer_lag, 0U);

@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 BUILD_DIR="${BUILD_DIR:-build}"
 
 echo "=========================================="
-echo "Executor 代码覆盖率"
+echo "Kairo 代码覆盖率"
 echo "=========================================="
 echo ""
 
@@ -23,10 +23,10 @@ fi
 # 1. 配置（启用覆盖率，Debug 构建）
 echo "[1/5] 配置 CMake（启用覆盖率）..."
 cmake -B "$BUILD_DIR" -S . \
-  -DEXECUTOR_ENABLE_COVERAGE=ON \
+  -DKAIRO_ENABLE_COVERAGE=ON \
   -DCMAKE_BUILD_TYPE=Debug \
-  -DEXECUTOR_BUILD_EXAMPLES=OFF \
-  -DEXECUTOR_BUILD_TESTS=ON
+  -DKAIRO_BUILD_EXAMPLES=OFF \
+  -DKAIRO_BUILD_TESTS=ON
 
 # 2. 编译
 echo ""
@@ -60,7 +60,7 @@ lcov --remove coverage.info \
 
 genhtml coverage_filtered.info \
   --output-directory coverage_html \
-  --title "Executor Code Coverage" \
+  --title "Kairo Code Coverage" \
   --show-details \
   --legend
 

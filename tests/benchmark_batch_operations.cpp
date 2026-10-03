@@ -2,7 +2,7 @@
  * 批量操作性能基准测试
  */
 
-#include "executor/util/lockfree_queue.hpp"
+#include "kairo/util/lockfree_queue.hpp"
 #include <thread>
 #include <vector>
 #include <atomic>
@@ -10,7 +10,7 @@
 #include <iostream>
 #include <iomanip>
 
-using namespace executor::util;
+using namespace kairo::util;
 using namespace std::chrono;
 
 struct Result {

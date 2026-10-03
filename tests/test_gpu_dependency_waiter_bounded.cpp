@@ -10,11 +10,11 @@
 
 #include <gtest/gtest.h>
 
-#include <executor/interfaces.hpp>
+#include <kairo/interfaces.hpp>
 
 namespace {
 
-class MockGpuDependencyExecutor : public executor::IGpuExecutor {
+class MockGpuDependencyExecutor : public kairo::IGpuExecutor {
 public:
     ~MockGpuDependencyExecutor() override { stop(); }
 
@@ -49,13 +49,13 @@ public:
     bool copy_to_host(void*, const void*, size_t, bool, int) override { return true; }
     bool copy_device_to_device(void*, const void*, size_t, bool, int) override { return true; }
     std::string get_name() const override { return "mock_gpu_dependency"; }
-    executor::gpu::GpuDeviceInfo get_device_info() const override { return {}; }
-    executor::gpu::GpuExecutorStatus get_status() const override { return {}; }
+    kairo::gpu::GpuDeviceInfo get_device_info() const override { return {}; }
+    kairo::gpu::GpuExecutorStatus get_status() const override { return {}; }
 
 protected:
     std::future<void> submit_kernel_impl(
         std::function<void(void*)> kernel_func,
-        const executor::gpu::GpuTaskConfig&) override {
+        const kairo::gpu::GpuTaskConfig&) override {
         std::promise<void> promise;
         auto future = promise.get_future();
         try {
@@ -100,7 +100,7 @@ TEST(GpuDependencyWaiterTest, BoundedPendingWaiters) {
     const int threads_before = process_thread_count();
     std::promise<void> never_ready;
     const auto dependency = never_ready.get_future().share();
-    executor::gpu::GpuTaskConfig config;
+    kairo::gpu::GpuTaskConfig config;
 
     std::vector<std::future<void>> accepted;
     for (int index = 0; index < 4; ++index) {

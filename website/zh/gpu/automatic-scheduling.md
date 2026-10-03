@@ -19,14 +19,14 @@ description: 用 cpu_gpu_task 表达独立路径、配置回退，并理解 lega
 
 ```cpp
 auto future = executor.submit_auto(
-    executor::cpu_gpu_task(
+    kairo::cpu_gpu_task(
         [data] { run_cpu(*data); },
         [data](void* stream) { run_gpu(stream, *data); })
         .name("segment")
         .data_size(bytes)
         .compute_intensity(3.0F)
         .preferred_executor("cuda0")
-        .fallback(executor::FallbackPolicy::AllowCpu));
+        .fallback(kairo::FallbackPolicy::AllowCpu));
 future.get();
 ```
 

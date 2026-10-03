@@ -7,7 +7,7 @@ set -e  # 遇到错误立即退出
 # 默认参数
 # CR-085: 版本默认值从根 CMakeLists.txt 的 project(VERSION) 提取（单一来源）；
 # 环境变量 VERSION / --version 参数仍可覆盖。
-_DEFAULT_VERSION="$(sed -n 's/^project(executor[[:space:]][^)]*VERSION \([0-9][0-9.]*\).*/\1/p' \
+_DEFAULT_VERSION="$(sed -n 's/^project(kairo[[:space:]][^)]*VERSION \([0-9][0-9.]*\).*/\1/p' \
     "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/CMakeLists.txt" | head -n1)"
 VERSION="${VERSION:-${_DEFAULT_VERSION:-0.0.0}}"
 unset _DEFAULT_VERSION
@@ -15,7 +15,7 @@ BUILD_DIR="${BUILD_DIR:-build_linux}"
 OUTPUT_DIR="${OUTPUT_DIR:-dist}"
 PACKAGE_TYPE="${PACKAGE_TYPE:-all}"  # all, dev, runtime
 MAINTAINER="${MAINTAINER:-Unknown <unknown@example.com>}"
-DESCRIPTION="${DESCRIPTION:-C++ executor library for task scheduling and thread pool management}"
+DESCRIPTION="${DESCRIPTION:-C++ kairo library for task scheduling and thread pool management}"
 
 # 解析命令行参数
 while [[ $# -gt 0 ]]; do
@@ -53,7 +53,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "========================================"
-echo "Executor Debian Package Script"
+echo "Kairo Debian Package Script"
 echo "========================================"
 echo "Version: $VERSION"
 echo "Build Dir: $BUILD_DIR"
@@ -105,11 +105,11 @@ trap "rm -rf $TEMP_DIR" EXIT
 
 # deb 版本号（去掉可能的 -dev 后缀）
 DEB_VERSION=$(echo "$VERSION" | sed 's/-.*$//')
-PACKAGE_BASE="libexecutor"
+PACKAGE_BASE="libkairo"
 
 # 函数：创建开发包
 create_dev_package() {
-    echo "Creating development package (libexecutor-dev)..."
+    echo "Creating development package (libkairo-dev)..."
     
     PACKAGE_NAME="${PACKAGE_BASE}-dev"
     DEB_DIR="$TEMP_DIR/${PACKAGE_NAME}_${DEB_VERSION}_${DEB_ARCH}"
@@ -163,10 +163,10 @@ create_dev_package() {
     # 如果使用 all-in-one 模式，开发包不依赖运行时包（因为已经包含了）
     if [ "$PACKAGE_TYPE" = "all" ]; then
         DEPS="libc6 (>= 2.17), libstdc++6 (>= 5.2)"
-        DESC_EXTRA=" This package contains all files needed to develop and run applications using the executor library (header files, static library, shared library, and CMake configuration files)."
+        DESC_EXTRA=" This package contains all files needed to develop and run applications using the kairo library (header files, static library, shared library, and CMake configuration files)."
     else
         DEPS="libc6 (>= 2.17), libstdc++6 (>= 5.2), ${PACKAGE_BASE} (= ${DEB_VERSION})"
-        DESC_EXTRA=" This package contains header files, static library, and CMake configuration files needed to develop applications using the executor library. The runtime library (${PACKAGE_BASE}) will be automatically installed as a dependency."
+        DESC_EXTRA=" This package contains header files, static library, and CMake configuration files needed to develop applications using the kairo library. The runtime library (${PACKAGE_BASE}) will be automatically installed as a dependency."
     fi
     
     cat > "$DEB_DIR/DEBIAN/control" << EOF
@@ -184,7 +184,7 @@ EOF
     if [ -f "$PROJECT_ROOT/LICENSE" ]; then
         cat > "$DEB_DIR/usr/share/doc/${PACKAGE_NAME}/copyright" << EOF
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: executor
+Upstream-Name: kairo
 Source: <url>
 
 Files: *
@@ -212,7 +212,7 @@ EOF
 
 # 函数：创建运行时包
 create_runtime_package() {
-    echo "Creating runtime package (libexecutor)..."
+    echo "Creating runtime package (libkairo)..."
     
     PACKAGE_NAME="${PACKAGE_BASE}"
     DEB_DIR="$TEMP_DIR/${PACKAGE_NAME}_${DEB_VERSION}_${DEB_ARCH}"
@@ -252,7 +252,7 @@ Depends: libc6 (>= 2.17), libstdc++6 (>= 5.2)
 Maintainer: ${MAINTAINER}
 Description: ${DESCRIPTION} (runtime library)
  This package contains the runtime library files needed to run applications
- that use the executor library.
+ that use the kairo library.
 EOF
     
     # 创建 copyright 文件
@@ -260,7 +260,7 @@ EOF
         mkdir -p "$DEB_DIR/usr/share/doc/${PACKAGE_NAME}"
         cat > "$DEB_DIR/usr/share/doc/${PACKAGE_NAME}/copyright" << EOF
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: executor
+Upstream-Name: kairo
 Source: <url>
 
 Files: *

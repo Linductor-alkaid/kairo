@@ -20,7 +20,7 @@
 构建并运行全部示例：
 
 ```bash
-cmake -B build -DEXECUTOR_BUILD_EXAMPLES=ON -DEXECUTOR_ENABLE_GPU=OFF
+cmake -B build -DKAIRO_BUILD_EXAMPLES=ON -DKAIRO_ENABLE_GPU=OFF
 cmake --build build --target tutorial_examples
 ctest --test-dir build -L tutorial --output-on-failure
 ```

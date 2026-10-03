@@ -21,7 +21,7 @@ description: 使用 submit_auto 和 future.get 执行任务、获取返回值、
 
 <<< @/../examples/tutorial/01_first_task.cpp{4,7-16,18-24,26}
 
-完整源码：[`examples/tutorial/01_first_task.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/tutorial/01_first_task.cpp)。
+完整源码：[`examples/tutorial/01_first_task.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/01_first_task.cpp)。
 
 ```bash
 ./build/examples/tutorial/tutorial_01_first_task

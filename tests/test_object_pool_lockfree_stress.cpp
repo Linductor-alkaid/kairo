@@ -26,7 +26,7 @@
 //     the bound.
 
 #include "util/object_pool.hpp"
-#include <executor/lockfree_task_executor.hpp>
+#include <kairo/lockfree_task_executor.hpp>
 
 #include <gtest/gtest.h>
 
@@ -52,7 +52,7 @@ struct ProbeValue {
     std::atomic<uint64_t> handouts{0};
 };
 
-using Pool = executor::util::ObjectPool<ProbeValue>;
+using Pool = kairo::util::ObjectPool<ProbeValue>;
 
 double percentile_ns(std::vector<double>& samples, double pct) {
     if (samples.empty()) return 0.0;
@@ -203,7 +203,7 @@ TEST(ObjectPoolLockfreeStress, RealtimeAcquireReleaseLatencyDistribution) {
 
 #if !defined(_WIN32)
 TEST(ObjectPoolLockfreeStress, IdleWorkerParksInsteadOfPolling) {
-    executor::LockFreeTaskExecutor exec(1024);
+    kairo::LockFreeTaskExecutor exec(1024);
     ASSERT_TRUE(exec.start());
 
     // Settle past the spin/yield escalation into the parked state.
@@ -233,7 +233,7 @@ TEST(ObjectPoolLockfreeStress, IdleWorkerParksInsteadOfPolling) {
 #endif // !defined(_WIN32)
 
 TEST(ObjectPoolLockfreeStress, ParkedWorkerWakesOnSubmit) {
-    executor::LockFreeTaskExecutor exec(1024);
+    kairo::LockFreeTaskExecutor exec(1024);
     ASSERT_TRUE(exec.start());
 
     // Settle into the parked state, then submit single tasks from idle and

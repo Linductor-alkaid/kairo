@@ -13,15 +13,15 @@
 //
 // The RT cycle callback blocks on a gate so the consumer never drains while
 // we push; max_tasks_per_cycle=0 (unlimited) afterwards for a fast drain.
-#include <executor/realtime_thread_executor.hpp>
+#include <kairo/realtime_thread_executor.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <thread>
 
-using executor::RealtimeThreadConfig;
-using executor::RealtimeThreadExecutor;
+using kairo::RealtimeThreadConfig;
+using kairo::RealtimeThreadExecutor;
 
 int main() {
     constexpr size_t kRequestedCapacity = 1000;

@@ -1,13 +1,13 @@
 // CR-075: shrinking in-flight capacity evicts entries and counts them as
 // "dropped"; dropped_count>0 latches in_flight_diagnostics_incomplete() true
 // forever, even after every remaining task completes normally.
-#include "executor/monitor/task_monitor.hpp"
+#include "kairo/monitor/task_monitor.hpp"
 
 #include <cstdio>
 #include <string>
 
-using executor::TaskLifecycleState;
-using executor::monitor::TaskMonitor;
+using kairo::TaskLifecycleState;
+using kairo::monitor::TaskMonitor;
 
 int main() {
     TaskMonitor m;

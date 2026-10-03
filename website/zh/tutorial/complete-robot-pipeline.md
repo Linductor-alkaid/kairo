@@ -26,8 +26,8 @@ flowchart TD
 
 这张图刻意区分两类关系：
 
-- **完成依赖**：地图与标定必须成功，启动阶段才能推进，使用 Executor 任务和 `TaskHandle`。
-- **持续数据流**：启动后各角色长期交换帧、配置、命令和状态，使用 `executor::comm`。
+- **完成依赖**：地图与标定必须成功，启动阶段才能推进，使用 Kairo 任务和 `TaskHandle`。
+- **持续数据流**：启动后各角色长期交换帧、配置、命令和状态，使用 `kairo::comm`。
 
 任务依赖不适合替代消息流；消息通道也不适合表达“一次初始化成功后才允许启动”的计算结果。
 
@@ -50,12 +50,12 @@ flowchart TD
 规划与记录模块都要看到同一条后续帧流，因此示例使用进程内 Topic，而不是让两个 consumer 竞争一个 channel。planner 的订阅容量为 `16`、使用 `RejectNewest`；故意较慢的 recorder 容量为 `2`、使用 `KeepLatest`，其覆盖不会回滚 planner 的成功投递。
 
 ```cpp
-executor::comm::Topic<SensorFrame> sensor_frames("sensor_frames");
+kairo::comm::Topic<SensorFrame> sensor_frames("sensor_frames");
 auto planner_frames = sensor_frames.subscribe(
     {.capacity = 16, .name = "planner_frames"});
 auto recorder_frames = sensor_frames.subscribe(
     {.capacity = 2,
-     .drop_policy = executor::comm::DropPolicy::KeepLatest,
+     .drop_policy = kairo::comm::DropPolicy::KeepLatest,
      .name = "recorder_frames"});
 
 const auto result = sensor_frames.publish(frame);
@@ -74,7 +74,7 @@ const auto result = sensor_frames.publish(frame);
 规划可能一次产生多条命令，但控制周期不能为了清空积压而无限工作：
 
 ```cpp
-executor::comm::RealtimeChannelOptions command_options;
+kairo::comm::RealtimeChannelOptions command_options;
 command_options.capacity = 8;
 command_options.max_items_per_cycle = 2;
 command_options.name = "control_commands";
@@ -135,13 +135,13 @@ auto bootstrap = executor.submit_after(prerequisites, start_pipeline);
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
-  -DEXECUTOR_BUILD_EXAMPLES=ON \
-  -DEXECUTOR_ENABLE_GPU=OFF
+  -DKAIRO_BUILD_EXAMPLES=ON \
+  -DKAIRO_ENABLE_GPU=OFF
 cmake --build build --target comm_robot_pipeline
 ./build/examples/comm_robot_pipeline
 ```
 
-完整源码：[`examples/comm_robot_pipeline.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/comm_robot_pipeline.cpp)。
+完整源码：[`examples/comm_robot_pipeline.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/comm_robot_pipeline.cpp)。
 
 输出中的 `[rt]` 与 `[monitor]` 行会因线程调度交错，延迟数值也依赖机器；不要用固定全文做测试。应核对以下稳定事实：
 
@@ -180,7 +180,7 @@ monitor 可能在 planner 发布首个快照前先轮询一次，因此出现 `[
 | 命令过时不可执行 | deadline/sequence 校验、KeepLatest 或业务合并策略 |
 | 多个监控消费者 | 明确快照复制成本和每个 reader 的 sequence |
 | 任一角色失败要全局停止 | `request_stop()`、关闭全部 channel/gate、保存首个失败原因 |
-| 需要重启流水线 | 重建独立 Executor/通信组件和业务状态，不复用已 shutdown 实例 |
+| 需要重启流水线 | 重建独立 Kairo/通信组件和业务状态，不复用已 shutdown 实例 |
 
 ## 故障注入：验证协议而不是只看正常输出
 
@@ -214,12 +214,12 @@ flowchart TD
     D --> E[停止实时任务]
     E --> F[monitor 读取最终快照后退出]
     F --> G[关闭 gate 与可关闭通道<br/>唤醒等待线程]
-    G --> H[有界等待 Executor 普通任务]
-    H --> I[shutdown Executor]
+    G --> H[有界等待 Kairo 普通任务]
+    H --> I[shutdown Kairo]
     I --> J[销毁 channel、mailbox、buffer 与业务对象]
 ```
 
-若退出预算耗尽，记录各 channel 深度、实时队列状态、Executor pending 快照和首个失败原因，再执行预先决定的快速关闭策略。超时本身不会安全终止任意业务函数。
+若退出预算耗尽，记录各 channel 深度、实时队列状态、Kairo pending 快照和首个失败原因，再执行预先决定的快速关闭策略。超时本身不会安全终止任意业务函数。
 
 ## 一次架构评审应得到的结论
 

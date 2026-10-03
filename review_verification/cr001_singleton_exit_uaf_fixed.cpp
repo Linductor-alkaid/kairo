@@ -20,11 +20,11 @@
 //
 // Build (ASAN):
 //   g++ -std=c++20 -O1 -g -fsanitize=address -fno-omit-frame-pointer
-//     -DEXECUTOR_THREAD_POOL_TEST_HOOKS -I include -I src
+//     -DKAIRO_THREAD_POOL_TEST_HOOKS -I include -I src
 //     review_verification/cr001_singleton_exit_uaf_fixed.cpp
 //     build-asan/src/libexecutor.a -lpthread -ldl
 //     -o review_verification/cr001_singleton_exit_uaf_fixed
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -33,7 +33,7 @@
 #include <string>
 #include <thread>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 namespace {

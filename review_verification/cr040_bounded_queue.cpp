@@ -11,7 +11,7 @@
 //   capacity=8, producer sends ids 1..1000 slowly, consumer pops every ~1ms.
 //   KeepLatest must preserve the latest ids: the max received id must equal
 //   the last id, and the tail window [N-7, N] must all be received.
-#include <executor/comm/bounded_queue.hpp>
+#include <kairo/comm/bounded_queue.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -22,9 +22,9 @@
 #include <thread>
 #include <vector>
 
-using executor::comm::BoundedQueue;
-using executor::comm::CommEvent;
-using executor::comm::DropPolicy;
+using kairo::comm::BoundedQueue;
+using kairo::comm::CommEvent;
+using kairo::comm::DropPolicy;
 
 using Clock = std::chrono::steady_clock;
 

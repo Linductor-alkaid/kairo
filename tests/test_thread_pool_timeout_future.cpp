@@ -7,13 +7,13 @@
 #include <string>
 #include <thread>
 
-#include <executor/config.hpp>
-#include <executor/executor.hpp>
-#include <executor/monitor/task_monitor.hpp>
-#include <executor/thread_pool/thread_pool.hpp>
-#include <executor/types.hpp>
+#include <kairo/config.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/monitor/task_monitor.hpp>
+#include <kairo/thread_pool/thread_pool.hpp>
+#include <kairo/types.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message)                                      \
     do {                                                                     \

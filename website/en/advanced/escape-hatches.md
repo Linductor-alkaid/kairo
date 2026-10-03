@@ -1,6 +1,6 @@
 ---
 title: Advanced Interfaces
-description: Leave the Executor Facade cautiously only for genuine resource isolation, executor extension, or GPU resource control.
+description: Leave the Kairo Facade cautiously only for genuine resource isolation, executor extension, or GPU resource control.
 ---
 
 # Advanced Interfaces
@@ -19,7 +19,7 @@ Decide when to stay with the `Executor` Facade and when an independent instance,
 
 ## Instance isolation
 
-`Executor::instance()` shares one process manager. `executor::Executor executor;` creates an independent `ExecutorManager`, so pools, realtime/GPU registries, and shutdown timing do not mix with the singleton. RAII destruction cleans its manager, but explicitly call `shutdown()` after producers stop to choose whether accepted work drains.
+`Executor::instance()` shares one process manager. `kairo::Kairo executor;` creates an independent `ExecutorManager`, so pools, realtime/GPU registries, and shutdown timing do not mix with the singleton. RAII destruction cleans its manager, but explicitly call `shutdown()` after producers stop to choose whether accepted work drains.
 
 Do not transfer `TaskHandle`, realtime/GPU executor pointers, or dependency relationships across instances. They belong to the manager that created them and lose valid lifecycle/concurrency semantics elsewhere.
 
@@ -33,6 +33,6 @@ The Facade aggregates common rejection, failure event, and status behavior. Dire
 
 ## Stability boundary
 
-Facade/configuration/interface/manager declarations under `include/executor/` are public API. `src/` `ThreadPool`, schedulers, queues, and object pools are implementation detail: useful to understand current behavior or troubleshoot, never integration dependencies or compatibility promises.
+Facade/configuration/interface/manager declarations under `include/kairo/` are public API. `src/` `ThreadPool`, schedulers, queues, and object pools are implementation detail: useful to understand current behavior or troubleshoot, never integration dependencies or compatibility promises.
 
 Next: [custom cycle source](/en/advanced/custom-cycle-manager) or [execution paths](/en/advanced/execution-paths).

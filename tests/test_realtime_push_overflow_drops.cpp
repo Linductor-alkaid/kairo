@@ -18,12 +18,12 @@
 #include <string>
 #include <functional>
 
-#include <executor/config.hpp>
-#include <executor/types.hpp>
-#include <executor/interfaces.hpp>
-#include "executor/realtime_thread_executor.hpp"
+#include <kairo/config.hpp>
+#include <kairo/types.hpp>
+#include <kairo/interfaces.hpp>
+#include "kairo/realtime_thread_executor.hpp"
 
-using namespace executor;
+using namespace kairo;
 
 // 极长的周期(1 秒), 给 overflow 测试足够时间窗
 static constexpr int64_t kPeriodNs = 1'000'000'000;  // 1s

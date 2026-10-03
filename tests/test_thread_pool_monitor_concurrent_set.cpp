@@ -5,11 +5,11 @@
 #include <thread>
 #include <vector>
 
-#include <executor/config.hpp>
-#include <executor/monitor/task_monitor.hpp>
-#include <executor/thread_pool/thread_pool.hpp>
+#include <kairo/config.hpp>
+#include <kairo/monitor/task_monitor.hpp>
+#include <kairo/thread_pool/thread_pool.hpp>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 #define TEST_ASSERT(condition, message)                                      \

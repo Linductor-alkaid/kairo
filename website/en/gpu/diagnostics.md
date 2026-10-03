@@ -11,12 +11,12 @@ On a GPU-free development machine or CI, verify that unavailable GPU backend pro
 
 ## Build prerequisite
 
-GPU is optional. CUDA requires `EXECUTOR_ENABLE_GPU=ON` plus `EXECUTOR_ENABLE_CUDA=ON`; OpenCL requires `EXECUTOR_ENABLE_GPU=ON` plus `EXECUTOR_ENABLE_OPENCL=ON`. Each additionally needs headers, runtime, driver, and an accessible device. Runtime dynamic loading does not guarantee availability.
+GPU is optional. CUDA requires `KAIRO_ENABLE_GPU=ON` plus `KAIRO_ENABLE_CUDA=ON`; OpenCL requires `KAIRO_ENABLE_GPU=ON` plus `KAIRO_ENABLE_OPENCL=ON`. Each additionally needs headers, runtime, driver, and an accessible device. Runtime dynamic loading does not guarantee availability.
 
 The basic tutorial can explicitly build GPU off:
 
 ```bash
-cmake -B build -DEXECUTOR_BUILD_EXAMPLES=ON -DEXECUTOR_ENABLE_GPU=OFF
+cmake -B build -DKAIRO_BUILD_EXAMPLES=ON -DKAIRO_ENABLE_GPU=OFF
 cmake --build build
 ctest --test-dir build -L tutorial --output-on-failure
 ```

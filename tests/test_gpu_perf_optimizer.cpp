@@ -5,11 +5,11 @@
 #include <vector>
 #include <thread>
 #include <chrono>
-#include <executor/gpu/kernel_launch_optimizer.hpp>
-#include <executor/gpu/transfer_optimizer.hpp>
-#include <executor/gpu/task_scheduler_optimizer.hpp>
+#include <kairo/gpu/kernel_launch_optimizer.hpp>
+#include <kairo/gpu/transfer_optimizer.hpp>
+#include <kairo/gpu/task_scheduler_optimizer.hpp>
 
-using namespace executor::gpu;
+using namespace kairo::gpu;
 
 #define TEST_ASSERT(condition, message) \
     do { \

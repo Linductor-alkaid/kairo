@@ -15,8 +15,8 @@
  *      empty() 在观测到 size > 0 时从不错报为 true。
  */
 
-#include "executor/thread_pool/worker_local_queue.hpp"
-#include "executor/types.hpp"
+#include "kairo/thread_pool/worker_local_queue.hpp"
+#include "kairo/types.hpp"
 
 #include <gtest/gtest.h>
 
@@ -26,8 +26,8 @@
 #include <thread>
 #include <vector>
 
-using executor::Task;
-using executor::WorkerLocalQueue;
+using kairo::Task;
+using kairo::WorkerLocalQueue;
 
 namespace {
 
@@ -37,7 +37,7 @@ namespace {
 std::unique_ptr<Task> make_test_task(size_t id_hint = 0) {
     auto t = std::make_unique<Task>();
     t->task_id = "wlq_test_" + std::to_string(id_hint);
-    t->priority = executor::TaskPriority::NORMAL;
+    t->priority = kairo::TaskPriority::NORMAL;
     t->function = nullptr;  // 测试不执行
     t->submit_time_ns = 0;
     t->timeout_ms = 0;

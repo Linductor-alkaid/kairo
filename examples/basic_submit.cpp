@@ -3,9 +3,9 @@
 #include <chrono>
 #include <vector>
 #include <atomic>
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 int main() {
     std::cout << "========================================" << std::endl;

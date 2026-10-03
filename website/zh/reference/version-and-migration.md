@@ -11,18 +11,18 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
 
 | 需要确认什么 | 入口 |
 | --- | --- |
-| 已发布版本与破坏性变更 | [CHANGELOG.md](https://github.com/Linductor-alkaid/executor/blob/master/CHANGELOG.md) |
-| 从旧 API 的推荐迁移路径 | [MIGRATION.md](https://github.com/Linductor-alkaid/executor/blob/master/docs/MIGRATION.md) |
-| 选项、编译器与后端前置 | [BUILD.md](https://github.com/Linductor-alkaid/executor/blob/master/docs/BUILD.md) |
-| 当前完整签名 | [API.md](https://github.com/Linductor-alkaid/executor/blob/master/docs/API.md) |
+| 已发布版本与破坏性变更 | [CHANGELOG.md](https://github.com/Linductor-alkaid/kairo/blob/master/CHANGELOG.md) |
+| 从旧 API 的推荐迁移路径 | [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) |
+| 选项、编译器与后端前置 | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
+| 当前完整签名 | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
 ## 0.5.3：评审修复与定时器事件驱动
 
-v0.5.3 是稳定性与性能维护版本，公开 API 签名不变。落地 2026-09-30 全量代码评审四个阶段（P0 内存安全/挂死/数据竞争 9 项、P1 功能正确性 24 项、构建/打包 8 项、热路径性能 10 项），并把定时器线程从 1kHz 轮询改造为事件驱动条件等待（空闲等待 CPU 降约 34 倍，periodic 网格锚定使抖动改善 10-27 倍）。两处可观察的定时器行为变化见 [MIGRATION.md](https://github.com/Linductor-alkaid/executor/blob/master/docs/MIGRATION.md) 的"从 0.5.2 升级到 0.5.3"一节；无需改代码。
+v0.5.3 是稳定性与性能维护版本，公开 API 签名不变。落地 2026-09-30 全量代码评审四个阶段（P0 内存安全/挂死/数据竞争 9 项、P1 功能正确性 24 项、构建/打包 8 项、热路径性能 10 项），并把定时器线程从 1kHz 轮询改造为事件驱动条件等待（空闲等待 CPU 降约 34 倍，periodic 网格锚定使抖动改善 10-27 倍）。两处可观察的定时器行为变化见 [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) 的"从 0.5.2 升级到 0.5.3"一节；无需改代码。
 
 ## 0.5.2：依赖驱动调度
 
-v0.5.2 把任务图依赖等待演进为 dependency-driven scheduling：`submit_after` 的 dependent 在依赖未就绪时不再入队占用 worker，parked 超时与 shutdown 结算语义详见 [MIGRATION.md](https://github.com/Linductor-alkaid/executor/blob/master/docs/MIGRATION.md) 的"从 0.5.0 升级到 0.5.2"一节。公开 API 签名不变（新增诊断接口 `closure_graveyard_size()`）。
+v0.5.2 把任务图依赖等待演进为 dependency-driven scheduling：`submit_after` 的 dependent 在依赖未就绪时不再入队占用 worker，parked 超时与 shutdown 结算语义详见 [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) 的"从 0.5.0 升级到 0.5.2"一节。公开 API 签名不变（新增诊断接口 `closure_graveyard_size()`）。
 
 ## `bool` 到 `_ex` 的迁移
 
@@ -74,7 +74,7 @@ CI 自动打包的 Linux amd64 deb（CUDA devel 容器完整构建）与 Windows
 | Android CPU-only 交叉编译 | NDK r26c/r28b 脚本与 CI | 线程优先级、亲和性、`mlockall` 与 timer slack 均 best-effort，不承诺硬实时。 |
 
 迁移提示：`ExecutorSnapshot` schema 2 → 3、进程内存锁租约与 shutdown 清理
-delayed 任务的行为变化见仓库 [MIGRATION.md](https://github.com/Linductor-alkaid/executor/blob/master/docs/MIGRATION.md)
+delayed 任务的行为变化见仓库 [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md)
 的“从 0.4.0 升级到 0.5.0”一节。
 
 ## 0.4.0：固定同步边界与通信可观测性
@@ -102,7 +102,7 @@ delayed 任务的行为变化见仓库 [MIGRATION.md](https://github.com/Linduct
 
 ## 术语约定
 
-- **稳定公开 API**：`include/executor/` 下安装并受兼容约束的声明。
+- **稳定公开 API**：`include/kairo/` 下安装并受兼容约束的声明。
 - **兼容入口**：为保留既有调用而存在的 `bool` / `void` API；不等于废弃。
 - **开发快照能力**：`master` 中已有但尚未标记到稳定发布版本的内容。
 - **测试钩子和内部实现**：测试注入 API、`src/` 类型和实现细节，不作为普通集成依赖。

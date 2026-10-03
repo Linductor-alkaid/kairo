@@ -9,7 +9,7 @@ struct PoolValue {
 };
 
 TEST(ObjectPoolReleaseGuard, AcquireReleaseRoundtripReusesSlot) {
-    executor::util::ObjectPool<PoolValue> pool(1);
+    kairo::util::ObjectPool<PoolValue> pool(1);
 
     PoolValue* first = pool.acquire();
     ASSERT_NE(first, nullptr);

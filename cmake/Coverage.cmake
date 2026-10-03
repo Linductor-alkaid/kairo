@@ -3,15 +3,15 @@
 # 用于 GCC/Clang 编译器，生成 HTML 覆盖率报告
 #
 # CR-080 修复后的加载契约：本文件在 add_subdirectory(src) 之前被根
-# CMakeLists.txt include，此时 executor 目标尚不存在——库的插桩必须由
-# src/CMakeLists.txt 在 add_library(executor) 之后调用
-# executor_apply_coverage_to_target() 完成，而不是像旧版那样在 include
-# 期用 if(TARGET executor)（恒假，库永远拿不到 --coverage）。
+# CMakeLists.txt include，此时 kairo 目标尚不存在——库的插桩必须由
+# src/CMakeLists.txt 在 add_library(kairo) 之后调用
+# kairo_apply_coverage_to_target() 完成，而不是像旧版那样在 include
+# 期用 if(TARGET kairo)（恒假，库永远拿不到 --coverage）。
 
 # 选项：启用覆盖率
-option(EXECUTOR_ENABLE_COVERAGE "Enable code coverage (gcov/lcov)" OFF)
+option(KAIRO_ENABLE_COVERAGE "Enable code coverage (gcov/lcov)" OFF)
 
-if(EXECUTOR_ENABLE_COVERAGE)
+if(KAIRO_ENABLE_COVERAGE)
     # 检查编译器
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         # 检查是否在 Debug 模式下（推荐）
@@ -33,12 +33,12 @@ if(EXECUTOR_ENABLE_COVERAGE)
         message(STATUS "Code coverage enabled (gcov/lcov)")
 
         # 覆盖率标志（供需要手动拼装的调用方使用；一般用下面的函数）
-        set(EXECUTOR_COVERAGE_COMPILE_OPTIONS
+        set(KAIRO_COVERAGE_COMPILE_OPTIONS
             --coverage
             -fprofile-arcs
             -ftest-coverage
         )
-        set(EXECUTOR_COVERAGE_LINK_OPTIONS
+        set(KAIRO_COVERAGE_LINK_OPTIONS
             --coverage
         )
 
@@ -46,7 +46,7 @@ if(EXECUTOR_ENABLE_COVERAGE)
         if(LCOV_PATH AND GENHTML_PATH)
             message(STATUS "Coverage tools found: lcov and genhtml")
             message(STATUS "  To generate coverage report, run:")
-            message(STATUS "    1. Build with: cmake -B build -DEXECUTOR_ENABLE_COVERAGE=ON -DCMAKE_BUILD_TYPE=Debug")
+            message(STATUS "    1. Build with: cmake -B build -DKAIRO_ENABLE_COVERAGE=ON -DCMAKE_BUILD_TYPE=Debug")
             message(STATUS "    2. Run tests: ctest --test-dir build -L unit -L integration")
             message(STATUS "    3. Generate report: lcov --capture --directory build --output-file build/coverage.info")
             message(STATUS "    4. Filter: lcov --remove build/coverage.info */tests/* */test_* */examples/* */usr/* --output-file build/coverage_filtered.info")
@@ -60,26 +60,26 @@ if(EXECUTOR_ENABLE_COVERAGE)
     endif()
 else()
     # 覆盖率未启用，提供帮助信息
-    message(STATUS "Code coverage disabled. Enable with: -DEXECUTOR_ENABLE_COVERAGE=ON")
+    message(STATUS "Code coverage disabled. Enable with: -DKAIRO_ENABLE_COVERAGE=ON")
 endif()
 
 # 函数：为任意目标（库/测试/示例）应用覆盖率选项。
-# 必须在目标创建之后调用（src/CMakeLists.txt 中 executor 目标、
+# 必须在目标创建之后调用（src/CMakeLists.txt 中 kairo 目标、
 # tests/CMakeLists.txt 中各测试目标）。未启用覆盖率或编译器不支持时为 no-op。
-function(executor_apply_coverage_to_target target_name)
-    if(EXECUTOR_ENABLE_COVERAGE)
+function(kairo_apply_coverage_to_target target_name)
+    if(KAIRO_ENABLE_COVERAGE)
         if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
             target_compile_options(${target_name} PRIVATE
-                ${EXECUTOR_COVERAGE_COMPILE_OPTIONS}
+                ${KAIRO_COVERAGE_COMPILE_OPTIONS}
             )
             target_link_options(${target_name} PRIVATE
-                ${EXECUTOR_COVERAGE_LINK_OPTIONS}
+                ${KAIRO_COVERAGE_LINK_OPTIONS}
             )
         endif()
     endif()
 endfunction()
 
 # 函数：为测试目标应用覆盖率选项（历史入口，语义同上）
-function(executor_apply_coverage_to_test target_name)
-    executor_apply_coverage_to_target(${target_name})
+function(kairo_apply_coverage_to_test target_name)
+    kairo_apply_coverage_to_target(${target_name})
 endfunction()

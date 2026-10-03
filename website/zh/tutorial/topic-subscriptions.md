@@ -7,7 +7,7 @@ description: 为机器人规划和预览归档建立彼此独立的相机帧交�
 
 机器人流水线现在有一台相机和两个下游工作。导航规划必须按顺序检查进入其有界队列的每一帧；预览归档故意较慢，只需要为操作员界面保留最新的一帧。它不能拖慢规划，也不能让相机 producer 等待。
 
-这和前面有限计算、通过 `future` 取结果的任务教程不同：这是一个持续数据边。本章可运行程序是 [`examples/topic_subscriptions.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/topic_subscriptions.cpp)。
+这和前面有限计算、通过 `future` 取结果的任务教程不同：这是一个持续数据边。本章可运行程序是 [`examples/topic_subscriptions.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/topic_subscriptions.cpp)。
 
 ## 先写清楚交付契约
 
@@ -77,8 +77,8 @@ while (preview_frames.try_receive(frame)) {
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
-  -DEXECUTOR_BUILD_EXAMPLES=ON \
-  -DEXECUTOR_ENABLE_GPU=OFF
+  -DKAIRO_BUILD_EXAMPLES=ON \
+  -DKAIRO_ENABLE_GPU=OFF
 cmake --build build --target topic_subscriptions
 ./build/examples/topic_subscriptions
 ```

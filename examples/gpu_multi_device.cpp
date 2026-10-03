@@ -2,18 +2,18 @@
  * @file gpu_multi_device.cpp
  * @brief 多 GPU 设备示例：多设备注册、并行提交、P2P 设备间数据同步
  *
- * 需使用 EXECUTOR_ENABLE_GPU=ON 且 EXECUTOR_ENABLE_CUDA=ON 构建。
+ * 需使用 KAIRO_ENABLE_GPU=ON 且 KAIRO_ENABLE_CUDA=ON 构建。
  * 演示：多 GPU 注册、多 GPU 并行任务提交、设备间 P2P 拷贝与校验。
  */
 
 #include <iostream>
 #include <string>
 #include <vector>
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-using namespace executor;
+using namespace kairo;
 
-#ifdef EXECUTOR_ENABLE_GPU
+#ifdef KAIRO_ENABLE_GPU
 
 int main() {
     std::cout << "========================================" << std::endl;
@@ -189,8 +189,8 @@ int main() {
 #else
 
 int main() {
-    std::cout << "GPU support not enabled. Build with EXECUTOR_ENABLE_GPU=ON and "
-                 "EXECUTOR_ENABLE_CUDA=ON." << std::endl;
+    std::cout << "GPU support not enabled. Build with KAIRO_ENABLE_GPU=ON and "
+                 "KAIRO_ENABLE_CUDA=ON." << std::endl;
     return 0;
 }
 

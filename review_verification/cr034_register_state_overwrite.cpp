@@ -5,13 +5,13 @@
 // 返回 true 且静默覆盖，registry 再也无法找到 A；随后经 registry 的取消只
 // 触达 B，A 永远收不到取消。
 
-#include "executor/task_cancellation.hpp"
+#include "kairo/task_cancellation.hpp"
 
 #include <iostream>
 #include <memory>
 #include <string>
 
-using namespace executor;
+using namespace kairo;
 
 static const char* lookup_str(TaskCancellationRegistry::LookupResult r) {
     switch (r) {

@@ -3,13 +3,13 @@
  * 对比：循环 submit vs submit_batch vs submit_batch_no_future
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <chrono>
 #include <iostream>
 #include <iomanip>
 #include <atomic>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 void test_loop_submit(int num_tasks) {

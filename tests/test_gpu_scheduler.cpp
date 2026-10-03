@@ -1,10 +1,10 @@
 #include <cassert>
 #include <iostream>
 #include <cmath>
-#include <executor/gpu/gpu_scheduler.hpp>
+#include <kairo/gpu/gpu_scheduler.hpp>
 
-using namespace executor;
-using namespace executor::gpu;
+using namespace kairo;
+using namespace kairo::gpu;
 
 // Test helper macro
 #define TEST_ASSERT(condition, message) \

@@ -4,12 +4,12 @@
 //   (1) plain submit()             -> baseline
 //   (2) submit_auto()              -> baseline + routing
 //   (3) get_executor_capabilities() alone -> the per-call collection cost.
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <chrono>
 #include <cstdio>
 
-using namespace executor;
+using namespace kairo;
 
 namespace {
 

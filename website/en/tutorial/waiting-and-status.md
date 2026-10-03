@@ -32,7 +32,7 @@ if (!result.completed) {
 
 ## Snapshot scope and correct exit order
 
-`CompletionStatus` covers only this Executor's default asynchronous executor. It excludes application-created threads, data in communication channels, real-time queues, and external I/O. An entire robot pipeline must aggregate its own status.
+`CompletionStatus` covers only this Kairo's default asynchronous executor. It excludes application-created threads, data in communication channels, real-time queues, and external I/O. An entire robot pipeline must aggregate its own status.
 
 Snapshots are momentary: another producer may submit immediately after an idle result. Stop submission first, then wait; never reverse that order.
 
@@ -43,7 +43,7 @@ Snapshots are momentary: another producer may submit immediately after an idle r
 Timeout does not cancel work. Individual results and exceptions still belong to their futures, while `wait_timeout_count` records wait-timeout trends.
 
 When the timeout may involve realtime, Blocking I/O, or GPU backends as well as
-default async work, capture the full Executor scene before choosing the policy:
+default async work, capture the full Kairo scene before choosing the policy:
 
 ```cpp
 const auto result = executor.wait_for_completion_ex(std::chrono::milliseconds{200});

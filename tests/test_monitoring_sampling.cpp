@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
-#include "executor/monitor/task_monitor.hpp"
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/monitor/task_monitor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 #include <thread>
 #include <chrono>
 #include <atomic>
 
-using namespace executor;
-using namespace executor::monitor;
+using namespace kairo;
+using namespace kairo::monitor;
 
 namespace {
 struct ReservationHook {

@@ -3,13 +3,13 @@
 // 判定方法：新进程内读取 /proc/self/status 的线程数，
 // 调用 const 诊断接口 Executor::get_async_executor_status()，再读线程数。
 // 线程数显著增加（默认池 worker 被拉起）→ CONFIRMED。
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <cstdio>
 #include <cstring>
 #include <string>
 
-using namespace executor;
+using namespace kairo;
 
 static int read_thread_count() {
     FILE* f = std::fopen("/proc/self/status", "r");

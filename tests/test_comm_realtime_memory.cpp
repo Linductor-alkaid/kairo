@@ -1,5 +1,5 @@
-#include <executor/comm.hpp>
-#include <executor/realtime_thread_executor.hpp>
+#include <kairo/comm.hpp>
+#include <kairo/realtime_thread_executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -12,11 +12,11 @@
 namespace {
 
 TEST(CommRealtimeMemoryTest, GuardIsExplicitAndReportsItsBuildMode) {
-    executor::comm::RealtimeAllocationGuard::reset_current_thread_stats();
+    kairo::comm::RealtimeAllocationGuard::reset_current_thread_stats();
     {
-        executor::comm::RealtimeAllocationGuard guard("control_loop", "drain");
-        const auto stats = executor::comm::RealtimeAllocationGuard::current_thread_stats();
-        if (executor::comm::RealtimeAllocationGuard::is_enabled()) {
+        kairo::comm::RealtimeAllocationGuard guard("control_loop", "drain");
+        const auto stats = kairo::comm::RealtimeAllocationGuard::current_thread_stats();
+        if (kairo::comm::RealtimeAllocationGuard::is_enabled()) {
             EXPECT_EQ(stats.component, "control_loop");
             EXPECT_EQ(stats.phase, "drain");
         } else {
@@ -26,14 +26,14 @@ TEST(CommRealtimeMemoryTest, GuardIsExplicitAndReportsItsBuildMode) {
 }
 
 TEST(CommRealtimeMemoryTest, GuardedAllocationIsRecordedWhenEnabled) {
-    executor::comm::RealtimeAllocationGuard::reset_current_thread_stats();
+    kairo::comm::RealtimeAllocationGuard::reset_current_thread_stats();
     {
-        executor::comm::RealtimeAllocationGuard guard("let_mailbox", "publish");
+        kairo::comm::RealtimeAllocationGuard guard("let_mailbox", "publish");
         std::string allocation(128, 'x');
         (void)allocation;
     }
-    const auto stats = executor::comm::RealtimeAllocationGuard::current_thread_stats();
-    if (executor::comm::RealtimeAllocationGuard::is_enabled()) {
+    const auto stats = kairo::comm::RealtimeAllocationGuard::current_thread_stats();
+    if (kairo::comm::RealtimeAllocationGuard::is_enabled()) {
         EXPECT_GE(stats.allocation_count, 1U);
         EXPECT_GE(stats.allocated_bytes, 128U);
         EXPECT_EQ(stats.component, "let_mailbox");
@@ -44,19 +44,19 @@ TEST(CommRealtimeMemoryTest, GuardedAllocationIsRecordedWhenEnabled) {
 }
 
 TEST(CommRealtimeMemoryTest, NestedGuardPreservesOuterContextAndCounts) {
-    executor::comm::RealtimeAllocationGuard::reset_current_thread_stats();
+    kairo::comm::RealtimeAllocationGuard::reset_current_thread_stats();
     {
-        executor::comm::RealtimeAllocationGuard outer("control_loop", "cycle");
+        kairo::comm::RealtimeAllocationGuard outer("control_loop", "cycle");
         std::string outer_allocation(128, 'o');
         {
-            executor::comm::RealtimeAllocationGuard inner("mailbox", "publish");
+            kairo::comm::RealtimeAllocationGuard inner("mailbox", "publish");
             std::string inner_allocation(128, 'i');
             (void)inner_allocation;
         }
         (void)outer_allocation;
     }
-    const auto stats = executor::comm::RealtimeAllocationGuard::current_thread_stats();
-    if (executor::comm::RealtimeAllocationGuard::is_enabled()) {
+    const auto stats = kairo::comm::RealtimeAllocationGuard::current_thread_stats();
+    if (kairo::comm::RealtimeAllocationGuard::is_enabled()) {
         EXPECT_EQ(stats.component, "control_loop");
         EXPECT_EQ(stats.phase, "cycle");
         EXPECT_GE(stats.allocation_count, 2U);
@@ -66,15 +66,15 @@ TEST(CommRealtimeMemoryTest, NestedGuardPreservesOuterContextAndCounts) {
 }
 
 TEST(CommRealtimeMemoryTest, AbortPolicyTerminatesOnAllocationWhenEnabled) {
-    if (!executor::comm::RealtimeAllocationGuard::is_enabled()) {
+    if (!kairo::comm::RealtimeAllocationGuard::is_enabled()) {
         GTEST_SKIP() << "allocation guard is disabled in this build";
     }
-#ifdef EXECUTOR_ENABLE_REALTIME_ALLOCATION_GUARD
+#ifdef KAIRO_ENABLE_REALTIME_ALLOCATION_GUARD
     EXPECT_DEATH(
         {
-            executor::comm::RealtimeAllocationGuard guard(
+            kairo::comm::RealtimeAllocationGuard guard(
                 "control_loop", "cycle",
-                executor::comm::RealtimeAllocationViolationPolicy::Abort);
+                kairo::comm::RealtimeAllocationViolationPolicy::Abort);
             void* allocation = ::operator new(sizeof(int));
             ::operator delete(allocation);
         },
@@ -83,26 +83,26 @@ TEST(CommRealtimeMemoryTest, AbortPolicyTerminatesOnAllocationWhenEnabled) {
 }
 
 TEST(CommRealtimeMemoryTest, CommunicationTryPathsAllocateNothingWhenEnabled) {
-    if (!executor::comm::RealtimeAllocationGuard::is_enabled()) {
+    if (!kairo::comm::RealtimeAllocationGuard::is_enabled()) {
         GTEST_SKIP() << "allocation guard is disabled in this build";
     }
 
-    executor::comm::ChannelOptions channel_options;
+    kairo::comm::ChannelOptions channel_options;
     channel_options.capacity = 8;
-    executor::comm::MpscChannel<int> channel(channel_options);
+    kairo::comm::MpscChannel<int> channel(channel_options);
 
-    executor::comm::RealtimeChannelOptions realtime_options;
+    kairo::comm::RealtimeChannelOptions realtime_options;
     realtime_options.capacity = 8;
     realtime_options.max_items_per_cycle = 2;
-    executor::comm::RealtimeChannel<int> realtime(realtime_options);
+    kairo::comm::RealtimeChannel<int> realtime(realtime_options);
 
-    executor::comm::LatestMailbox<int> mailbox;
-    executor::comm::DoubleBuffer<int> snapshots(0);
-    executor::comm::PhaseGate gate;
-    executor::comm::DoubleBuffer<int> let_snapshots(0);
+    kairo::comm::LatestMailbox<int> mailbox;
+    kairo::comm::DoubleBuffer<int> snapshots(0);
+    kairo::comm::PhaseGate gate;
+    kairo::comm::DoubleBuffer<int> let_snapshots(0);
     ASSERT_TRUE(let_snapshots.bind_to_phase_gate(gate));
 
-    executor::comm::RealtimeAllocationGuard::reset_current_thread_stats();
+    kairo::comm::RealtimeAllocationGuard::reset_current_thread_stats();
     bool channel_sent = false;
     bool channel_received = false;
     bool realtime_sent = false;
@@ -114,10 +114,10 @@ TEST(CommRealtimeMemoryTest, CommunicationTryPathsAllocateNothingWhenEnabled) {
     bool let_advanced = false;
     bool let_loaded = false;
     int value = 0;
-    executor::comm::Snapshot<int> snapshot;
-    executor::comm::Snapshot<int> let_snapshot;
+    kairo::comm::Snapshot<int> snapshot;
+    kairo::comm::Snapshot<int> let_snapshot;
     {
-        executor::comm::RealtimeAllocationGuard guard("comm", "try_paths");
+        kairo::comm::RealtimeAllocationGuard guard("comm", "try_paths");
         channel_sent = channel.try_send(1);
         channel_received = channel.try_receive(value);
 
@@ -136,7 +136,7 @@ TEST(CommRealtimeMemoryTest, CommunicationTryPathsAllocateNothingWhenEnabled) {
     }
 
     const auto stats =
-        executor::comm::RealtimeAllocationGuard::current_thread_stats();
+        kairo::comm::RealtimeAllocationGuard::current_thread_stats();
     EXPECT_TRUE(channel_sent);
     EXPECT_TRUE(channel_received);
     EXPECT_TRUE(realtime_sent);
@@ -156,37 +156,37 @@ TEST(CommRealtimeMemoryTest, CommunicationTryPathsAllocateNothingWhenEnabled) {
 }
 
 TEST(CommRealtimeMemoryTest, FailureTryPathsWithoutCallbacksAllocateNothingWhenEnabled) {
-    if (!executor::comm::RealtimeAllocationGuard::is_enabled()) {
+    if (!kairo::comm::RealtimeAllocationGuard::is_enabled()) {
         GTEST_SKIP() << "allocation guard is disabled in this build";
     }
 
-    executor::comm::ChannelOptions channel_options;
+    kairo::comm::ChannelOptions channel_options;
     channel_options.capacity = 1;
-    executor::comm::MpscChannel<int> full_channel(channel_options);
-    executor::comm::MpscChannel<int> empty_channel(channel_options);
-    executor::comm::MpscChannel<int> closed_channel(channel_options);
+    kairo::comm::MpscChannel<int> full_channel(channel_options);
+    kairo::comm::MpscChannel<int> empty_channel(channel_options);
+    kairo::comm::MpscChannel<int> closed_channel(channel_options);
     ASSERT_TRUE(full_channel.try_send(1));
     closed_channel.close();
 
-    executor::comm::RealtimeChannelOptions realtime_options;
+    kairo::comm::RealtimeChannelOptions realtime_options;
     realtime_options.capacity = 1;
     realtime_options.max_items_per_cycle = 1;
-    executor::comm::RealtimeChannel<int> full_realtime(realtime_options);
-    executor::comm::RealtimeChannel<int> empty_realtime(realtime_options);
-    executor::comm::RealtimeChannel<int> closed_realtime(realtime_options);
+    kairo::comm::RealtimeChannel<int> full_realtime(realtime_options);
+    kairo::comm::RealtimeChannel<int> empty_realtime(realtime_options);
+    kairo::comm::RealtimeChannel<int> closed_realtime(realtime_options);
     ASSERT_TRUE(full_realtime.try_send(1));
     closed_realtime.close();
 
-    executor::comm::LatestMailbox<int> empty_mailbox;
-    executor::comm::LatestMailbox<int> stale_mailbox;
+    kairo::comm::LatestMailbox<int> empty_mailbox;
+    kairo::comm::LatestMailbox<int> stale_mailbox;
     ASSERT_TRUE(stale_mailbox.try_publish(1));
 
-    executor::comm::DoubleBuffer<int> stale_snapshots(1);
+    kairo::comm::DoubleBuffer<int> stale_snapshots(1);
     const uint64_t snapshot_sequence = stale_snapshots.sequence();
 
-    executor::comm::PhaseGate let_gate;
-    executor::comm::LatestMailbox<int> let_mailbox;
-    executor::comm::DoubleBuffer<int> let_snapshots(0);
+    kairo::comm::PhaseGate let_gate;
+    kairo::comm::LatestMailbox<int> let_mailbox;
+    kairo::comm::DoubleBuffer<int> let_snapshots(0);
     ASSERT_TRUE(let_mailbox.bind_to_phase_gate(let_gate));
     ASSERT_TRUE(let_snapshots.bind_to_phase_gate(let_gate));
     ASSERT_TRUE(let_mailbox.publish_for_current_phase(1));
@@ -194,20 +194,20 @@ TEST(CommRealtimeMemoryTest, FailureTryPathsWithoutCallbacksAllocateNothingWhenE
     auto active_lease = let_gate.try_begin_let_read();
     ASSERT_TRUE(active_lease.has_value());
 
-    executor::comm::PhaseGate missed_let_gate;
-    executor::comm::DoubleBuffer<int> missed_let_snapshots(0);
+    kairo::comm::PhaseGate missed_let_gate;
+    kairo::comm::DoubleBuffer<int> missed_let_snapshots(0);
     ASSERT_TRUE(missed_let_snapshots.bind_to_phase_gate(missed_let_gate));
     ASSERT_TRUE(missed_let_gate.advance());
 
-    executor::comm::PhaseGate closed_let_gate;
-    executor::comm::DoubleBuffer<int> closed_let_snapshots(0);
+    kairo::comm::PhaseGate closed_let_gate;
+    kairo::comm::DoubleBuffer<int> closed_let_snapshots(0);
     ASSERT_TRUE(closed_let_snapshots.bind_to_phase_gate(closed_let_gate));
     ASSERT_TRUE(closed_let_gate.close());
 
-    executor::comm::RealtimeAllocationGuard::reset_current_thread_stats();
+    kairo::comm::RealtimeAllocationGuard::reset_current_thread_stats();
     int value = 0;
     uint64_t mailbox_sequence = stale_mailbox.sequence();
-    executor::comm::Snapshot<int> snapshot;
+    kairo::comm::Snapshot<int> snapshot;
     bool channel_full = false;
     bool channel_empty = false;
     bool channel_closed = false;
@@ -222,12 +222,12 @@ TEST(CommRealtimeMemoryTest, FailureTryPathsWithoutCallbacksAllocateNothingWhenE
     bool let_snapshot_duplicate = false;
     bool let_snapshot_not_visible = false;
     bool let_advance_blocked = false;
-    executor::comm::CommErrorCode let_advance_missed =
-        executor::comm::CommErrorCode::Ok;
-    executor::comm::CommErrorCode let_advance_closed =
-        executor::comm::CommErrorCode::Ok;
+    kairo::comm::CommErrorCode let_advance_missed =
+        kairo::comm::CommErrorCode::Ok;
+    kairo::comm::CommErrorCode let_advance_closed =
+        kairo::comm::CommErrorCode::Ok;
     {
-        executor::comm::RealtimeAllocationGuard guard("comm", "failure_try_paths");
+        kairo::comm::RealtimeAllocationGuard guard("comm", "failure_try_paths");
         channel_full = full_channel.try_send(2);
         channel_empty = empty_channel.try_receive(value);
         channel_closed = closed_channel.try_send(2);
@@ -256,7 +256,7 @@ TEST(CommRealtimeMemoryTest, FailureTryPathsWithoutCallbacksAllocateNothingWhenE
     }
 
     const auto stats =
-        executor::comm::RealtimeAllocationGuard::current_thread_stats();
+        kairo::comm::RealtimeAllocationGuard::current_thread_stats();
     EXPECT_FALSE(channel_full);
     EXPECT_FALSE(channel_empty);
     EXPECT_FALSE(channel_closed);
@@ -271,8 +271,8 @@ TEST(CommRealtimeMemoryTest, FailureTryPathsWithoutCallbacksAllocateNothingWhenE
     EXPECT_FALSE(let_snapshot_duplicate);
     EXPECT_FALSE(let_snapshot_not_visible);
     EXPECT_FALSE(let_advance_blocked);
-    EXPECT_EQ(let_advance_missed, executor::comm::CommErrorCode::MissedPhase);
-    EXPECT_EQ(let_advance_closed, executor::comm::CommErrorCode::Closed);
+    EXPECT_EQ(let_advance_missed, kairo::comm::CommErrorCode::MissedPhase);
+    EXPECT_EQ(let_advance_closed, kairo::comm::CommErrorCode::Closed);
     EXPECT_EQ(stats.component, "comm");
     EXPECT_EQ(stats.phase, "failure_try_paths");
     EXPECT_EQ(stats.allocation_count, 0U);
@@ -282,13 +282,13 @@ TEST(CommRealtimeMemoryTest, FailureTryPathsWithoutCallbacksAllocateNothingWhenE
 TEST(CommRealtimeMemoryTest, RealtimeThreadCanExplicitlyAttachGuardToCallback) {
     std::atomic<bool> callback_seen{false};
     std::atomic<bool> context_matches{false};
-    executor::RealtimeThreadConfig config;
+    kairo::RealtimeThreadConfig config;
     config.thread_name = "allocation_guard_rt";
     config.cycle_period_ns = 1'000'000;
     config.enable_allocation_guard = true;
     config.cycle_callback = [&] {
-        const auto stats = executor::comm::RealtimeAllocationGuard::current_thread_stats();
-        if (executor::comm::RealtimeAllocationGuard::is_enabled()) {
+        const auto stats = kairo::comm::RealtimeAllocationGuard::current_thread_stats();
+        if (kairo::comm::RealtimeAllocationGuard::is_enabled()) {
             context_matches.store(stats.component == "allocation_guard_rt" &&
                                       stats.phase == "cycle_callback",
                                   std::memory_order_release);
@@ -296,7 +296,7 @@ TEST(CommRealtimeMemoryTest, RealtimeThreadCanExplicitlyAttachGuardToCallback) {
         callback_seen.store(true, std::memory_order_release);
     };
 
-    executor::RealtimeThreadExecutor realtime("allocation_guard_rt", config);
+    kairo::RealtimeThreadExecutor realtime("allocation_guard_rt", config);
     ASSERT_TRUE(realtime.start());
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
     while (!callback_seen.load(std::memory_order_acquire) &&
@@ -305,7 +305,7 @@ TEST(CommRealtimeMemoryTest, RealtimeThreadCanExplicitlyAttachGuardToCallback) {
     }
     realtime.stop();
     ASSERT_TRUE(callback_seen.load(std::memory_order_acquire));
-    if (executor::comm::RealtimeAllocationGuard::is_enabled()) {
+    if (kairo::comm::RealtimeAllocationGuard::is_enabled()) {
         EXPECT_TRUE(context_matches.load(std::memory_order_acquire));
     }
 }

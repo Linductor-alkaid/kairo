@@ -12,7 +12,7 @@
 //       对旧 function 赋值 → Guard 析构；若析构 tid == 主线程 tid 且
 //       != worker tid → 析构转移到生产者线程 CONFIRMED。
 
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -24,7 +24,7 @@
 #include <memory>
 #include <thread>
 
-using executor::LockFreeTaskExecutor;
+using kairo::LockFreeTaskExecutor;
 
 static uint64_t now_ms() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(

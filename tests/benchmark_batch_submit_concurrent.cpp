@@ -5,7 +5,7 @@
  * 这是批量提交 API 真正发挥优势的场景
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <chrono>
 #include <iostream>
 #include <iomanip>
@@ -13,7 +13,7 @@
 #include <thread>
 #include <atomic>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 struct BenchmarkResult {

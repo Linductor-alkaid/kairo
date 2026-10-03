@@ -11,14 +11,14 @@
 #include <vector>
 
 #define private public
-#include "executor/util/lockfree_queue.hpp"
+#include "kairo/util/lockfree_queue.hpp"
 #undef private
 
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 
 namespace {
 
-using executor::LockFreeTaskExecutor;
+using kairo::LockFreeTaskExecutor;
 
 struct ReservationHook {
     std::atomic<bool> entered{false};
@@ -117,7 +117,7 @@ TEST(LockFreeQueueStatusSnapshotTest, DoesNotBlockProducersUnderConcurrentTraffi
 }
 
 TEST(LockFreeQueueStatsTest, FailureReasonsAreClassified) {
-    using executor::util::LockFreeQueue;
+    using kairo::util::LockFreeQueue;
 
     LockFreeQueue<int> full_queue(16, 1, true);
     for (int value = 0; value < 15; ++value) {
@@ -131,7 +131,7 @@ TEST(LockFreeQueueStatsTest, FailureReasonsAreClassified) {
     // A scheduling-based producer race cannot reliably exhaust 64 retries on
     // a two-core runner, even when the queue is continuously drained.
     LockFreeQueue<int> contention_queue(64, 1, true);
-    contention_queue.record_push_failure(executor::util::LockFreeQueueFailReason::Contention);
+    contention_queue.record_push_failure(kairo::util::LockFreeQueueFailReason::Contention);
     const auto contention = contention_queue.get_stats();
     ASSERT_GT(contention.contention_rejection, 0u)
         << "concurrent producers must exercise the bounded CAS retry path";

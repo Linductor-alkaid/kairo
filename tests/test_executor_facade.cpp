@@ -9,15 +9,15 @@
 #include <stdexcept>
 
 // 包含 Executor 的头文件
-#include <executor/executor.hpp>
-#include <executor/executor_manager.hpp>
-#include <executor/config.hpp>
-#include <executor/interfaces.hpp>
-#include <executor/types.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/executor_manager.hpp>
+#include <kairo/config.hpp>
+#include <kairo/interfaces.hpp>
+#include <kairo/types.hpp>
 
-using namespace executor;
+using namespace kairo;
 
-#ifdef EXECUTOR_ENABLE_GPU
+#ifdef KAIRO_ENABLE_GPU
 // Mock GPU 执行器用于测试
 class MockGpuExecutor : public IGpuExecutor {
 public:
@@ -193,7 +193,7 @@ bool test_explicit_init_priority();
 bool test_atexit_shutdown_singleton();
 bool test_instance_mode_no_atexit();
 
-#ifdef EXECUTOR_ENABLE_GPU
+#ifdef KAIRO_ENABLE_GPU
 bool test_gpu_executor_registration();
 bool test_gpu_task_submission();
 bool test_gpu_executor_status();
@@ -808,7 +808,7 @@ bool test_instance_mode_no_atexit() {
     return true;
 }
 
-#ifdef EXECUTOR_ENABLE_GPU
+#ifdef KAIRO_ENABLE_GPU
 // ========== GPU 执行器注册测试 ==========
 
 bool test_gpu_executor_registration() {
@@ -1043,7 +1043,7 @@ int main() {
     all_passed &= test_instance_mode_no_atexit();
     all_passed &= test_atexit_shutdown_singleton();
     
-#ifdef EXECUTOR_ENABLE_GPU
+#ifdef KAIRO_ENABLE_GPU
     // GPU 相关测试
     all_passed &= test_gpu_executor_registration();
     all_passed &= test_gpu_task_submission();

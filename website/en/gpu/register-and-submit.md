@@ -15,10 +15,10 @@ Choose one backend:
 
 ```bash
 # CUDA (NVIDIA)
-cmake -B build -DEXECUTOR_BUILD_EXAMPLES=ON -DEXECUTOR_ENABLE_GPU=ON -DEXECUTOR_ENABLE_CUDA=ON
+cmake -B build -DKAIRO_BUILD_EXAMPLES=ON -DKAIRO_ENABLE_GPU=ON -DKAIRO_ENABLE_CUDA=ON
 
 # OpenCL (Intel / AMD / NVIDIA)
-cmake -B build -DEXECUTOR_BUILD_EXAMPLES=ON -DEXECUTOR_ENABLE_GPU=ON -DEXECUTOR_ENABLE_OPENCL=ON
+cmake -B build -DKAIRO_BUILD_EXAMPLES=ON -DKAIRO_ENABLE_GPU=ON -DKAIRO_ENABLE_OPENCL=ON
 cmake --build build
 ./build/examples/gpu_device_query
 ```
@@ -28,9 +28,9 @@ If the query is empty, stop at diagnostics; never assume `device_id = 0` exists.
 ## Register, submit, observe
 
 ```cpp
-executor::gpu::GpuExecutorConfig config;
+kairo::gpu::GpuExecutorConfig config;
 config.name = "cuda0";
-config.backend = executor::gpu::GpuBackend::CUDA;
+config.backend = kairo::gpu::GpuBackend::CUDA;
 config.device_id = 0;
 
 const auto registered = executor.register_gpu_executor_ex("cuda0", config);
@@ -38,7 +38,7 @@ if (!registered) {
     return run_on_cpu();
 }
 
-executor::gpu::GpuTaskConfig task;
+kairo::gpu::GpuTaskConfig task;
 auto completed = executor.submit_gpu("cuda0", [](void* stream) {
     launch_kernel(stream);
 }, task);
@@ -69,6 +69,6 @@ The `void*` form accesses a backend stream; the no-argument form needs no explic
 
 Stay with the Facade for registration/submission/status. For device memory, stream lifetime, unified memory, or P2P, use `get_gpu_executor()` only with its added resource-lifecycle responsibility. It returns a non-owning pointer and cannot be retained across or used concurrently with `shutdown()`.
 
-Registered does not mean faster. Any conclusion records model, driver, backend, data size, kernel, build type, measurement, and CPU comparison. See [`gpu_basic.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/gpu_basic.cpp), [`gpu_multi_device.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/gpu_multi_device.cpp), and [`gpu_opencl.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/gpu_opencl.cpp).
+Registered does not mean faster. Any conclusion records model, driver, backend, data size, kernel, build type, measurement, and CPU comparison. See [`gpu_basic.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/gpu_basic.cpp), [`gpu_multi_device.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/gpu_multi_device.cpp), and [`gpu_opencl.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/gpu_opencl.cpp).
 
 Next: [CPU/GPU automatic selection](/en/gpu/automatic-scheduling).

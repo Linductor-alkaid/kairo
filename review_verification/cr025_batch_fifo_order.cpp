@@ -10,8 +10,8 @@
 // Part 2 (end-to-end): single-worker ThreadPool (min=max=1), repeated
 // try_submit_batch(32) rounds; each task records its global execution index;
 // compare with submission index. Any mismatch => in-batch FIFO violated.
-#include "executor/thread_pool/thread_pool.hpp"
-#include "executor/thread_pool/priority_scheduler.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
+#include "kairo/thread_pool/priority_scheduler.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -21,7 +21,7 @@
 #include <utility>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 namespace chrono = std::chrono;
 
 int main() {

@@ -6,7 +6,7 @@
 - [ ] `README.md`、`README_zh.md`、`docs/API.md` 与网站版本标识已核对；开发快照能力不会标为既有稳定版能力。
 - [ ] 打包脚本（`scripts/package_*.sh` / `scripts/package_windows.ps1` 及对应 build_and_package 编排）的版本默认值与本版本一致。
 - [ ] `v*` tag 推送后 release workflow（`.github/workflows/release.yml`）三个 job 全绿：deb-amd64（CUDA devel 容器）、windows-static-x64、release。
-- [ ] GitHub Release 资产齐全：`executor-<版本>-linux-x86_64.tar.gz`、`libexecutor_<版本>_amd64.deb`、`libexecutor-dev_<版本>_amd64.deb`、`executor-<版本>-windows-x64.zip`；`dpkg-deb -I` 抽查 control 字段（版本、维护者、架构）。
+- [ ] GitHub Release 资产齐全：`kairo-<版本>-linux-x86_64.tar.gz`、`libkairo_<版本>_amd64.deb`、`libkairo-dev_<版本>_amd64.deb`、`kairo-<版本>-windows-x64.zip`；`dpkg-deb -I` 抽查 control 字段（版本、维护者、架构）。
 - [ ] Release 发布说明由 `CHANGELOG.md` 对应版本小节自动截取生成，人工复核排版与链接。
 - [ ] 网站中英文 `version-and-migration` 已新增本版本小节，`index`/`maintenance`/`decisions`/`api` 的版本标识已同步。
 - [ ] 新增或变更的公开 Facade 已通过网站 [API 覆盖索引](../website/zh/reference/api.md) 找到教程、专题、选型或参考入口。

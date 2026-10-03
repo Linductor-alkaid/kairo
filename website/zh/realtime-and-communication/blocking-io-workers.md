@@ -1,6 +1,6 @@
 ---
 title: 阻塞 I/O worker
-description: 通过 Executor Facade 管理长期阻塞 worker 的所有权、唤醒与 join。
+description: 通过 Kairo Facade 管理长期阻塞 worker 的所有权、唤醒与 join。
 ---
 
 # 阻塞 I/O worker
@@ -44,8 +44,8 @@ blocking worker started=yes, stopped=yes, wakeups=1
 
 `Executor::shutdown()` 对所有已注册 I/O worker 采用同样的 stop/wake/join 规则，包括 `shutdown(false)`。不要 detach worker，也不要在 shutdown 后保留它的引用。
 
-## Executor 不负责的部分
+## Kairo 不负责的部分
 
 本库刻意不决定消息所有权、队列策略、数据新鲜度、重连、设备安全动作或部署调优。这些由实现 worker 的应用自行定义和验证。
 
-完整签名与状态字段见 [API 参考](https://github.com/Linductor-alkaid/executor/blob/master/docs/API.md#45-阻塞-io-worker-api)。如果工作改为有固定周期预算的控制，请回到[专用实时控制循环](/zh/realtime-and-communication/realtime-control)。
+完整签名与状态字段见 [API 参考](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md#45-阻塞-io-worker-api)。如果工作改为有固定周期预算的控制，请回到[专用实时控制循环](/zh/realtime-and-communication/realtime-control)。

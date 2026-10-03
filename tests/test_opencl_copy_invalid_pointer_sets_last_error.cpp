@@ -21,14 +21,14 @@
 #include <vector>
 
 #define private public
-#include "executor/gpu/opencl_executor.hpp"
-#include "executor/gpu/opencl_loader.hpp"
+#include "kairo/gpu/opencl_executor.hpp"
+#include "kairo/gpu/opencl_loader.hpp"
 #undef private
 
-using executor::gpu::GpuBackend;
-using executor::gpu::GpuExecutorConfig;
-using executor::gpu::OpenCLExecutor;
-using executor::gpu::OpenCLLoader;
+using kairo::gpu::GpuBackend;
+using kairo::gpu::GpuExecutorConfig;
+using kairo::gpu::OpenCLExecutor;
+using kairo::gpu::OpenCLLoader;
 
 namespace {
 

@@ -20,7 +20,7 @@
 // scheduler's strict order, so a LOW may start marginally before queue_size
 // reaches 0. The claim under test is starvation while HIGH submission is
 // ongoing, which the t_flood_end criterion captures.
-#include "executor/thread_pool/thread_pool.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -28,7 +28,7 @@
 #include <thread>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 namespace chrono = std::chrono;
 
 static int64_t now_ns() {
