@@ -21,7 +21,7 @@ target_link_libraries(executor_app PRIVATE executor::executor)
 
 int main() {
     executor::Executor executor;
-    const auto init = executor.initialize_ex({});
+    const auto init = executor.initialize({});
     if (!init) {
         std::cerr << init.message << '\n';
         return 1;

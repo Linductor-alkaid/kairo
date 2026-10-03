@@ -23,7 +23,7 @@ ctest --test-dir build -L tutorial --output-on-failure
 
 ## 推荐方案
 
-使用 `register_gpu_executor_ex()`，根据 `ExecutorResult` 作出业务回退。教程示例故意选择未实现的 SYCL 后端，因此在任何机器上都会验证诊断路径：
+使用 `register_gpu_executor()`，根据 `ExecutorResult` 作出业务回退。教程示例故意选择未实现的 SYCL 后端，因此在任何机器上都会验证诊断路径：
 
 <<< @/../examples/tutorial/09_gpu.cpp{1-27}
 

@@ -109,7 +109,7 @@ int main() {
     exec_config.queue_capacity = 100;
 
     auto& exec = Executor::instance();
-    auto init = exec.initialize_ex(exec_config);
+    auto init = exec.initialize(exec_config);
     if (!init) {
         std::cerr << "Failed to initialize executor: " << init.message << std::endl;
         return 1;

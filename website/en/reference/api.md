@@ -13,7 +13,7 @@ This site anchors on `v0.5.3` as its stable baseline, covering unified auto-rout
 | --- | --- | --- | --- |
 | Lifecycle | `instance`, standalone instances, `initialize[_ex]`, `shutdown` | [Lifecycle](/en/quick-start/lifecycle) | Lifecycle and configuration chapters of `docs/API.md`. |
 | Regular tasks and routing | `submit_auto`, `TaskOptions`, `RoutingDecision`, `submit` | [Execution Models and Routing Boundaries](/en/guides/execution-models-and-routing), [Task Inputs and Ownership](/en/quick-start/task-inputs-and-ownership) | `Executor` template API. |
-| Periodic and batch | `submit_periodic`, `cancel_task`, periodic status, three batch flavors | [Delayed and Periodic](/en/tutorial/delayed-and-periodic), [Batch](/en/tutorial/batch) | Facade timer and batch chapters. |
+| Periodic and batch | `submit_periodic`, `TimerHandle::cancel`, periodic status, three batch flavors | [Delayed and Periodic](/en/tutorial/delayed-and-periodic), [Batch](/en/tutorial/batch) | Facade timer and batch chapters. |
 | Task graphs | `submit_with_handle`, `submit_after[_with_handle]`, `when_all` | [Task Dependencies](/en/tutorial/dependencies) | Task dependency chapter. |
 | Failure and waiting | failure callback/status, recent failures, `wait_for_completion[_ex]`, completion status | [Failure Observability](/en/reliability/failure-observability), [Bounded Waiting](/en/tutorial/waiting-and-status) | Failure, waiting and type chapters. |
 | Monitoring | `enable_monitoring`, sampling rate, task statistics | [Monitoring and Sampling](/en/reliability/monitoring) | Monitoring API chapter. |
@@ -37,7 +37,7 @@ The table below is the pre-release checklist: every public `Executor` facade fam
 | failure, recent buffer, waiting, completion snapshots | Reliability and waiting tutorials | `FailureKind`, `WaitResult` and status fields. |
 | Monitoring and statistics | Monitoring and sampling | Sampling rate and statistics overhead. |
 | `submit_cancellable*`, `request_task_cancel`, `get_cancellation_status` | Cancellation and timers tutorial | Cooperative semantics, registry capacity and cancellation counters. |
-| `submit_delayed_with_handle`, `submit_periodic_with_handle`, `TimerHandle` / `ScopedTimerHandle` | Cancellation and timers tutorial | cancel/reschedule, terminal states and timer counters. |
+| `submit_delayed`, `submit_periodic`, `TimerHandle` / `ScopedTimerHandle` | Cancellation and timers tutorial | cancel/reschedule, terminal states and timer counters. |
 | `submit_on`, `submit_on_with_handle`, `SerialExecutionContext` | Event loop interop guide | FIFO ticket ordering, non-blocking dispatch and shutdown rejection. |
 | `max_in_flight_tasks`, `set/get_max_in_flight_tasks`, `get_in_flight_submissions` | Capacity and alerting | Covered paths, capacity rejection semantics and counters. |
 | realtime registration, push, list and status | Realtime control tutorial | Permission degradation, cycle budgets and rejection counters. |

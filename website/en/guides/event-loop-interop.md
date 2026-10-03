@@ -36,7 +36,7 @@ Do not poll-and-sleep to detect batch completion. The serial side advances a `co
 ## Cancellation and timers at the boundary
 
 - Tasks that need cooperative cancellation must run through executor APIs (`submit_cancellable` + `StopToken`). Kairo cancellation does not reach inside asio's internal waits.
-- Homemade `sleep_until` loops that do not depend on strand ownership can migrate to `submit_delayed_with_handle()` / `submit_periodic_with_handle()` (see [Cancellation and Timers](/en/realtime-and-communication/cancellation-and-timers) and `docs/MIGRATION.md`).
+- Homemade `sleep_until` loops that do not depend on strand ownership can migrate to `submit_delayed()` / `submit_periodic()` (see [Cancellation and Timers](/en/realtime-and-communication/cancellation-and-timers) and `docs/MIGRATION.md`).
 - A timer whose callback and destruction must happen on one strand stays application-managed until external-context timer binding passes review (T2). `SerialExecutionContext` provides FIFO task admission, but does not change a facade timer's execution or destruction context.
 
 ## Related reading

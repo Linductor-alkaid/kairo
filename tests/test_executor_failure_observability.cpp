@@ -121,7 +121,7 @@ bool test_submit_exception_observable_without_future_get() {
     });
     (void)future;
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
 
     auto failure_status = executor.get_failure_status();
     TEST_ASSERT(failure_status.task_exception_count == 1,
@@ -160,7 +160,7 @@ bool test_submit_priority_exception_observable() {
     });
     (void)future;
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
 
     auto failure_status = executor.get_failure_status();
     TEST_ASSERT(failure_status.task_exception_count == 1,
@@ -191,7 +191,7 @@ bool test_submit_batch_partial_exception_observable() {
     tasks.push_back([]() {});
 
     auto futures = executor.submit_batch(tasks);
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
 
     size_t throwing_futures = 0;
     for (auto& future : futures) {
@@ -241,7 +241,7 @@ bool test_submit_batch_no_future_exception_observable() {
     tasks.push_back([]() { throw std::runtime_error("no future boom"); });
 
     executor.submit_batch_no_future(tasks);
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
 
     auto failure_status = executor.get_failure_status();
     TEST_ASSERT(failure_status.task_exception_count == 1,

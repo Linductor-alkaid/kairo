@@ -7,7 +7,7 @@
 //   - shutdown 收敛：pending delayed 以 TaskCancelled(Shutdown) 就绪；
 //   - periodic 已提交 tick 与后续 cancel 的边界；
 //   - 计数进入 TimerStatusSummary；
-//   - legacy submit_delayed/submit_periodic/cancel_task 行为回归。
+//   - delayed/periodic 句柄行为回归。
 
 #include <gtest/gtest.h>
 
@@ -59,7 +59,7 @@ TEST(TimerHandleTest, DelayedWithHandleExecutesAndKeepsLegacySemantics) {
     ASSERT_TRUE(executor.initialize(small_config()));
 
     std::atomic<int> value{0};
-    auto submission = executor.submit_delayed_with_handle(
+    auto submission = executor.submit_delayed(
         30, [&value]() noexcept {
             value.store(7, std::memory_order_release);
             return 7;
@@ -84,7 +84,7 @@ TEST(TimerHandleTest, CancelBeforeExpiryPreventsExecution) {
     ASSERT_TRUE(executor.initialize(small_config()));
 
     std::atomic<bool> ran{false};
-    auto submission = executor.submit_delayed_with_handle(
+    auto submission = executor.submit_delayed(
         10'000, [&ran]() noexcept { ran.store(true, std::memory_order_release); });
 
     const auto before_failures = executor.get_failure_status();
@@ -115,7 +115,7 @@ TEST(TimerHandleTest, RescheduleChangesNextExpiryOnly) {
     ASSERT_TRUE(executor.initialize(small_config()));
 
     std::atomic<int> value{0};
-    auto submission = executor.submit_delayed_with_handle(
+    auto submission = executor.submit_delayed(
         80, [&value]() noexcept { value.fetch_add(1, std::memory_order_relaxed); });
 
     EXPECT_EQ(submission.handle.reschedule_after(30),
@@ -142,7 +142,7 @@ TEST(TimerHandleTest, CancelAfterDispatchPropagatesToRunningTask) {
     ASSERT_TRUE(executor.initialize(small_config()));
 
     std::atomic<bool> started{false};
-    auto submission = executor.submit_delayed_cancellable_with_handle(
+    auto submission = executor.submit_delayed_cancellable(
         20, [&started](StopToken token) noexcept {
             started.store(true, std::memory_order_release);
             while (!token.stop_requested()) {
@@ -172,7 +172,7 @@ TEST(TimerHandleTest, TimerHandleCopyDoesNotCancelOnDestruction) {
     ASSERT_TRUE(executor.initialize(small_config()));
 
     std::atomic<int> value{0};
-    auto submission = executor.submit_delayed_with_handle(
+    auto submission = executor.submit_delayed(
         50, [&value]() noexcept {
             value.store(3, std::memory_order_release);
             return 3;
@@ -197,7 +197,7 @@ TEST(TimerHandleTest, ScopedTimerHandleCancelsOnDestruction) {
     std::atomic<bool> ran{false};
     std::future<int> future;
     {
-        auto submission = executor.submit_delayed_with_handle(
+        auto submission = executor.submit_delayed(
             10'000, [&ran]() noexcept {
                 ran.store(true, std::memory_order_release);
                 return 1;
@@ -222,7 +222,7 @@ TEST(TimerHandleTest, ShutdownCancelsPendingDelayedWithTypedException) {
     ASSERT_TRUE(executor.initialize(small_config()));
 
     std::atomic<bool> ran{false};
-    auto submission = executor.submit_delayed_with_handle(
+    auto submission = executor.submit_delayed(
         60'000, [&ran]() noexcept {
             ran.store(true, std::memory_order_release);
             return 1;
@@ -252,7 +252,7 @@ TEST(TimerHandleTest, ShutdownStopsPeriodicTicksWithoutFailureEvents) {
     ASSERT_TRUE(executor.initialize(small_config()));
 
     std::atomic<int> ticks{0};
-    auto handle = executor.submit_periodic_with_handle(
+    auto handle = executor.submit_periodic(
         20, [&ticks]() noexcept { ticks.fetch_add(1, std::memory_order_relaxed); });
 
     ASSERT_TRUE(wait_until(2s, [&ticks] { return ticks.load() >= 1; }))
@@ -280,7 +280,7 @@ TEST(TimerHandleTest, PeriodicWithHandleCancelsAndBlocksFutureTicks) {
     ASSERT_TRUE(executor.initialize(small_config()));
 
     std::atomic<int> ticks{0};
-    auto handle = executor.submit_periodic_with_handle(
+    auto handle = executor.submit_periodic(
         20, [&ticks]() noexcept { ticks.fetch_add(1, std::memory_order_relaxed); });
     ASSERT_TRUE(handle.valid());
 
@@ -294,8 +294,8 @@ TEST(TimerHandleTest, PeriodicWithHandleCancelsAndBlocksFutureTicks) {
     EXPECT_LE(ticks.load(), after_cancel + 1)
         << "cancelled periodic timer must not produce new ticks";
 
-    EXPECT_EQ(handle.cancel(), TimerOperationResult::NotFound)
-        << "cancelled periodic id is removed from registry";
+    EXPECT_EQ(handle.cancel(), TimerOperationResult::AlreadyCancelled)
+        << "re-cancelling a cancelled periodic handle is idempotent";
     executor.shutdown();
 }
 
@@ -305,7 +305,7 @@ TEST(TimerHandleTest, PeriodicCancellableTickReceivesStopToken) {
 
     std::atomic<bool> token_observed{false};
     std::atomic<bool> finished_after_stop{false};
-    auto handle = executor.submit_periodic_cancellable_with_handle(
+    auto handle = executor.submit_periodic_cancellable(
         20, [&](StopToken token) noexcept {
             if (token.stop_requested()) {
                 token_observed.store(true, std::memory_order_release);
@@ -329,7 +329,7 @@ TEST(TimerHandleTest, PeriodicRescheduleChangesNextExpiryNotPeriod) {
     ASSERT_TRUE(executor.initialize(small_config()));
 
     std::atomic<int> ticks{0};
-    auto handle = executor.submit_periodic_with_handle(
+    auto handle = executor.submit_periodic(
         30, [&ticks]() noexcept { ticks.fetch_add(1, std::memory_order_relaxed); });
 
     // 把下一次到期推迟：在 100ms 窗口内不应有新 tick（原周期 30ms）。
@@ -366,7 +366,7 @@ TEST(TimerHandleTest, CancelVersusExpiryRaceNoDoubleExecution) {
     std::vector<TimerSubmission<int>> submissions;
     submissions.reserve(kTimers);
     for (int i = 0; i < kTimers; ++i) {
-        submissions.push_back(executor.submit_delayed_with_handle(
+        submissions.push_back(executor.submit_delayed(
             5 + (i % 40), [&executions]() noexcept {
                 executions.fetch_add(1, std::memory_order_relaxed);
                 return 0;
@@ -415,36 +415,40 @@ TEST(TimerHandleTest, LegacyDelayedAndPeriodicUnchanged) {
     Executor executor;
     ASSERT_TRUE(executor.initialize(small_config()));
 
-    // legacy submit_delayed：只返回 future。
-    auto delayed_future = executor.submit_delayed(20, []() { return 5; });
-    ASSERT_EQ(delayed_future.wait_for(10s), std::future_status::ready);
-    EXPECT_EQ(delayed_future.get(), 5);
+    // delayed：TimerSubmission 携带句柄与 future。
+    auto delayed_submission = executor.submit_delayed(20, []() { return 5; });
+    ASSERT_EQ(delayed_submission.future.wait_for(10s), std::future_status::ready);
+    EXPECT_EQ(delayed_submission.future.get(), 5);
 
-    // legacy submit_periodic + cancel_task + PeriodicTaskStatus。
+    // periodic：TimerHandle + PeriodicTaskStatus。
     std::atomic<int> ticks{0};
-    const std::string task_id = executor.submit_periodic(
+    auto handle = executor.submit_periodic(
         20, [&ticks]() noexcept { ticks.fetch_add(1, std::memory_order_relaxed); });
-    EXPECT_FALSE(task_id.empty());
+    ASSERT_TRUE(handle.valid());
 
     ASSERT_TRUE(wait_until(
-        2s, [&executor, &task_id] {
-            auto status = executor.get_periodic_task_status(task_id);
+        2s, [&executor, &handle] {
+            auto status = executor.get_periodic_task_status(handle.id());
             return status && status->execution_count >= 2;
         }))
-        << "legacy periodic task must tick at least twice";
-    const auto status = executor.get_periodic_task_status(task_id);
+        << "periodic task must tick at least twice";
+    const auto status = executor.get_periodic_task_status(handle.id());
     ASSERT_TRUE(status.has_value());
-    EXPECT_EQ(status->task_id, task_id);
+    EXPECT_EQ(status->task_id, handle.id());
     EXPECT_GE(status->execution_count, 2u);
 
-    EXPECT_TRUE(executor.cancel_task(task_id));
-    EXPECT_FALSE(executor.get_periodic_task_status(task_id).has_value());
+    EXPECT_NE(handle.cancel(), TimerOperationResult::NotFound);
+    // 句柄版取消后 record 保留为 Cancelled 终态（is_running=false），
+    // PeriodicTaskStatus 仍可查询用于诊断。
+    const auto cancelled_status = executor.get_periodic_task_status(handle.id());
+    ASSERT_TRUE(cancelled_status.has_value());
+    EXPECT_FALSE(cancelled_status->is_running);
 
-    // 旧 cancel_task 对无效 id：SubmitRejected 诊断 + false（行为锁定）。
+    // 已取消句柄再取消：幂等 AlreadyCancelled，不产生 SubmitRejected 诊断。
     const auto rejected_before = executor.get_failure_status().submit_rejected_count;
-    EXPECT_FALSE(executor.cancel_task("missing-periodic-task"));
+    EXPECT_EQ(handle.cancel(), TimerOperationResult::AlreadyCancelled);
     EXPECT_EQ(executor.get_failure_status().submit_rejected_count,
-              rejected_before + 1);
+              rejected_before);
 
     executor.shutdown();
 }
@@ -456,9 +460,9 @@ TEST(TimerHandleTest, TimerSummaryCountersObservable) {
     const auto before = executor.get_timer_status_summary();
 
     std::atomic<int> ran{0};
-    auto executed = executor.submit_delayed_with_handle(
+    auto executed = executor.submit_delayed(
         20, [&ran]() noexcept { ran.fetch_add(1, std::memory_order_relaxed); });
-    auto cancelled = executor.submit_delayed_with_handle(60'000, []() noexcept { return 1; });
+    auto cancelled = executor.submit_delayed(60'000, []() noexcept { return 1; });
 
     ASSERT_EQ(executed.future.wait_for(10s), std::future_status::ready);
     ASSERT_EQ(cancelled.handle.cancel(),
@@ -482,7 +486,7 @@ TEST(TimerHandleTest, DelayedCancellableQueuedCancelBeforeExpiry) {
     ASSERT_TRUE(executor.initialize(small_config()));
 
     std::atomic<bool> ran{false};
-    auto submission = executor.submit_delayed_cancellable_with_handle(
+    auto submission = executor.submit_delayed_cancellable(
         10'000, [&ran](StopToken) noexcept {
             ran.store(true, std::memory_order_release);
             return 1;

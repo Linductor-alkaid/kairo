@@ -153,7 +153,7 @@ If tuning falls back, the library runs safely and records it. Business requireme
 
 With empty `RealtimeThreadConfig::cpu_affinity`, Kairo round-robins among CPUs allowed to the current thread and auto-binds only if at least two are allowed. For explicit affinity: read the final allowed set, reserve capacity for OS/interrupts/ordinary workers, verify `cpu_affinity_applied`, inspect actual affinity with system tools, and measure under full load. Never copy development-machine CPU numbering into another SKU, VM, or container.
 
-For GPU, record three layers: CMake CUDA/OpenCL enablement and headers/libraries; driver/runtime/device visibility to the final account; then `register_gpu_executor_ex()` result and post-registration `GpuExecutorStatus::last_error_message`. A real kernel future is still required; validate CPU fallback independently. Android in this stage is CPU-only and does not accept GPU capabilities.
+For GPU, record three layers: CMake CUDA/OpenCL enablement and headers/libraries; driver/runtime/device visibility to the final account; then `register_gpu_executor()` result and post-registration `GpuExecutorStatus::last_error_message`. A real kernel future is still required; validate CPU fallback independently. Android in this stage is CPU-only and does not accept GPU capabilities.
 
 Save build version/commit, OS/architecture, compiler/CMake, service identity/start method, allowed/explicit CPUs, real-time and memlock limits, GPU backend/driver/device, realtime status, smoke tests, steady/overload/shutdown results, and accepted tuning fallbacks. Re-run after base-image, CPU SKU, service-account, or security-policy changes.
 

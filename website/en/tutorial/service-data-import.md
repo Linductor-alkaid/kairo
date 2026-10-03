@@ -102,7 +102,7 @@ Keep callbacks short and non-blocking. Do not synchronously call a remote alert 
 
 Four rows, two workers, and capacity `32` validate partial failure; they are not production parameters. For large CSVs, read in bounded row/byte chunks, cap in-flight batches, release input buffers and futures after each batch, match write concurrency to the database connection pool, and record queue time, batch age, rejection count, and end-to-end throughput.
 
-Use an order/import ID as an idempotency key because a task can finish after a caller timeout and a batch can be retried. Use a transaction or staging-table switch for all-or-nothing writes. `wait_for_completion_ex()` cannot terminate an executing database call, so connections/statements need their own timeouts and long batches need a business deadline. If an HTTP request can disconnect first, persist a job ID, progress, and row errors instead of keeping futures only on the request stack.
+Use an order/import ID as an idempotency key because a task can finish after a caller timeout and a batch can be retried. Use a transaction or staging-table switch for all-or-nothing writes. `wait_for_completion()` cannot terminate an executing database call, so connections/statements need their own timeouts and long batches need a business deadline. If an HTTP request can disconnect first, persist a job ID, progress, and row errors instead of keeping futures only on the request stack.
 
 ## Failure injection and shutdown
 

@@ -27,9 +27,9 @@ int main() {
     config.max_threads = 1;
     config.enable_monitoring = true;
 
-    const auto initialized = executor.initialize_ex(config);
+    const auto initialized = executor.initialize(config);
     if (!initialized) {
-        std::cerr << "initialize_ex failed: " << initialized.message << "\n";
+        std::cerr << "initialize failed: " << initialized.message << "\n";
         return 1;
     }
 
@@ -64,7 +64,7 @@ int main() {
         std::cout << "observed task exception: " << error.what() << "\n";
     }
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     std::cout << executor.get_snapshot_text();
 
     executor.shutdown();

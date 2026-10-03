@@ -30,9 +30,9 @@ The legacy entry points remain compatible when a caller only needs success or fa
 
 | Migration | Use it when |
 | --- | --- |
-| `initialize(config)` → `initialize_ex(config)` | Configuration, repeated initialization, or post-shutdown failures need distinct causes. |
-| `register_realtime_task(...)` → `register_realtime_task_ex(...)` | You need to distinguish invalid configuration, duplicate names, or platform startup failures. |
-| `register_gpu_executor(...)` → `register_gpu_executor_ex(...)` | You need to distinguish invalid configuration from `BackendUnavailable`. |
+| `initialize(config)` → `initialize(config)` | Configuration, repeated initialization, or post-shutdown failures need distinct causes. |
+| `register_realtime_task(...)` → `register_realtime_task(...)` | You need to distinguish invalid configuration, duplicate names, or platform startup failures. |
+| `register_gpu_executor(...)` → `register_gpu_executor(...)` | You need to distinguish invalid configuration from `BackendUnavailable`. |
 | `wait_for_completion()` → `wait_for_completion_for()` / `_ex()` | Waiting must be bounded or timeout status must be recorded. |
 | `IRealtimeExecutor::push_task()` → `Executor::try_push_realtime_task()` | Rejection, backpressure, and failure events must be observable. |
 

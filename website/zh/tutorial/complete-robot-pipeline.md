@@ -158,13 +158,13 @@ monitor 可能在 planner 发布首个快照前先轮询一次，因此出现 `[
 
 ### 它不是实时性能证明
 
-名为 `realtime_thread` 的角色使用普通 `std::thread + sleep_for(1ms)` 模拟周期消费，便于在任何开发机运行。它没有调用 `register_realtime_task_ex()`，也没有验证实时优先级、CPU affinity、内存锁、timer slack 或 jitter。
+名为 `realtime_thread` 的角色使用普通 `std::thread + sleep_for(1ms)` 模拟周期消费，便于在任何开发机运行。它没有调用 `register_realtime_task()`，也没有验证实时优先级、CPU affinity、内存锁、timer slack 或 jitter。
 
 真实部署应把周期角色替换为[专用实时任务 Facade](/zh/realtime-and-communication/realtime-control)，但可以保留 `RealtimeChannel` 的有界消费语义。替换后要以 `RealtimeExecutorStatus` 和目标硬件测量验证，而不是沿用示例 sleep 周期。
 
 ### 它不是完整的故障恢复实现
 
-为了保持示例短小，代码没有完整处理初始化失败、启动依赖失败、订阅者持续过载、控制命令拒绝或线程中异常。生产入口优先使用 `initialize_ex()`；每次 `publish()` 都应检查逐订阅交付结果，长期线程函数也应在边界捕获异常并触发统一停止。
+为了保持示例短小，代码没有完整处理初始化失败、启动依赖失败、订阅者持续过载、控制命令拒绝或线程中异常。生产入口优先使用 `initialize()`；每次 `publish()` 都应检查逐订阅交付结果，长期线程函数也应在边界捕获异常并触发统一停止。
 
 ### 它不是停机协议模板
 

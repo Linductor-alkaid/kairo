@@ -60,10 +60,11 @@ public:
         running_.store(false);
     }
 
-    void push_task(std::function<void()> task) override {
+    kairo::ExecutorResult push_task(std::function<void()> task) override {
         if (task) {
             task();
         }
+        return kairo::ExecutorResult::success();
     }
 
 private:

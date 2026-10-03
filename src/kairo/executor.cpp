@@ -225,11 +225,7 @@ Executor::~Executor() {
 }
 
 // 初始化执行器
-bool Executor::initialize(const ExecutorConfig& config) {
-    return initialize_ex(config).ok;
-}
-
-ExecutorResult Executor::initialize_ex(const ExecutorConfig& config) {
+ExecutorResult Executor::initialize(const ExecutorConfig& config) {
     if (auto validation = validate_executor_config(config); !validation.ok) {
         lifecycle_state_.store(ExecutorLifecycleState::Failed, std::memory_order_release);
         record_result_failure(
@@ -305,7 +301,7 @@ ShutdownResult Executor::shutdown(bool wait_for_tasks) {
         return result;
     }
     if (wait_for_tasks && manager_->has_default_async_executor()) {
-        const auto wait_result = wait_for_completion_ex(kDefaultWaitForCompletionTimeout);
+        const auto wait_result = wait_for_completion(kDefaultWaitForCompletionTimeout);
         const auto result = manager_->shutdown(wait_result.completed);
         fail_all_parked_tasks_for_shutdown();
         if (result == ShutdownResult::Completed) {
@@ -859,8 +855,8 @@ void Executor::stop_timer_thread() {
     }
 }
 
-// 提交周期性任务
-std::string Executor::submit_periodic(int64_t period_ms,
+// 提交带句柄的周期任务
+TimerHandle Executor::submit_periodic(int64_t period_ms,
                                       std::function<void()> task) {
     if (period_ms <= 0) {
         throw std::invalid_argument("period_ms must be greater than 0");
@@ -941,8 +937,7 @@ std::string Executor::submit_periodic(int64_t period_ms,
 
     const std::string scheduled_id =
         ensure_timers().schedule_periodic(period_ms, task_id,
-                                          std::move(tick_builder),
-                                          /*legacy_periodic=*/true);
+                                          std::move(tick_builder));
     if (scheduled_id.empty()) {
         auto exception = std::make_exception_ptr(std::runtime_error(
             "Timer stopped before periodic task execution"));
@@ -953,19 +948,11 @@ std::string Executor::submit_periodic(int64_t period_ms,
             "Timer stopped before periodic task execution");
     }
 
-    return task_id;
-}
 
-TimerHandle Executor::submit_periodic_with_handle(int64_t period_ms,
-                                                  std::function<void()> task) {
-    // 与 submit_periodic 相同的诊断语义，句柄化后由 TimerHandle 控制取消。
-    const std::string task_id = submit_periodic(period_ms, std::move(task));
-    // legacy 登记同样持有 id：TimerHandle::cancel 与 cancel_task 均可取消，
-    // 但 cancel_task 保持旧行为（无效 id 记 SubmitRejected 并返回 false）。
     return TimerHandle(task_id, timers_);
 }
 
-TimerHandle Executor::submit_periodic_cancellable_with_handle(
+TimerHandle Executor::submit_periodic_cancellable(
     int64_t period_ms, std::function<void(StopToken)> task) {
     if (period_ms <= 0) {
         throw std::invalid_argument("period_ms must be greater than 0");
@@ -1072,8 +1059,7 @@ TimerHandle Executor::submit_periodic_cancellable_with_handle(
 
     const std::string scheduled_id =
         ensure_timers().schedule_periodic(period_ms, timer_id,
-                                          std::move(tick_builder),
-                                          /*legacy_periodic=*/false);
+                                          std::move(tick_builder));
     if (scheduled_id.empty()) {
         auto exception = std::make_exception_ptr(std::runtime_error(
             "Timer stopped before periodic task execution"));
@@ -1092,19 +1078,6 @@ TimerStatusSummary Executor::get_timer_status_summary() const {
         return {};
     }
     return timers_->summary();
-}
-
-// 取消任务（legacy：仅周期任务；无效 id 保持 SubmitRejected 诊断）
-bool Executor::cancel_task(const std::string& task_id) {
-    if (ensure_timers().cancel_periodic_legacy(task_id)) {
-        return true;
-    }
-
-    record_submit_rejected(
-        "default",
-        task_id,
-        "Periodic task cancellation failed: task not found");
-    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1257,12 +1230,7 @@ std::vector<PeriodicTaskStatus> Executor::get_all_periodic_task_status() const {
 }
 
 // 注册实时任务
-bool Executor::register_realtime_task(const std::string& name,
-                                     const RealtimeThreadConfig& config) {
-    return register_realtime_task_ex(name, config).ok;
-}
-
-ExecutorResult Executor::register_realtime_task_ex(
+ExecutorResult Executor::register_realtime_task(
     const std::string& name,
     const RealtimeThreadConfig& config) {
     if (auto validation = validate_realtime_config(name, config); !validation.ok) {
@@ -1294,11 +1262,7 @@ ExecutorResult Executor::register_realtime_task_ex(
 }
 
 // 启动实时任务
-bool Executor::start_realtime_task(const std::string& name) {
-    return start_realtime_task_ex(name).ok;
-}
-
-ExecutorResult Executor::start_realtime_task_ex(const std::string& name) {
+ExecutorResult Executor::start_realtime_task(const std::string& name) {
     if (name.empty()) {
         auto result = make_failure(
             ExecutorErrorCode::InvalidConfig,
@@ -1344,14 +1308,7 @@ void Executor::stop_realtime_task(const std::string& name) {
     }
 }
 
-bool Executor::register_blocking_io_worker(
-    const std::string& name,
-    const BlockingIoConfig& config,
-    std::unique_ptr<IBlockingIoWorker> worker) {
-    return register_blocking_io_worker_ex(name, config, std::move(worker)).ok;
-}
-
-ExecutorResult Executor::register_blocking_io_worker_ex(
+ExecutorResult Executor::register_blocking_io_worker(
     const std::string& name,
     const BlockingIoConfig& config,
     std::unique_ptr<IBlockingIoWorker> worker) {
@@ -1378,11 +1335,7 @@ ExecutorResult Executor::register_blocking_io_worker_ex(
     return ExecutorResult::success("Blocking I/O executor registered");
 }
 
-bool Executor::start_blocking_io_worker(const std::string& name) {
-    return start_blocking_io_worker_ex(name).ok;
-}
-
-ExecutorResult Executor::start_blocking_io_worker_ex(const std::string& name) {
+ExecutorResult Executor::start_blocking_io_worker(const std::string& name) {
     if (name.empty()) {
         auto result = make_failure(ExecutorErrorCode::InvalidConfig,
                                    "Blocking I/O executor name must not be empty");
@@ -1427,10 +1380,10 @@ std::vector<std::string> Executor::get_blocking_io_worker_list() const {
 
 WorkerHandle Executor::start_worker(BlockingWorkerSpec spec) {
     const std::string name = spec.name;
-    auto result = register_blocking_io_worker_ex(
+    auto result = register_blocking_io_worker(
         spec.name, spec.config, std::move(spec.worker));
     if (result.ok) {
-        result = start_blocking_io_worker_ex(name);
+        result = start_blocking_io_worker(name);
     }
     return WorkerHandle(manager_, name, std::move(result));
 }
@@ -1466,8 +1419,8 @@ bool Executor::push_realtime_task(const std::string& name, std::function<void()>
         return false;
     }
     const auto before = executor->get_status();
-    const bool accepted = executor->push_task_ex(std::move(task));
-    if (accepted) {
+    const auto push_result = executor->push_task(std::move(task));
+    if (push_result.ok) {
         return true;
     }
 
@@ -1982,15 +1935,11 @@ std::map<std::string, TaskStatistics> Executor::get_all_task_statistics() const 
     return manager_->get_all_task_statistics();
 }
 
-void Executor::wait_for_completion() {
-    (void)wait_for_completion_ex(kDefaultWaitForCompletionTimeout);
-}
-
 bool Executor::try_wait_for_completion(std::chrono::milliseconds timeout) {
-    return wait_for_completion_ex(timeout).completed;
+    return wait_for_completion(timeout).completed;
 }
 
-WaitResult Executor::wait_for_completion_ex(std::chrono::milliseconds timeout) {
+WaitResult Executor::wait_for_completion(std::chrono::milliseconds timeout) {
     WaitResult result;
     result.timeout = timeout;
 
@@ -2094,12 +2043,7 @@ void Executor::emit_snapshot_diagnostic(const ExecutorSnapshot& snapshot) const 
 }
 
 // 注册 GPU 执行器
-bool Executor::register_gpu_executor(const std::string& name,
-                                     const gpu::GpuExecutorConfig& config) {
-    return register_gpu_executor_ex(name, config).ok;
-}
-
-ExecutorResult Executor::register_gpu_executor_ex(
+ExecutorResult Executor::register_gpu_executor(
     const std::string& name,
     const gpu::GpuExecutorConfig& config) {
     if (auto validation = validate_gpu_config_for_facade(name, config); !validation.ok) {

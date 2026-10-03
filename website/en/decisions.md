@@ -43,7 +43,7 @@ aside: false
 | Build and install | `docs/BUILD.md`, root `CMakeLists.txt` | `01_first_task.cpp` | Build maintainer |
 | Your first task | `include/kairo/executor.hpp` | `01_first_task.cpp` | Tutorial maintainer |
 | Return values and errors | `Executor::submit_auto()`, future | `01_first_task.cpp` | Tutorial maintainer |
-| Initialization and shutdown | `Executor::initialize_ex()`, `shutdown()` | `01_first_task.cpp` | API maintainer |
+| Initialization and shutdown | `Executor::initialize()`, `shutdown()` | `01_first_task.cpp` | API maintainer |
 | Versions and migration | `docs/MIGRATION.md`, `CHANGELOG.md` | — | Release maintainer |
 
 New navigable pages must identify a fact source, example where applicable, and acceptance owner before entering navigation.

@@ -24,7 +24,7 @@ void test_loop_submit(int num_tasks) {
     }
     auto end = steady_clock::now();
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     executor.shutdown(false);
 
     auto duration_us = duration_cast<microseconds>(end - start).count();
@@ -53,7 +53,7 @@ void test_batch_with_future(int num_tasks) {
     auto futures = executor.submit_batch(tasks);
     auto end = steady_clock::now();
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     executor.shutdown(false);
 
     auto duration_us = duration_cast<microseconds>(end - start).count();
@@ -82,7 +82,7 @@ void test_batch_no_future(int num_tasks) {
     executor.submit_batch_no_future(tasks);
     auto end = steady_clock::now();
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     executor.shutdown(false);
 
     auto duration_us = duration_cast<microseconds>(end - start).count();

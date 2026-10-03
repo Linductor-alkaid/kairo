@@ -20,8 +20,8 @@ int main() {
     config.timer_slack_ns = 0;
     config.cycle_callback = [&] { ++cycles; };
 
-    const auto registered = executor.register_realtime_task_ex("tutorial_rt", config);
-    const auto started = registered ? executor.start_realtime_task_ex("tutorial_rt")
+    const auto registered = executor.register_realtime_task("tutorial_rt", config);
+    const auto started = registered ? executor.start_realtime_task("tutorial_rt")
                                   : kairo::ExecutorResult{};
     if (!registered || !started) {
         std::cerr << "realtime start failed\n";

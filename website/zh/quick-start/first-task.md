@@ -39,7 +39,7 @@ task failed: expected tutorial failure
 - `future.get()` 不只是取值，也是异常传播边界；忽略它会让失败不再由这里观察。
 - `get_last_routing_decision()` 显示本次默认选择；它解释“为什么走这条路径”，不替代 future 的完成或异常结果。
 - 默认配置允许懒初始化，适合这个最小示例。
-- 需要自定义线程数、队列容量或监控时，必须在第一次提交前调用 `initialize_ex()`。
+- 需要自定义线程数、队列容量或监控时，必须在第一次提交前调用 `initialize()`。
 - 示例最后调用 `shutdown()`；这里没有待处理任务，`shutdown()` 与 `shutdown(true)` 的完成结果相同。业务程序应按下一页的规则选择关闭语义。
 
 ## 常见错误

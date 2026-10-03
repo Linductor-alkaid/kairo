@@ -76,7 +76,7 @@ static bool test_gpu_monitor_stats_and_query_api() {
     gpu_config.max_queue_size = 1000;
     gpu_config.default_stream_count = 1;
 
-    bool registered = exec.register_gpu_executor("gpu_monitor_test", gpu_config);
+    auto registered = exec.register_gpu_executor("gpu_monitor_test", gpu_config);
     if (!registered) {
         std::cout << "  GPU monitor test: SKIPPED (GPU not available or failed to start)"
                   << std::endl;

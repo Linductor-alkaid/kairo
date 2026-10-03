@@ -32,7 +32,7 @@ Rule of thumb: the timeout is a pool policy, the deadline is a label, and cancel
 
 ## Timer handles
 
-`submit_delayed_with_handle()` and `submit_periodic_with_handle()` (plus `*_cancellable_*` variants that inject a `StopToken`) return a copyable `TimerHandle`:
+`submit_delayed()` and `submit_periodic()` (plus `*_cancellable_*` variants that inject a `StopToken`) return a copyable `TimerHandle`:
 
 - `cancel()` before expiry: `CancelledBeforeDispatch`, the task never runs, the future receives `TaskCancelled(Explicit)`.
 - `cancel()` after dispatch: `CancellationRequestedAfterDispatch` — the cancellation continues into the queued or running task instead of pretending it was never dispatched.

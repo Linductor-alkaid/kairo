@@ -41,7 +41,7 @@ Facade 为长期工作新增两项能力：**任务协作取消**（`submit_canc
 
 ## 定时句柄
 
-`submit_delayed_with_handle()` 与 `submit_periodic_with_handle()`（以及注入
+`submit_delayed()` 与 `submit_periodic()`（以及注入
 `StopToken` 的 `*_cancellable_*` 变体）返回可复制的 `TimerHandle`：
 
 - 到期前 `cancel()`：返回 `CancelledBeforeDispatch`，任务不执行，future 收到

@@ -103,7 +103,7 @@ worker 优先 pop 自己的本地队列；没有任务时才尝试从其他 work
 
 当前普通线程池不是“全无锁”实现：优先级队列使用分级 mutex，默认 `WorkerLocalQueue` 的 push/pop/steal 使用 mutex，local-queue 向量与 resize 通过 `shared_mutex` 协调。这样做换取了 resize、回收与无任务丢失的清晰边界；启用的无锁 worker queue 也是可选实现路径，不能从公开 API 推断其必然存在。
 
-等待完整性的核心不变量是：已接受任务最终要么执行并计入完成/失败，要么在拒绝/超时路径让其 future 成为就绪异常；dispatcher 的回入队逻辑正是为维护这一不变量。`wait_for_completion_ex()` 观察的是默认异步执行器的快照，不是全进程所有后台活动。
+等待完整性的核心不变量是：已接受任务最终要么执行并计入完成/失败，要么在拒绝/超时路径让其 future 成为就绪异常；dispatcher 的回入队逻辑正是为维护这一不变量。`wait_for_completion()` 观察的是默认异步执行器的快照，不是全进程所有后台活动。
 
 这些内部模块帮助解释“为什么队列堆积”或“为什么任务在另一 worker 执行”，但不是替代 `submit_auto(lambda)`、`get_completion_status()` 和监控 API 的用户入口。
 
@@ -145,13 +145,13 @@ flowchart LR
 
 ### 接受、拒绝与停止竞态
 
-`push_task_ex()` 先登记一个 in-flight producer，再检查 `running_`，从预分配池获得 wrapper，并尝试入 MPSC 队列。空任务、未运行、对象池耗尽和队列满分别累加可见拒绝计数。停止路径先禁止新生产、等待已登记 producer 退出，再让单消费者 drain，目标是不让“已接受任务”在最终 drain 之后凭空出现。
+`push_task()` 先登记一个 in-flight producer，再检查 `running_`，从预分配池获得 wrapper，并尝试入 MPSC 队列。空任务、未运行、对象池耗尽和队列满分别累加可见拒绝计数。停止路径先禁止新生产、等待已登记 producer 退出，再让单消费者 drain，目标是不让“已接受任务”在最终 drain 之后凭空出现。
 
 队列本身是有界 MPSC 无锁队列，但这不意味着整条实时路径没有锁或分配：当前 `ObjectPool` 为避免 ABA、外来指针和重复释放，用 mutex 保护 free list；用户 callback、异常处理器和外部 `ICycleManager` 也可能引入锁、系统调用或分配。因此文档中的“避免锁、无限等待与运行期分配”是实时设计目标和调用方约束，不是对当前每条内部指令的绝对承诺。真实周期预算必须以 trace、状态和目标平台测量验证。
 
 ## 关闭与状态
 
-普通 `wait_for_completion_ex()` 只等待默认异步执行器，不能证明实时 callback 或实时队列已经完成。实时流水线需要自己的确认、阶段门或停止顺序。状态 API 是当前运行情况的快照；调试内部路径时应以它们和 failure/comm events 为证据，而不是依赖线程调度偶然顺序。
+普通 `wait_for_completion()` 只等待默认异步执行器，不能证明实时 callback 或实时队列已经完成。实时流水线需要自己的确认、阶段门或停止顺序。状态 API 是当前运行情况的快照；调试内部路径时应以它们和 failure/comm events 为证据，而不是依赖线程调度偶然顺序。
 
 ### stop 与提交如何避免悬空对象
 

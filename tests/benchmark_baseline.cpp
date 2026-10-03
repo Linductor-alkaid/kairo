@@ -147,7 +147,7 @@ void run_submission_throughput(const Config& cfg, bool json_only) {
     auto t1 = std::chrono::steady_clock::now();
 
     for (auto& f : futures) f.get();
-    ex.wait_for_completion();
+    (void)ex.wait_for_completion(std::chrono::seconds{300});
     ex.shutdown(true);
 
     auto submit_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -197,7 +197,7 @@ void run_round_trip_latency(const Config& cfg, bool json_only) {
         auto t1 = std::chrono::steady_clock::now();
         latencies_us.push_back(std::chrono::duration<double, std::micro>(t1 - t0).count());
     }
-    ex.wait_for_completion();
+    (void)ex.wait_for_completion(std::chrono::seconds{300});
     ex.shutdown(true);
 
     LatencyStats s = compute_latency_stats(latencies_us);
@@ -247,7 +247,7 @@ void run_e2e_throughput(const Config& cfg, bool json_only) {
         }));
     }
     for (auto& f : futures) f.get();
-    ex.wait_for_completion();
+    (void)ex.wait_for_completion(std::chrono::seconds{300});
     auto t1 = std::chrono::steady_clock::now();
     ex.shutdown(true);
 

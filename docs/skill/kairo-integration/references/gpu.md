@@ -11,7 +11,7 @@ executor::gpu::GpuExecutorConfig config;
 config.name = "cuda0";
 config.backend = executor::gpu::GpuBackend::CUDA;
 
-if (!executor.register_gpu_executor_ex("cuda0", config)) return run_on_cpu();
+if (!executor.register_gpu_executor("cuda0", config)) return run_on_cpu();
 executor::gpu::GpuTaskConfig task;
 auto done = executor.submit_gpu("cuda0", [](void* stream) { launch_kernel(stream); }, task);
 done.get();

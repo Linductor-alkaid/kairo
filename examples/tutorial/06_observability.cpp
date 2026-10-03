@@ -19,7 +19,7 @@ int main() {
     } catch (const std::exception&) {
     }
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     const auto status = executor.get_failure_status();
     const auto recent = executor.get_recent_failures();
     std::cout << "failures=" << status.task_exception_count

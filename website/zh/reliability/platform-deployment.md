@@ -202,7 +202,7 @@ GPU 问题分三层记录，缺一不可：
 
 1. **构建层**：CMake 是否启用 CUDA/OpenCL，对应头文件和库是否存在。
 2. **运行层**：驱动、运行时和设备是否对最终服务账号可见。
-3. **Kairo 层**：`register_gpu_executor_ex()` 的 `error_code`/`message`，以及注册后的 `GpuExecutorStatus::last_error_message`。
+3. **Kairo 层**：`register_gpu_executor()` 的 `error_code`/`message`，以及注册后的 `GpuExecutorStatus::last_error_message`。
 
 Linux 常用设备工具和 Windows 厂商工具只能证明驱动视角；最终仍要运行一次真实 kernel，并消费 `submit_gpu()` 返回的 future。无 GPU 路径应单独验证 CPU 回退结果正确。Android 一期为 CPU-only，不把设备 GPU 能力纳入验收。
 

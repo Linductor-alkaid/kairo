@@ -65,7 +65,7 @@ Use it only for incremental migration. When the paths need different inputs or l
 
 ## No implicit fallback
 
-The new dual-path `submit_auto()` follows `FallbackPolicy`: only `AllowCpu` falls back; `NoFallback` and the legacy overload fail explicitly. First call `register_gpu_executor_ex()` and inspect status before admitting GPU characteristics or `prefer_gpu`.
+The new dual-path `submit_auto()` follows `FallbackPolicy`: only `AllowCpu` falls back; `NoFallback` and the legacy overload fail explicitly. First call `register_gpu_executor()` and inspect status before admitting GPU characteristics or `prefer_gpu`.
 
 ## Tune configuration from measurement
 

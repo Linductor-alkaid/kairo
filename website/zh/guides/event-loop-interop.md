@@ -50,7 +50,7 @@ executor 核心库不依赖 asio 或任何第三方事件循环；本指南描�
 - 需要协作取消的任务必须走 executor 提交 API（`submit_cancellable` +
   `StopToken`）。executor 的取消不会伸进 asio 的内部等待。
 - 不依赖 strand 所有权的自建 `sleep_until` 循环可以迁移到
-  `submit_delayed_with_handle()` / `submit_periodic_with_handle()`（见
+  `submit_delayed()` / `submit_periodic()`（见
   [取消与定时](/zh/realtime-and-communication/cancellation-and-timers)与
   `docs/MIGRATION.md`）。
 - 回调与销毁必须发生在同一 strand 上的 timer，在外部上下文定时器绑定通过评审

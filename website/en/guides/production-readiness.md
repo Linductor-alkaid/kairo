@@ -43,7 +43,7 @@ Callbacks should only transfer a short nonblocking event. Put formatting, remote
 
 ## 5. Budget every wait
 
-Do not make a request wait indefinitely for unknown work. Bound individual results with the future; drain a service with `wait_for_completion_ex(timeout)` and inspect active, queued, and pending counts on timeout.
+Do not make a request wait indefinitely for unknown work. Bound individual results with the future; drain a service with `wait_for_completion(timeout)` and inspect active, queued, and pending counts on timeout.
 
 Choose the post-timeout action in advance: continue briefly with an escalated alert, stop intake and only finish accepted work, choose `shutdown(false)` and accept its business consequences, or persist unfinished input for recovery. The library cannot choose data-consistency policy for you.
 

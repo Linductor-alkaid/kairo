@@ -15,7 +15,7 @@ description: 在长期运行服务中明确 Kairo 的所有权、失败观察、
 
 在设计文档中明确：
 
-- 谁在第一次提交前调用 `initialize_ex()`；
+- 谁在第一次提交前调用 `initialize()`；
 - 谁可以更新 failure callback 和监控配置；
 - 谁在停止接收新请求后发起等待与 `shutdown()`；
 - 哪些组件只借用 Kairo，绝不拥有其生命周期。
@@ -56,7 +56,7 @@ callback 应只做短小、非阻塞的事件转交。复杂格式化、网络�
 
 ## 5. 所有等待都必须有预算
 
-请求线程不要无界等待未知工作。使用 future 自身的等待能力控制单项结果；服务排空使用 `wait_for_completion_ex(timeout)`，超时时读取 `CompletionStatus` 的 active、queued 和 pending 数量。
+请求线程不要无界等待未知工作。使用 future 自身的等待能力控制单项结果；服务排空使用 `wait_for_completion(timeout)`，超时时读取 `CompletionStatus` 的 active、queued 和 pending 数量。
 
 等待超时后的动作应提前决定：
 

@@ -122,8 +122,8 @@ auto done = executor.submit([&gate] {
 C1/T1 已提供的能力（`submit_cancellable*`、`TimerHandle`、`ScopedTimerHandle`）
 可以迁移的是**不依赖 strand 所有权**的自建定时工作：
 
-- 应用侧用 `sleep_until` + 标志位手写的延迟/周期循环 → `submit_delayed_with_handle`
-  / `submit_periodic_with_handle`；
+- 应用侧用 `sleep_until` + 标志位手写的延迟/周期循环 → `submit_delayed`
+  / `submit_periodic`；
 - 私有 deadline 轮询取消 → `submit_cancellable` + `StopToken` 协作取消；
   迁移边界见 `docs/MIGRATION.md`。
 

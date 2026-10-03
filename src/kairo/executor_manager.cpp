@@ -658,7 +658,7 @@ std::vector<ExecutorCapability> ExecutorManager::get_executor_capabilities() con
 bool ExecutorManager::try_push_realtime_task(const std::string& name,
                                               std::function<void()> task) {
     auto executor = get_realtime_executor_snapshot(name);
-    return executor && executor->push_task_ex(std::move(task));
+    return executor && executor->push_task(std::move(task)).ok;
 }
 
 void ExecutorManager::enable_monitoring(bool enable) {

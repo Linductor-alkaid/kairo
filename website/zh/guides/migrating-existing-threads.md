@@ -68,7 +68,7 @@ private:
 };
 ```
 
-使用单例还是独立实例取决于资源边界：进程内普通业务共享线程池时使用 `Executor::instance()`；测试、插件或子系统需要独立排空和关闭时，应用可持有独立 `Executor`。无论哪种方式，都应只有一个明确 owner 调用 `initialize_ex()` 和 `shutdown()`。
+使用单例还是独立实例取决于资源边界：进程内普通业务共享线程池时使用 `Executor::instance()`；测试、插件或子系统需要独立排空和关闭时，应用可持有独立 `Executor`。无论哪种方式，都应只有一个明确 owner 调用 `initialize()` 和 `shutdown()`。
 
 ## 第二步：先迁移需要结果的工作
 
@@ -203,7 +203,7 @@ void ParserService::stop_accepting() {
 ```cpp
 parser.stop_accepting();
 
-auto drained = executor.wait_for_completion_ex(std::chrono::seconds{2});
+auto drained = executor.wait_for_completion(std::chrono::seconds{2});
 if (!drained.completed) {
     log_pending(drained.status.pending_tasks);
 }
@@ -211,7 +211,7 @@ if (!drained.completed) {
 executor.shutdown(drained.completed);
 ```
 
-`wait_for_completion_ex()` 超时不等于任务已取消；`shutdown(false)` 也不能替业务函数创造安全中断点。所有 I/O 和长任务仍应有自身的超时或协作停止机制。
+`wait_for_completion()` 超时不等于任务已取消；`shutdown(false)` 也不能替业务函数创造安全中断点。所有 I/O 和长任务仍应有自身的超时或协作停止机制。
 
 注意：关闭后的 Kairo 不能重新初始化。需要“停止后重新启动”语义时，应重建拥有独立 Kairo 的组件，而不是复用已 shutdown 的实例。
 

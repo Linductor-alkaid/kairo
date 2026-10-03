@@ -210,8 +210,6 @@ void write_executor_snapshot(Output& output, const ExecutorSnapshot& snapshot) {
         write_bool(output, status.priority_applied);
         output << "\nrealtime[" << name << "].cpu_affinity_applied=";
         write_bool(output, status.cpu_affinity_applied);
-        output << "\nrealtime[" << name << "].memory_locked=";
-        write_bool(output, status.memory_locked);
         output << "\nrealtime[" << name << "].timer_slack_applied=";
         write_bool(output, status.timer_slack_applied);
         // CR-070: 此处缺 '\n' 曾把布尔值与下一个 key 拼成

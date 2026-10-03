@@ -46,7 +46,7 @@ flowchart TD
 | 依赖任务未执行 | Facade 的 `TaskGraphState` 和 `submit_after_with_handle` | `src/kairo/task/task_dependency_manager.cpp` | `tests/test_executor_facade*`、依赖教程 smoke |
 | 优先级没有抢占 | `PriorityScheduler::dequeue()` | `TaskDispatcher::dispatch()`、worker loop | 优先级测试和队列状态 |
 | resize 后任务没有丢失 | `ThreadPool::resize_local_queues()` | `TaskDispatcher::dispatch_batch()` 回入队分支 | resize/并发停止测试 |
-| 实时任务 drop | `Executor::push_realtime_task()` | `RealtimeThreadExecutor::push_task_ex()` | realtime push overflow 测试、状态计数 |
+| 实时任务 drop | `Executor::push_realtime_task()` | `RealtimeThreadExecutor::push_task()` | realtime push overflow 测试、状态计数 |
 | 无锁队列“偶发空/满” | `src/kairo/util/lockfree_queue.hpp` | 调用方的容量和对象池逻辑 | MPSC benchmark、TSAN/压力测试 |
 
 源码阅读时先找“谁拥有对象”和“谁能让它退出”：`Executor` 拥有实例化模式的 Manager，Manager 拥有执行器，Adapter 用 `shared_ptr` 快照保护 stop/submit 竞争；实时 `cycle_manager` 则由调用方拥有，Kairo 只借用指针。

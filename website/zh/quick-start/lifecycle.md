@@ -17,7 +17,7 @@ config.min_threads = 2;
 config.max_threads = 4;
 
 auto& executor = kairo::Executor::instance();
-auto initialized = executor.initialize_ex(config);
+auto initialized = executor.initialize(config);
 if (!initialized) {
     throw std::runtime_error(initialized.message);
 }
@@ -26,7 +26,7 @@ if (!initialized) {
 executor.shutdown(true);
 ```
 
-`initialize_ex()` 返回带错误码和消息的 `ExecutorResult`，比兼容的 `bool` 初始化接口更适合诊断。`shutdown(true)` 会等待已接受的异步任务完成；如果等待超过默认上限，库会记录超时诊断并改走非等待关闭，不能把它理解为无限等待。
+`initialize()` 返回带错误码和消息的 `ExecutorResult`，比兼容的 `bool` 初始化接口更适合诊断。`shutdown(true)` 会等待已接受的异步任务完成；如果等待超过默认上限，库会记录超时诊断并改走非等待关闭，不能把它理解为无限等待。
 
 单例在进程退出时有 `shutdown(false)` 兜底，独立 `Executor` 实例由析构负责回收；两者都不替代应用在业务边界显式决定是否等待的责任。
 

@@ -166,7 +166,6 @@ public:
                callback_.is_lock_free() && let_states_[0].is_lock_free();
     }
 
-    bool is_lock_free() const noexcept { return is_synchronization_lock_free(); }
 
 private:
     using Store = detail::SnapshotStore<T>;
@@ -304,7 +303,6 @@ public:
         return queue_.is_lock_free();
     }
 
-    bool is_lock_free() const noexcept { return is_synchronization_lock_free(); }
 
 private:
     static RealtimeChannelOptions normalize_options(RealtimeChannelOptions options) {

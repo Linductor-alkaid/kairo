@@ -25,9 +25,14 @@ public:
         started_ = false;
     }
 
-    void push_task(std::function<void()> task) override {
+    ExecutorResult push_task(std::function<void()> task) override {
         ++push_task_count_;
         last_task_valid_ = static_cast<bool>(task);
+        if (!task) {
+            return ExecutorResult::failure(
+                ExecutorErrorCode::InvalidConfig, "null task");
+        }
+        return ExecutorResult::success();
     }
 
     std::string get_name() const override {
@@ -54,27 +59,32 @@ private:
     bool last_task_valid_{false};
 };
 
-static bool test_push_task_ex_default_delegates_to_push_task() {
+static bool test_push_task_returns_diagnostic_result() {
     MinimalRealtimeExecutor executor;
 
-    const bool accepted = executor.push_task_ex([]() noexcept {});
+    const auto accepted = executor.push_task([]() noexcept {});
 
-    TEST_ASSERT(accepted, "default push_task_ex should return true");
+    TEST_ASSERT(accepted.ok, "accepted push_task should return ok");
     TEST_ASSERT(executor.push_task_count() == 1,
-                "default push_task_ex should call push_task exactly once");
+                "push_task should be invoked exactly once");
     TEST_ASSERT(executor.last_task_valid(),
-                "default push_task_ex should forward the task object");
+                "push_task should receive the task object");
+
+    const auto rejected = executor.push_task(nullptr);
+    TEST_ASSERT(!rejected.ok, "null task should be rejected");
+    TEST_ASSERT(executor.push_task_count() == 2,
+                "rejected push_task should still reach the derived implementation");
 
     return true;
 }
 
 int main() {
-    std::cout << "Testing IRealtimeExecutor::push_task_ex default implementation...\n";
+    std::cout << "Testing IRealtimeExecutor::push_task diagnostic contract...\n";
 
-    if (!test_push_task_ex_default_delegates_to_push_task()) {
+    if (!test_push_task_returns_diagnostic_result()) {
         return 1;
     }
 
-    std::cout << "All push_task_ex default tests PASSED\n";
+    std::cout << "All push_task contract tests PASSED\n";
     return 0;
 }

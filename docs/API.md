@@ -9,7 +9,7 @@
 使用 Executor facade 时包含：
 
 ```cpp
-#include <kairo/kairo.hpp>
+#include <kairo/executor.hpp>
 ```
 
 该头文件已包含 `config.hpp`、`types.hpp`、`interfaces.hpp`、`executor_manager.hpp`。使用 GPU API 时需启用 `KAIRO_ENABLE_GPU` 并包含 GPU 相关头文件（见 [BUILD.md](BUILD.md) 构建选项）。
@@ -36,14 +36,12 @@
 ### 2.2 初始化与关闭
 
 ```cpp
-bool initialize(const ExecutorConfig& config);  // 初始化默认异步执行器（线程池）
-ExecutorResult initialize_ex(const ExecutorConfig& config);
+ExecutorResult initialize(const ExecutorConfig& config); // 初始化默认异步执行器（线程池），返回可诊断结果
 ShutdownResult shutdown(bool wait_for_tasks = true); // 关闭所有执行器
-void wait_for_completion();                     // 最多等待 300s，超时记录 WaitTimeout
+WaitResult wait_for_completion(std::chrono::milliseconds timeout);
 bool try_wait_for_completion(std::chrono::milliseconds timeout);
 template<class Rep, class Period>
 bool wait_for_completion_for(std::chrono::duration<Rep, Period> timeout);
-WaitResult wait_for_completion_ex(std::chrono::milliseconds timeout);
 bool is_idle() const;
 CompletionStatus get_completion_status() const;
 ```
@@ -52,13 +50,13 @@ CompletionStatus get_completion_status() const;
 - **退出时自动关闭（单例）**：使用单例时，若未显式调用 `shutdown()`，进程退出时会自动关闭所有执行器。若需在退出前等待未完成任务完成，请在业务逻辑中显式调用 `shutdown(true)`。
 - `shutdown(true)` 会先通过 facade 等待队列中任务完成后再退出；如果等待超过 `kDefaultWaitForCompletionTimeout`，会记录 `WaitTimeout` 诊断并走非等待关闭路径，避免假装全部完成。
 - 从 ThreadPool worker 任务内部调用 `shutdown(true)` 或 `shutdown(false)` 时，返回 `ShutdownResult::RequestedFromWorker`：只请求关闭，**不等待**当前任务完成，也**不从 worker 内 join**。随后由外部线程调用 `shutdown(true)`，其返回 `ShutdownResult::Completed` 并完成 wait/join。
-- `wait_for_completion()` 使用公开常量 `kairo::kDefaultWaitForCompletionTimeout`，当前为 300 秒；保留 `void` 签名以兼容旧调用方，但超时会记录 `FailureKind::WaitTimeout`。
+- `wait_for_completion(timeout)` 返回 `WaitResult`，其中包含 `completed`、`timed_out`、`timeout`、`message`、`CompletionStatus` 快照；超时时 `diagnostic_snapshot` 保存同一次路径采集的完整生命周期现场。等待上限由调用方传入；facade 内部（如 shutdown）使用的公开常量为 `kairo::kDefaultWaitForCompletionTimeout`（当前 300 秒）。
 - `try_wait_for_completion(timeout)` 返回 `true` 表示所有已提交异步任务在 `timeout` 内完成；返回 `false` 表示等待超时且仍有任务未完成。超时不是 panic，也不抛异常；调用方可继续通过 `get_failure_status().wait_timeout_count` 或 `get_recent_failures()` 观察。
-- `wait_for_completion_for(timeout)` 是支持任意 `std::chrono::duration` 的 bool 入口；`wait_for_completion_ex(timeout)` 返回 `WaitResult`，其中包含 `completed`、`timed_out`、`timeout`、`message`、`CompletionStatus` 快照；超时时 `diagnostic_snapshot` 保存同一次路径采集的完整生命周期现场。
+- `wait_for_completion_for(timeout)` 是支持任意 `std::chrono::duration` 的 bool 便捷入口。
 - `WaitResult::diagnostic_snapshot` 仅在等待超时时有值；它与该次超时诊断回调收到的快照使用同一个 `snapshot_sequence`。它仍是 best-effort 现场，不表示任务已取消或可恢复。
 - `get_completion_status()` 返回默认异步执行器的完成状态快照，包括 `is_initialized`、`is_running`、`is_idle`、`active_tasks`、`queued_tasks`、`pending_tasks`、`completed_tasks` 和 `failed_tasks`；`is_idle()` 是其中 `is_idle` 的便捷入口。状态查询不会触发默认执行器懒初始化。
 - 所有上述等待 API 只覆盖默认异步执行器的 future 型任务；不会等待 GPU、无锁、实时队列或长期 Blocking I/O worker。后者分别使用其返回结果、状态和显式停止接口观察。
-- `initialize_ex(config)` 返回 `ExecutorResult`，可区分 `AlreadyInitialized`、`AlreadyShutdown`、`InvalidConfig`、`StartFailed` 等原因；旧 `initialize()` 保持 `bool` 签名，并委托到 `_ex` 后只返回 `ok`。
+- `initialize(config)` 返回 `ExecutorResult`，可区分 `AlreadyInitialized`、`AlreadyShutdown`、`InvalidConfig`、`StartFailed` 等原因。
 
 **注意事项**：懒初始化后不可再通过 `initialize()` 更换配置（已初始化则返回 false）。atexit 使用 `shutdown(false)`，不等待未完成任务。避免在静态析构中使用 Executor。
 
@@ -69,7 +67,7 @@ CompletionStatus get_completion_status() const;
 ### 3.0 串行上下文派发（S2）
 
 ```cpp
-#include <kairo/kairo.hpp>
+#include <kairo/executor.hpp>
 
 kairo::SerialExecutionContext context;
 auto future = ex.submit_on(context, [] { return 42; });
@@ -297,7 +295,7 @@ C++ 没有安全的通用线程强杀机制，因此 soft timeout 不会终止�
 
 ### 3.6 任务背压
 
-实时执行器的 `push_task()` 为兼容旧接口仍返回 `void`。新代码优先使用 `Executor` facade 的 `push_realtime_task()` / `try_push_realtime_task()`；需要底层逃生口时再直接使用 `IRealtimeExecutor::push_task_ex()`。
+实时执行器的 `IRealtimeExecutor::push_task()` 返回 `ExecutorResult`，直接反映该次 push 的成败。新代码优先使用 `Executor` facade 的 `push_realtime_task()` / `try_push_realtime_task()`；需要底层逃生口时再直接使用 `IRealtimeExecutor::push_task()`。
 
 ```cpp
 if (!ex.try_push_realtime_task("can_rx", []() {
@@ -319,8 +317,7 @@ if (backpressure_drops > 0) {
 | API / 字段 | 说明 |
 |------------|------|
 | `Executor::push_realtime_task(name, task)` / `try_push_realtime_task(name, task)` | 推荐 facade 入口；失败同时通过返回值、failure event 和状态计数可见 |
-| `push_task(std::function<void()>)` | 兼容旧接口，不返回入队结果；失败会累计到状态计数 |
-| `push_task_ex(std::function<void()>) -> bool` | 底层逃生口，`true` 表示成功入队，`false` 表示任务被丢弃 |
+| `push_task(std::function<void()>) -> ExecutorResult` | 底层逃生口，`ok` 表示成功入队；失败携带类别并累计到状态计数 |
 | `dropped_task_count` | 总拒绝/丢弃量，覆盖未运行/已停止、空任务、对象池耗尽和队列满；不受 `enable_stats` 影响，不能单独作为背压指标 |
 | `rejected_not_running_count` / `rejected_empty_task_count` | 分别分析生命周期状态拒绝和调用方传入空任务的输入错误 |
 | `pool_exhausted_count` / `queue_full_count` | 背压子集：分别表示对象池耗尽和队列满；用于背压告警、容量规划与降级决策 |
@@ -359,42 +356,35 @@ if (!admission.accepted) {
 
 ### 3.8 延迟与周期任务
 
-> ⚠️ **API 范围提示**：`submit_delayed`、`submit_periodic`、`cancel_task` **仅在 `Executor` Facade 类（`include/kairo/kairo.hpp`）中提供**，**不属于** `IAsyncExecutor`、`IExecutor` 或 `ThreadPool` 的接口。用户直接对底层 `ThreadPool` 实例调用这些方法会编译失败。延迟与周期任务统一由 Facade 内部的 `ExecutorManager` 调度，底层 `ThreadPool` 不感知任务时间维度。
+> ⚠️ **API 范围提示**：`submit_delayed`、`submit_periodic` **仅在 `Executor` Facade 类中提供**，**不属于** `IAsyncExecutor`、`IExecutor` 或 `ThreadPool` 的接口。用户直接对底层 `ThreadPool` 实例调用这些方法会编译失败。延迟与周期任务统一由 Facade 内部的 `ExecutorManager` 调度，底层 `ThreadPool` 不感知任务时间维度。
 
 ```cpp
 template<typename F, typename... Args>
 auto submit_delayed(int64_t delay_ms, F&& f, Args&&... args)
-    -> std::future<typename std::invoke_result<F, Args...>::type>;
-
-std::string submit_periodic(int64_t period_ms, std::function<void()> task);
-bool cancel_task(const std::string& task_id);
-```
-
-- `submit_delayed`：延迟 `delay_ms` 毫秒后执行，返回 `future`。调度线程停止
-  （`shutdown`）时，未到期任务以 `TaskCancelled(Shutdown)` 异常就绪，不记
-  failure 事件。
-- `submit_periodic`：按 `period_ms` 周期重复执行，返回任务 ID。
-- `cancel_task`：取消对应周期性任务；对不存在的 ID 保持旧行为（记
-  `SubmitRejected` 诊断并返回 false）。
-
-#### 定时句柄（TimerHandle / ScopedTimerHandle）
-
-在旧接口之上提供可取消、可重排的句柄化变体（详见
-[docs/design/task_cancellation_and_timers.md](design/task_cancellation_and_timers.md)）：
-
-```cpp
-template<typename F, typename... Args>
-auto submit_delayed_with_handle(int64_t delay_ms, F&& f, Args&&... args)
     -> TimerSubmission<typename std::invoke_result<F, Args...>::type>;
 
 template<typename F, typename... Args>
-auto submit_delayed_cancellable_with_handle(int64_t delay_ms, F&& f, Args&&... args)
+auto submit_delayed_cancellable(int64_t delay_ms, F&& f, Args&&... args)
     -> TimerSubmission<typename std::invoke_result<F, StopToken, Args...>::type>;
 
-TimerHandle submit_periodic_with_handle(int64_t period_ms, std::function<void()> task);
-TimerHandle submit_periodic_cancellable_with_handle(int64_t period_ms,
-                                                    std::function<void(StopToken)> task);
+TimerHandle submit_periodic(int64_t period_ms, std::function<void()> task);
+TimerHandle submit_periodic_cancellable(int64_t period_ms,
+                                        std::function<void(StopToken)> task);
 ```
+
+- `submit_delayed`：延迟 `delay_ms` 毫秒后执行，返回 `TimerSubmission`（`handle` +
+  `future`）。调度线程停止（`shutdown`）时，未到期任务以
+  `TaskCancelled(Shutdown)` 异常就绪，不记 failure 事件。
+- `submit_delayed_cancellable`：同上，并注入 StopToken 支持协作取消。
+- `submit_periodic`：按 `period_ms` 周期重复执行，返回 `TimerHandle`；
+  `handle.cancel()` 阻止后续 tick，`handle.id()` 可用于
+  `get_periodic_task_status()` 查询。
+- `submit_periodic_cancellable`：同上，每个 tick 独立注入 StopToken。
+
+#### 定时句柄（TimerHandle / ScopedTimerHandle）
+
+`TimerHandle` 语义（详见
+[docs/design/task_cancellation_and_timers.md](design/task_cancellation_and_timers.md)）：
 
 `TimerHandle` 语义：
 
@@ -528,12 +518,9 @@ size_t current_cap = ex.get_max_in_flight_tasks();  // 当前生效上限（0 = 
 ### 4.1 注册、启动、停止
 
 ```cpp
-bool register_realtime_task(const std::string& name,
-                            const RealtimeThreadConfig& config);
-ExecutorResult register_realtime_task_ex(const std::string& name,
-                                         const RealtimeThreadConfig& config);
-bool start_realtime_task(const std::string& name);
-ExecutorResult start_realtime_task_ex(const std::string& name);
+ExecutorResult register_realtime_task(const std::string& name,
+                                      const RealtimeThreadConfig& config);
+ExecutorResult start_realtime_task(const std::string& name);
 void stop_realtime_task(const std::string& name);
 bool push_realtime_task(const std::string& name, std::function<void()> task);
 bool try_push_realtime_task(const std::string& name, std::function<void()> task);
@@ -541,7 +528,7 @@ bool try_push_realtime_task(const std::string& name, std::function<void()> task)
 
 - 每个 `name` 对应一个专用实时线程，按 `RealtimeThreadConfig` 周期执行 `cycle_callback`。
 - 先 `register_realtime_task`，再 `start_realtime_task`；`stop_realtime_task` 停止该线程。
-- `register_realtime_task_ex` / `start_realtime_task_ex` 返回可诊断结果：空名或非法配置为 `InvalidConfig`，重复注册为 `DuplicateName`，启动不存在的实时执行器为 `NotFound`，重复启动为 `AlreadyInitialized`。
+- `register_realtime_task` / `start_realtime_task` 返回可诊断结果：空名或非法配置为 `InvalidConfig`，重复注册为 `DuplicateName`，启动不存在的实时执行器为 `NotFound`，重复启动为 `AlreadyInitialized`。
 
 ### 4.2 获取执行器与列表
 
@@ -551,7 +538,7 @@ std::vector<std::string> get_realtime_task_list() const;
 ```
 
 - `push_realtime_task` / `try_push_realtime_task`：推荐任务推送入口；失败返回 `false`，并写入 failure event / 状态计数。
-- `get_realtime_executor`：高级逃生口，用于直接访问 `push_task_ex` 等底层操作；若不存在返回 `nullptr`。返回的是 manager 持有的**非持有裸指针**，不能跨 `shutdown()` 缓存或与并发 `shutdown()` 同时使用。
+- `get_realtime_executor`：高级逃生口，用于直接访问 `push_task` 等底层操作；若不存在返回 `nullptr`。返回的是 manager 持有的**非持有裸指针**，不能跨 `shutdown()` 缓存或与并发 `shutdown()` 同时使用。
 - `get_realtime_task_list`：当前已注册的实时任务名称列表。
 
 直接使用 `ExecutorManager` 时，优先使用 `get_default_async_executor_snapshot()`、`get_realtime_executor_snapshot(name)`、`get_lockfree_executor_snapshot(name)`、`get_blocking_io_executor_snapshot(name)` 和 `get_gpu_executor_snapshot(name)`。它们返回 `std::shared_ptr`，即使并发 `shutdown()` 已从注册表移除该项，也会保持对象存活到本地快照释放；这只解决对象生命周期，**不会**阻止 shutdown 请求停止执行器，因此每次调用仍须处理停止或拒绝结果。`shutdown()` 开始后，manager 拒绝新的具名执行器注册。
@@ -560,13 +547,13 @@ std::vector<std::string> get_realtime_task_list() const;
 
 - 专用实时线程采用“每周期执行 `cycle_callback`，再在该线程中消费已入队工作”的模型，不是可无限 `drain()` 的串行执行器。`max_tasks_per_cycle` 默认限制为 64，剩余工作会留到后续周期，以保护周期预算。`LatestMailbox` 和有界通信通道提供最新状态传递能力，不会在周期内清空无界历史积压。
 - `push_realtime_task()` 是有界、可拒绝的队列入口；返回值表示本次是否成功入队。`dropped_task_count`、`queue_full_count` 与 `pool_exhausted_count` 提供拒绝和背压统计。入队成功只表示工作会在实时线程的后续周期处理，不表示已完成。
-- `wait_for_completion()` / `wait_for_completion_ex()` 仅等待默认**异步执行器**已提交任务完成，不等待实时线程的周期回调或实时队列。视觉、控制等多消费者流水线的完成状态由应用自己的确认序号、future 或 `PhaseGate` 汇总。
+- `wait_for_completion()` 仅等待默认**异步执行器**已提交任务完成，不等待实时线程的周期回调或实时队列。视觉、控制等多消费者流水线的完成状态由应用自己的确认序号、future 或 `PhaseGate` 汇总。
 - `push_realtime_task()` 会等待实时线程的后续周期消费，因此不构成紧急停止路径。紧急停止由应用提供的独立硬零旁路执行，例如直接写安全 I/O、硬件急停或经过安全控制器的同步命令；实时队列承载常规控制工作。
 - kairo 提供并行调度，不改变业务算法的线程安全属性。PID、限幅器、轨迹跟踪器等有状态对象可由一个控制线程串行访问；其他线程可通过消息传递输入数据或读取已发布快照。
 
 ### 4.4 实时调优的降级与部署检查
 
-Linux 上请求 `SCHED_FIFO`、CPU 亲和性和 `mlockall` 可能因 `CAP_SYS_NICE`、`CAP_IPC_LOCK`、容器 cpuset 或平台限制而失败；库会继续运行以保持可用性。这不表示所请求的调优已经生效。Android 同样按 best-effort 处理：普通 App 通常无法申请 `SCHED_FIFO`、绑核或 `mlockall`，周期短于 10 ms 时也不会自动提升优先级；显式设置的 `thread_priority` / `cpu_affinity` 仍会尝试并记录结果。`RealtimeExecutorStatus` 通过 `priority_applied`、`cpu_affinity_applied`、`memory_locked` 和 `timer_slack_applied` 报告各项请求的实际结果；未请求、平台不支持或权限不足的项目均为 `false`。这些字段可与周期统计和丢弃计数共同构成应用的健康或降级状态。
+Linux 上请求 `SCHED_FIFO`、CPU 亲和性和 `mlockall` 可能因 `CAP_SYS_NICE`、`CAP_IPC_LOCK`、容器 cpuset 或平台限制而失败；库会继续运行以保持可用性。这不表示所请求的调优已经生效。Android 同样按 best-effort 处理：普通 App 通常无法申请 `SCHED_FIFO`、绑核或 `mlockall`，周期短于 10 ms 时也不会自动提升优先级；显式设置的 `thread_priority` / `cpu_affinity` 仍会尝试并记录结果。`RealtimeExecutorStatus` 通过 `priority_applied`、`cpu_affinity_applied`、`process_memory_lock_applied` 和 `timer_slack_applied` 报告各项请求的实际结果；未请求、平台不支持或权限不足的项目均为 `false`。这些字段可与周期统计和丢弃计数共同构成应用的健康或降级状态。
 
 ---
 
@@ -578,7 +565,7 @@ Linux 上请求 `SCHED_FIFO`、CPU 亲和性和 `mlockall` 可能因 `CAP_SYS_NI
 
 ```cpp
 #include <kairo/blocking_io.hpp>
-#include <kairo/kairo.hpp>
+#include <kairo/executor.hpp>
 
 class IBlockingIoWorker {
 public:
@@ -593,15 +580,11 @@ public:
 #### 4.5.2 注册与生命周期
 
 ```cpp
-bool register_blocking_io_worker(const std::string& name,
-                                 const BlockingIoConfig& config,
-                                 std::unique_ptr<IBlockingIoWorker> worker);
-ExecutorResult register_blocking_io_worker_ex(
+ExecutorResult register_blocking_io_worker(
     const std::string& name,
     const BlockingIoConfig& config,
     std::unique_ptr<IBlockingIoWorker> worker);
-bool start_blocking_io_worker(const std::string& name);
-ExecutorResult start_blocking_io_worker_ex(const std::string& name);
+ExecutorResult start_blocking_io_worker(const std::string& name);
 void stop_blocking_io_worker(const std::string& name);
 BlockingIoExecutorStatus get_blocking_io_worker_status(const std::string& name) const;
 std::vector<std::string> get_blocking_io_worker_list() const;
@@ -610,7 +593,7 @@ WorkerHandle start_worker(BlockingWorkerSpec spec);
 
 - `name` 必须在同一 `Executor` 中与 async、RT、GPU 和其他 I/O kairo 名称唯一。
 - `BlockingIoConfig::thread_name` 不可为空；`startup_timeout` 不可为负，`0` 表示不等待 ready。
-- `_ex` 入口以 `InvalidConfig`、`DuplicateName`、`NotFound`、`AlreadyInitialized` 或 `StartFailed` 说明拒绝原因；普通 `bool` 入口保留兼容风格。
+- `register_blocking_io_worker` / `start_blocking_io_worker` 以 `InvalidConfig`、`DuplicateName`、`NotFound`、`AlreadyInitialized` 或 `StartFailed` 说明拒绝原因。
 - `stop_blocking_io_worker()` 执行 stop request、`wakeup()` 和 join；不 detach worker。重复停止安全。
 - `Executor::shutdown()` 也会请求停止、唤醒并 join 所有已注册 I/O worker，即使传入 `shutdown(false)`。
 - 新代码可用 `start_worker(BlockingWorkerSpec{name, config, std::move(worker)})` 原子完成注册和启动。返回的 `WorkerHandle` 暴露 `start_result()`、`started()`、`request_stop()`、`stop()` 和 `status()`；它表示长期 worker 的生命周期，绝不是单次任务完成 future。
@@ -1247,7 +1230,7 @@ kairo.set_snapshot_diagnostic_callback(
         std::cerr << kairo::monitor::format_executor_snapshot(snapshot);
     });
 
-const auto wait = kairo.wait_for_completion_ex(std::chrono::seconds{2});
+const auto wait = kairo.wait_for_completion(std::chrono::seconds{2});
 if (wait.timed_out && wait.diagnostic_snapshot) {
     // 该快照与回调收到的快照具有相同的 snapshot_sequence。
     save_diagnostic(*wait.diagnostic_snapshot); // 应用层支持包写入函数
@@ -1364,7 +1347,7 @@ kairo 库遵循以下原则 (P019 三阶段 + P019C companion):
   - `avg_cycle_time_ns` (double)：平均周期执行时间（纳秒）。
   - `max_cycle_time_ns` (double)：最大周期执行时间（纳秒）。
   - `priority_applied` / `cpu_affinity_applied` / `timer_slack_applied` (bool)：请求的实时优先级、CPU 亲和性和 timer slack 是否成功应用；未请求或平台不支持/权限不足时为 `false`，用于将调优降级显式上报。
-  - `process_memory_lock_applied` (bool)：显式请求的进程级 `mlockall` 是否成功应用；未请求、平台不支持或权限不足时为 `false`。`memory_locked` 是同值的兼容字段，新代码应使用此字段。
+  - `process_memory_lock_applied` (bool)：显式请求的进程级 `mlockall` 是否成功应用；未请求、平台不支持或权限不足时为 `false`。
   - `process_memory_lock_errno` (int)：请求 `mlockall` 失败时保留的 errno；未请求或成功时为 `0`，例如权限或 `RLIMIT_MEMLOCK` 限制可据此诊断。
   - `dropped_task_count` (uint64_t)：总拒绝/丢弃量，覆盖空任务、未运行/已停止、对象池耗尽和队列满四类来源；**始终累计**，不受 `enable_stats` 影响。它不等同于背压：背压仅由 `pool_exhausted_count` 和 `queue_full_count` 构成；应单独分析 `rejected_not_running_count` 与 `rejected_empty_task_count`，以区分生命周期状态拒绝和无效输入。
   - `failed_pushes` (uint64_t)：LockFreeQueue 所有底层失败入队尝试数（仅 `enable_stats=true` 时统计），包括队列满、CAS 竞争和 reservation 取消；它不等同于也不一定是 `dropped_task_count` 的子集。
@@ -1376,9 +1359,9 @@ kairo 库遵循以下原则 (P019 三阶段 + P019C companion):
   - `queue_full_count` (uint64_t)：队列满拒绝累计数。
 - **TaskStatistics**：`total_count`、`success_count`、`fail_count`、`timeout_count`、`total_execution_time_ns`、`max_`/`min_execution_time_ns`。执行前软超时增加 `timeout_count`，不增加 `fail_count`。
 - **ExecutorFailureStatus**：`task_exception_count`、`submit_rejected_count`、`timeout_count`、`realtime_drop_count`、`gpu_failure_count`、`wait_timeout_count`、`tuning_fallback_count`、`capacity_exhausted_count`、`total_count`。`wait_for_completion()` 或 `try_wait_for_completion(timeout)` 等待超时时记录 `FailureKind::WaitTimeout` 并增加 `wait_timeout_count`；这只表示等待动作超时，不表示任务被取消、panic 或抛异常。总量 admission 耗尽时记录 `FailureKind::CapacityExhausted` 并增加 `capacity_exhausted_count`（配置与覆盖范围见 §3.10）。
-- **ExecutorResult**：`ok`、`error_code`、`message`，用于 `initialize_ex`、`register_realtime_task_ex`、`start_realtime_task_ex`、`register_gpu_executor_ex`。常见 `ExecutorErrorCode`：`AlreadyInitialized`、`AlreadyShutdown`、`InvalidConfig`、`DuplicateName`、`NotFound`、`BackendUnavailable`、`StartFailed`、`PermissionDenied`。`_ex` 失败会写入 failure/diagnostic event，但配置错误不会计入 `task_exception_count`。
+- **ExecutorResult**：`ok`、`error_code`、`message`，用于 `initialize`、`register_realtime_task`、`start_realtime_task`、`register_gpu_executor` 等。常见 `ExecutorErrorCode`：`AlreadyInitialized`、`AlreadyShutdown`、`InvalidConfig`、`DuplicateName`、`NotFound`、`BackendUnavailable`、`StartFailed`、`PermissionDenied`。失败会写入 failure/diagnostic event，但配置错误不会计入 `task_exception_count`。
 - **CompletionStatus**：`executor_name`、`is_initialized`、`is_running`、`is_idle`、`active_tasks`、`queued_tasks`、`pending_tasks`、`completed_tasks`、`failed_tasks`。由 `get_completion_status()` 和 `WaitResult::status` 返回；状态查询不会触发默认异步执行器懒初始化。它仅描述默认异步执行器，不包含实时线程、实时队列或应用自建的多消费者流水线；跨视觉、控制等消费者的 idle 状态由应用定义并汇总。
-- **WaitResult**：`completed`、`timed_out`、`timeout`、`status`、`message`、可选 `diagnostic_snapshot`。由 `wait_for_completion_ex(timeout)` 返回；超时会记录 `FailureKind::WaitTimeout`，并保留同一次路径采集的完整生命周期快照。
+- **WaitResult**：`completed`、`timed_out`、`timeout`、`status`、`message`、可选 `diagnostic_snapshot`。由 `wait_for_completion(timeout)` 返回；超时会记录 `FailureKind::WaitTimeout`，并保留同一次路径采集的完整生命周期快照。
 - **ExecutorSnapshotTextMetrics**：`formatting_duration`（纳秒）和 `formatting_allocation_count`。仅用于 formatter 性能基线；分配计数不包含 snapshot provider、Executor 业务路径或外部日志系统。
 - **ExecutorSnapshotTextExport**：`text` 与 `metrics`，由 `kairo::monitor::format_executor_snapshot_with_metrics()` 返回。
 - **CycleStatistics**：`name`、`period_ns`、`cycle_count`、`timeout_count`、`avg_cycle_time_ns`、`max_cycle_time_ns`、`is_running`。由 `ICycleManager::get_statistics()` 返回。
@@ -1784,10 +1767,8 @@ GPU 执行器与 CPU 执行器接口分离，通过 `Executor` 注册与提交 G
 ### 8.1 注册与任务提交
 
 ```cpp
-bool register_gpu_executor(const std::string& name,
-                            const gpu::GpuExecutorConfig& config);
-ExecutorResult register_gpu_executor_ex(const std::string& name,
-                                         const gpu::GpuExecutorConfig& config);
+ExecutorResult register_gpu_executor(const std::string& name,
+                                     const gpu::GpuExecutorConfig& config);
 
 template<typename KernelFunc>
 auto submit_gpu(const std::string& executor_name,
@@ -1796,8 +1777,8 @@ auto submit_gpu(const std::string& executor_name,
     -> std::future<void>;
 ```
 
-- `register_gpu_executor`：按 `config.backend` 创建并注册 GPU 执行器；当前支持 `GpuBackend::CUDA` 和 `GpuBackend::OPENCL`。对应后端还需在编译时启用 `KAIRO_ENABLE_CUDA` / `KAIRO_ENABLE_OPENCL`，并且运行时设备、驱动和平台可用；否则创建或启动会失败并返回 `false`。
-- `register_gpu_executor_ex`：推荐在需要诊断时使用，可区分 `InvalidConfig`、`DuplicateName`、`BackendUnavailable` 和 `StartFailed`。例如未编译对应后端、SYCL/HIP 尚未实现、运行时创建失败都会返回 `BackendUnavailable` 或更具体的启动失败信息。
+- `register_gpu_executor`：按 `config.backend` 创建并注册 GPU 执行器；当前支持 `GpuBackend::CUDA` 和 `GpuBackend::OPENCL`。对应后端还需在编译时启用 `KAIRO_ENABLE_CUDA` / `KAIRO_ENABLE_OPENCL`，并且运行时设备、驱动和平台可用；否则创建或启动失败。
+- `register_gpu_executor` 返回可诊断结果，可区分 `InvalidConfig`、`DuplicateName`、`BackendUnavailable` 和 `StartFailed`。例如未编译对应后端、SYCL/HIP 尚未实现、运行时创建失败都会返回 `BackendUnavailable` 或更具体的启动失败信息。
 - `submit_gpu`：向指定 GPU 执行器提交 kernel；kernel 可为 `void()` 或 `void(void*)`（流句柄，CUDA 下为 `cudaStream_t`，OpenCL 下为 `cl_command_queue`）。
 
 ### 8.2 查询与状态
@@ -1915,7 +1896,7 @@ public:
 调用 `stop_cycle()` 时不会持有执行器的生命周期互斥锁，因此已注册的周期回调可安全地在该执行器上调用
 `stop()` 或 `stop_and_join()`。周期管理器的实现仍须自行保证其回调和停止状态的线程安全。
 
-多个外部线程可以并发调用 `RealtimeThreadExecutor::stop_and_join()`。取得工作线程所有权的调用方负责完成停止收尾；其他调用方会等待其完成工作线程 join、等待正在进行的任务提交结束并清空已排队任务。停止收尾完成前，`start()` 返回 `false`，从而避免新建的实时线程与正在停止的工作线程重叠运行。`push_task_ex()` 的提交路径与 `LockFreeTaskExecutor` 一样由原子准入门闩保护：“检查停止是否已开始”与“登记为在途生产者”是同一个原子操作，因此 `stop_and_join()` 返回后不会再有任何生产者访问执行器成员，对象可以安全销毁，也不会有任务在最终清空之后进入队列。
+多个外部线程可以并发调用 `RealtimeThreadExecutor::stop_and_join()`。取得工作线程所有权的调用方负责完成停止收尾；其他调用方会等待其完成工作线程 join、等待正在进行的任务提交结束并清空已排队任务。停止收尾完成前，`start()` 返回 `false`，从而避免新建的实时线程与正在停止的工作线程重叠运行。`push_task()` 的提交路径与 `LockFreeTaskExecutor` 一样由原子准入门闩保护：“检查停止是否已开始”与“登记为在途生产者”是同一个原子操作，因此 `stop_and_join()` 返回后不会再有任何生产者访问执行器成员，对象可以安全销毁，也不会有任务在最终清空之后进入队列。
 
 ### 9.2 使用场景
 
@@ -1935,7 +1916,7 @@ public:
 以下示例实现一个基于 `sleep_until` 的简单周期管理器：
 
 ```cpp
-#include <kairo/kairo.hpp>
+#include <kairo/executor.hpp>
 #include <algorithm>
 #include <chrono>
 #include <functional>

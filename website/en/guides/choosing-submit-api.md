@@ -88,7 +88,7 @@ Use `submit_with_handle()`, `submit_after()`, and `when_all()` for “model load
 
 ## Time budgets are not cancellation
 
-`wait_for_completion_ex(timeout)` reports incomplete work and a snapshot; it does not safely kill a running C++ function. Make I/O bounded, let long work check a stop signal or deadline, and split interruptible work into steps. Likewise, `shutdown(true)` is an orderly-exit policy, not a guarantee that an arbitrary permanent task ends promptly.
+`wait_for_completion(timeout)` reports incomplete work and a snapshot; it does not safely kill a running C++ function. Make I/O bounded, let long work check a stop signal or deadline, and split interruptible work into steps. Likewise, `shutdown(true)` is an orderly-exit policy, not a guarantee that an arbitrary permanent task ends promptly.
 
 Automatic routing does not prove callable real-time safety, thread safety, GPU memory ownership, or I/O interruptibility. `get_executor_capabilities()` is an advisory snapshot, not a backend reservation. For CPU/GPU fallback, declare separate callable paths and a `FallbackPolicy`; an allowed fallback is explained by `RoutingDecision`, not reported as a user-task exception.
 

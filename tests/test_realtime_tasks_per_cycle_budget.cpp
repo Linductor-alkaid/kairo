@@ -95,7 +95,7 @@ bool test_realtime_tasks_per_cycle_budget() {
     // (容量 1024 >> 64, 全部入队). 这避免阻塞 cycle_callback 污染 cycle_time 统计.
     // 每个任务仅自增全局计数 (轻量), 真正要测的是预算对"每周期处理量"的约束.
     for (int i = 0; i < kTotalTasks; ++i) {
-        bool ok = executor.push_task_ex([]() {
+        auto ok = executor.push_task([]() {
             g_tasks_executed.fetch_add(1, std::memory_order_relaxed);
         });
         TEST_ASSERT(ok, "Burst push while running should succeed");

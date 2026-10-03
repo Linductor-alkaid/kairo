@@ -112,6 +112,10 @@ private:
 };
 
 // 有限等待 future<int> 就绪；不就绪返回 false（配合断言防挂死）。
+template <typename T>
+bool settles_within(kairo::TimerSubmission<T>& submission,
+                    std::chrono::milliseconds limit = kSettleLimit);
+
 bool settles_within(std::future<int>& future,
                     std::chrono::milliseconds limit = kSettleLimit) {
     return future.valid() &&
@@ -122,6 +126,12 @@ bool settles_within(std::future<void>& future,
                     std::chrono::milliseconds limit = kSettleLimit) {
     return future.valid() &&
            future.wait_for(limit) == std::future_status::ready;
+}
+
+template <typename T>
+bool settles_within(kairo::TimerSubmission<T>& submission,
+                    std::chrono::milliseconds limit) {
+    return settles_within(submission.future, limit);
 }
 
 // 有界等待谓词成立（轮询诊断快照/接口用，5ms 步进）。

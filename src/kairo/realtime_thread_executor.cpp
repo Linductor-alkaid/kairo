@@ -289,7 +289,7 @@ bool RealtimeThreadExecutor::stop_and_join() {
         std::lock_guard<std::mutex> lock(stop_mutex_);
         // P-002: even without a worker thread to join, wait out producers that
         // registered before the gate closed so stop_and_join() keeps its
-        // "no producer is inside push_task_ex() on return" contract.
+        // "no producer is inside push_task() on return" contract.
         while ((push_gate_.load(std::memory_order_acquire) & kPushGateActiveMask) != 0) {
             std::this_thread::yield();
         }
@@ -366,12 +366,8 @@ std::string RealtimeThreadExecutor::get_name() const {
     return name_;
 }
 
-void RealtimeThreadExecutor::push_task(std::function<void()> task) {
-    // P-001 (260615): 保留 void 接口, 调用方应改用 push_task_ex 或 get_status().
-    (void)push_task_ex(std::move(task));
-}
 
-bool RealtimeThreadExecutor::push_task_ex(std::function<void()> task) {
+ExecutorResult RealtimeThreadExecutor::push_task(std::function<void()> task) {
     // P-001 (260615): 失败路径全部计入 dropped_task_count_ —
     //   (1) 执行器未运行 (stop() 后不再接受任务)
     //   (2) task 为空 (无效输入)
@@ -381,7 +377,8 @@ bool RealtimeThreadExecutor::push_task_ex(std::function<void()> task) {
     if (!task) {
         dropped_task_count_.fetch_add(1, std::memory_order_relaxed);
         rejected_empty_task_count_.fetch_add(1, std::memory_order_relaxed);
-        return false;
+        return ExecutorResult::failure(
+            ExecutorErrorCode::InvalidConfig, "realtime push: null task");
     }
 
     // P-002: atomic admission — the closed check and registration are a
@@ -393,7 +390,9 @@ bool RealtimeThreadExecutor::push_task_ex(std::function<void()> task) {
     if (!enter_push()) {
         dropped_task_count_.fetch_add(1, std::memory_order_relaxed);
         rejected_not_running_count_.fetch_add(1, std::memory_order_relaxed);
-        return false;
+        return ExecutorResult::failure(
+            ExecutorErrorCode::BackendUnavailable,
+            "realtime push: executor not running");
     }
     struct InFlightPushGuard {
         RealtimeThreadExecutor& executor;
@@ -409,7 +408,9 @@ bool RealtimeThreadExecutor::push_task_ex(std::function<void()> task) {
     if (!running_.load(std::memory_order_acquire)) {
         dropped_task_count_.fetch_add(1, std::memory_order_relaxed);
         rejected_not_running_count_.fetch_add(1, std::memory_order_relaxed);
-        return false;
+        return ExecutorResult::failure(
+            ExecutorErrorCode::BackendUnavailable,
+            "realtime push: executor stopped");
     }
 
     // 从对象池获取任务对象
@@ -418,7 +419,9 @@ bool RealtimeThreadExecutor::push_task_ex(std::function<void()> task) {
         // 对象池耗尽: 任务被静默丢弃
         dropped_task_count_.fetch_add(1, std::memory_order_relaxed);
         pool_exhausted_count_.fetch_add(1, std::memory_order_relaxed);
-        return false;
+        return ExecutorResult::failure(
+            ExecutorErrorCode::BackendUnavailable,
+            "realtime push: task pool exhausted");
     }
     task_wrapper->func = std::move(task);
 
@@ -428,9 +431,10 @@ bool RealtimeThreadExecutor::push_task_ex(std::function<void()> task) {
         task_pool_.release(task_wrapper);
         dropped_task_count_.fetch_add(1, std::memory_order_relaxed);
         queue_full_count_.fetch_add(1, std::memory_order_relaxed);
-        return false;
+        return ExecutorResult::failure(
+            ExecutorErrorCode::BackendUnavailable, "realtime push: queue full");
     }
-    return true;
+    return ExecutorResult::success();
 }
 
 void RealtimeThreadExecutor::simple_cycle_loop() {
@@ -606,7 +610,6 @@ RealtimeExecutorStatus RealtimeThreadExecutor::get_status() const {
         process_memory_lock_applied_.load(std::memory_order_acquire);
     status.process_memory_lock_errno =
         process_memory_lock_errno_.load(std::memory_order_acquire);
-    status.memory_locked = status.process_memory_lock_applied;
     status.timer_slack_applied = timer_slack_applied_.load(std::memory_order_acquire);
     // P-001 (260615): 背压可见性
     status.dropped_task_count = dropped_task_count_.load(std::memory_order_acquire);

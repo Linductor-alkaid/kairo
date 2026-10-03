@@ -6,7 +6,7 @@
 // Claimed symptom: period=100ms with a 30ms callback => mean interval ~130ms
 // and cumulative drift (>1s late by tick 50).
 //
-// Path under test: kairo::Executor::submit_periodic_with_handle() =>
+// Path under test: kairo::Executor::submit_periodic() =>
 // detail::TimerScheduler (timer.hpp). Ticks are dispatched asynchronously to
 // the default thread pool; the next deadline is computed at tick-build time
 // from the loop's `now`. Measurements below report what actually happens.
@@ -48,7 +48,7 @@ RunStats measure(const char* label, int period_ms, int callback_sleep_ms, int n_
     trigger_times.reserve(n_ticks + 2);
     std::atomic<bool> done{false};
 
-    auto handle = executor.submit_periodic_with_handle(
+    auto handle = executor.submit_periodic(
         period_ms,
         [&, period_ms]() {
             trigger_times.push_back(Clock::now());

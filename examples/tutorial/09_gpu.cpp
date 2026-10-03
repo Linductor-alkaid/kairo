@@ -9,7 +9,7 @@ int main() {
     config.name = "tutorial_gpu";
     config.backend = kairo::gpu::GpuBackend::SYCL;
 
-    const auto registration = executor.register_gpu_executor_ex("tutorial_gpu", config);
+    const auto registration = executor.register_gpu_executor("tutorial_gpu", config);
     bool submit_rejected = false;
     try {
         kairo::gpu::GpuTaskConfig task_config;

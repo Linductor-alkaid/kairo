@@ -7,7 +7,7 @@ description: Register, diagnose, start, push to, and stop a dedicated periodic t
 
 ## Goal
 
-Starting from a fixed-period CAN or control-loop requirement, use `register_realtime_task_ex()`, `start_realtime_task_ex()`, `try_push_realtime_task()`, and status queries to establish a minimal diagnosable path.
+Starting from a fixed-period CAN or control-loop requirement, use `register_realtime_task()`, `start_realtime_task()`, `try_push_realtime_task()`, and status queries to establish a minimal diagnosable path.
 
 This is an expert topic: ordinary finite work continues to use `submit_auto(lambda)`. Register a dedicated real-time thread only when fixed periods, a cycle budget, and bounded backpressure are already required. For one item sent to a running real-time queue through the unified control plane, use `dispatch_auto(RealtimeQueue)`; it reports admission, not completion.
 

@@ -9,7 +9,7 @@ int main() {
     config.min_threads = 1;
     config.max_threads = 1;
 
-    if (!executor.initialize_ex(config)) {
+    if (!executor.initialize(config)) {
         return 1;
     }
 

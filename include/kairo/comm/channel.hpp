@@ -107,7 +107,6 @@ public:
         return queue_.is_synchronization_lock_free();
     }
 
-    bool is_lock_free() const noexcept { return is_synchronization_lock_free(); }
 
 private:
     static ChannelOptions normalize_options(ChannelOptions options) {

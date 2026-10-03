@@ -201,7 +201,6 @@ public:
                let_states_[1].is_lock_free();
     }
 
-    bool is_lock_free() const noexcept { return is_synchronization_lock_free(); }
 
 private:
     using Store = detail::SnapshotStore<T>;

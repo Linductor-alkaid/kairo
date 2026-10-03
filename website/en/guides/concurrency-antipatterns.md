@@ -97,7 +97,7 @@ After shutdown, rebuild rather than reinitialize an Kairo. During shutdown-race 
 
 ## 9. Soft timeout mistaken for forced cancellation
 
-`task_timeout_ms = 100` checks queue time before a task begins; it does not terminate a running task. A `wait_for_completion_ex()` timeout only says work remains. Bound I/O, let long CPU work check `stop_token`/atomic stop/deadline, decide whether post-timeout side effects may continue, and never treat `shutdown(false)` as safe thread killing.
+`task_timeout_ms = 100` checks queue time before a task begins; it does not terminate a running task. A `wait_for_completion()` timeout only says work remains. Bound I/O, let long CPU work check `stop_token`/atomic stop/deadline, decide whether post-timeout side effects may continue, and never treat `shutdown(false)` as safe thread killing.
 
 ## 10. Blocking, allocation, or unbounded drain in a real-time callback
 

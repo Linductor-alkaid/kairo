@@ -33,7 +33,7 @@ config.name = "cuda0";
 config.backend = kairo::gpu::GpuBackend::CUDA;
 config.device_id = 0;
 
-const auto registered = executor.register_gpu_executor_ex("cuda0", config);
+const auto registered = executor.register_gpu_executor("cuda0", config);
 if (!registered) {
     return run_on_cpu();
 }

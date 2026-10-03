@@ -139,7 +139,7 @@ bool test_fallback_delayed_timer_cancel() {
     TEST_ASSERT(executor.initialize(one_thread_config()), "initialize");
 
     std::atomic<bool> ran{false};
-    auto submission = executor.submit_delayed_cancellable_with_handle(
+    auto submission = executor.submit_delayed_cancellable(
         60'000, [&ran](StopToken) noexcept {
             ran.store(true, std::memory_order_release);
             return 1;

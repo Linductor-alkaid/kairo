@@ -32,10 +32,10 @@ v0.5.2 把任务图依赖等待演进为 dependency-driven scheduling：`submit_
 
 | 迁移 | 适用情况 |
 | --- | --- |
-| `initialize(config)` → `initialize_ex(config)` | 配置错误、重复初始化或 shutdown 后调用需要区分原因。 |
-| `register_realtime_task(name, config)` → `register_realtime_task_ex(name, config)` | 需要区分非法配置、重名、权限/启动问题。 |
-| `start_realtime_task(name)` → `start_realtime_task_ex(name)` | 需要区分不存在、重复启动与平台启动失败。 |
-| `register_gpu_executor(name, config)` → `register_gpu_executor_ex(name, config)` | 需要区分无效配置与 `BackendUnavailable`。 |
+| `initialize(config)` → `initialize(config)` | 配置错误、重复初始化或 shutdown 后调用需要区分原因。 |
+| `register_realtime_task(name, config)` → `register_realtime_task(name, config)` | 需要区分非法配置、重名、权限/启动问题。 |
+| `start_realtime_task(name)` → `start_realtime_task(name)` | 需要区分不存在、重复启动与平台启动失败。 |
+| `register_gpu_executor(name, config)` → `register_gpu_executor(name, config)` | 需要区分无效配置与 `BackendUnavailable`。 |
 | `wait_for_completion()` → `wait_for_completion_for()` / `_ex()` | 不可无限等待，或超时后需要状态快照。 |
 | `IRealtimeExecutor::push_task()` → `Executor::try_push_realtime_task()` | 希望得到拒绝返回、failure event 和背压计数。 |
 

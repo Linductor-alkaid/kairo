@@ -10,7 +10,7 @@ int main() {
     kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
-    if (!executor.initialize_ex(config)) {
+    if (!executor.initialize(config)) {
         return 1;
     }
 

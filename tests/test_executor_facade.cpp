@@ -366,7 +366,7 @@ bool test_submit_delayed() {
     auto future = executor.submit_delayed(100, [&task_executed]() noexcept {
         task_executed.store(true);
         return 100;
-    });
+    }).future;
     
     // 验证任务在延迟后执行
     auto result = future.get();
@@ -419,10 +419,10 @@ bool test_delayed_timer_thread_creation_failure_rolls_back() {
         return 2;
     });
 
-    auto status = future.wait_for(std::chrono::seconds(2));
+    auto status = future.future.wait_for(std::chrono::seconds(2));
     TEST_ASSERT(status == std::future_status::ready,
                 "Timer thread should be startable after failed creation rolls back");
-    TEST_ASSERT(future.get() == 2, "Second delayed task result should be 2");
+    TEST_ASSERT(future.future.get() == 2, "Second delayed task result should be 2");
     TEST_ASSERT(execution_count.load() >= 1, "Delayed task should execute after retry");
 
     executor.shutdown();
@@ -445,11 +445,11 @@ bool test_submit_periodic() {
     // 测试周期性任务
     std::atomic<int> execution_count(0);
     
-    std::string task_id = executor.submit_periodic(50, [&execution_count]() noexcept {
+    auto periodic_handle = executor.submit_periodic(50, [&execution_count]() noexcept {
         execution_count.fetch_add(1);
     });
     
-    TEST_ASSERT(!task_id.empty(), "Task ID should not be empty");
+    TEST_ASSERT(periodic_handle.valid(), "Periodic handle should be valid");
     
     // 等待几个周期。217ms 刻意落在 50ms 网格之间：网格锚定后第 4 个 tick
     // 的 deadline 恰为 200ms 整，若在 200ms 整点 cancel，会与已注册的在途
@@ -462,7 +462,8 @@ bool test_submit_periodic() {
     TEST_ASSERT(count <= 6, "Task should execute at most 6 times (with some tolerance)");
     
     // 取消任务
-    TEST_ASSERT(executor.cancel_task(task_id), "Task cancellation should succeed");
+    TEST_ASSERT(periodic_handle.cancel() == kairo::TimerOperationResult::CancelledBeforeDispatch,
+                "Task cancellation should succeed");
     
     // 等待一段时间，验证任务不再执行
     int count_before = execution_count.load();
@@ -618,7 +619,7 @@ bool test_enable_monitoring() {
             return i;
         });
     }
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     
     // 查询统计（应该为空或很少）
     auto stats_before = executor.get_task_statistics("default");
@@ -633,7 +634,7 @@ bool test_enable_monitoring() {
             return i;
         });
     }
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     
     // 查询统计（应该有新的计数）
     auto stats_after = executor.get_task_statistics("default");
@@ -650,7 +651,7 @@ bool test_enable_monitoring() {
             return i;
         });
     }
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     
     // 统计应该不变
     auto stats_final = executor.get_task_statistics("default");
@@ -688,7 +689,7 @@ bool test_wait_for_completion() {
     }
     
     // 调用 wait_for_completion
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     
     // 验证所有任务已完成
     TEST_ASSERT(completed_count.load() == num_tasks,
@@ -701,7 +702,7 @@ bool test_wait_for_completion() {
     
     // 再次调用 wait_for_completion（应该立即返回，因为没有待处理任务）
     auto start = std::chrono::steady_clock::now();
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     auto end = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         end - start).count();
@@ -831,7 +832,7 @@ bool test_gpu_executor_registration() {
     gpu_config.default_stream_count = 1;
     
     // 尝试注册（如果 CUDA 不可用，可能失败，这是正常的）
-    bool registered = executor.register_gpu_executor("gpu_test", gpu_config);
+    auto registered = executor.register_gpu_executor("gpu_test", gpu_config);
     
     // 如果注册成功，验证可以获取
     if (registered) {
@@ -844,7 +845,7 @@ bool test_gpu_executor_registration() {
                     "GPU executor name should be in the list");
         
         // 验证重复注册失败
-        bool duplicate = executor.register_gpu_executor("gpu_test", gpu_config);
+        auto duplicate = executor.register_gpu_executor("gpu_test", gpu_config);
         TEST_ASSERT(!duplicate, "Duplicate GPU executor registration should fail");
     } else {
         // GPU 不可用，跳过测试（这是正常的，如果 CUDA 未安装）
@@ -877,7 +878,7 @@ bool test_gpu_task_submission() {
     gpu_config.max_queue_size = 1000;
     gpu_config.default_stream_count = 1;
     
-    bool registered = executor.register_gpu_executor("gpu_submit", gpu_config);
+    auto registered = executor.register_gpu_executor("gpu_submit", gpu_config);
     
     if (!registered) {
         // GPU 不可用或启动失败，跳过测试
@@ -986,7 +987,7 @@ bool test_gpu_executor_status() {
     gpu_config.max_queue_size = 1000;
     gpu_config.default_stream_count = 1;
     
-    bool registered = executor.register_gpu_executor("gpu_status", gpu_config);
+    auto registered = executor.register_gpu_executor("gpu_status", gpu_config);
     
     if (!registered) {
         // GPU 不可用，跳过测试

@@ -27,7 +27,7 @@ int main() {
     auto end1 = steady_clock::now();
     auto us1 = duration_cast<microseconds>(end1 - start1).count();
 
-    executor1.wait_for_completion();
+    (void)executor1.wait_for_completion(std::chrono::seconds{300});
     executor1.shutdown(false);
 
     std::cout << "  耗时: " << us1 << " μs\n";
@@ -48,7 +48,7 @@ int main() {
     auto end2 = steady_clock::now();
     auto us2 = duration_cast<microseconds>(end2 - start2).count();
 
-    executor2.wait_for_completion();
+    (void)executor2.wait_for_completion(std::chrono::seconds{300});
     executor2.shutdown(false);
 
     std::cout << "  耗时: " << us2 << " μs\n";

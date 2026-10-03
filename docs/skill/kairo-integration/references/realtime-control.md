@@ -12,8 +12,8 @@ config.thread_name = "control";
 config.cycle_period_ns = 2'000'000;
 config.cycle_callback = [] { run_control_cycle(); };
 
-if (!executor.register_realtime_task_ex("control", config)) return 1;
-if (!executor.start_realtime_task_ex("control")) return 1;
+if (!executor.register_realtime_task("control", config)) return 1;
+if (!executor.start_realtime_task("control")) return 1;
 const bool queued = executor.try_push_realtime_task("control", [] { apply_command(); });
 executor.stop_realtime_task("control");
 ```

@@ -51,7 +51,7 @@ private:
 };
 ```
 
-Use `Executor::instance()` for ordinary process-wide sharing, or an independent instance for tests, plugins, or a subsystem that needs isolated drain/shutdown. In either case, exactly one owner calls `initialize_ex()` and `shutdown()`.
+Use `Executor::instance()` for ordinary process-wide sharing, or an independent instance for tests, plugins, or a subsystem that needs isolated drain/shutdown. In either case, exactly one owner calls `initialize()` and `shutdown()`.
 
 ## Move result-bearing work first
 
@@ -122,7 +122,7 @@ std::future<ParsedFrame> ParserService::accept(Frame frame) {
 }
 
 parser.stop_accepting();
-auto drained = executor.wait_for_completion_ex(std::chrono::seconds{2});
+auto drained = executor.wait_for_completion(std::chrono::seconds{2});
 if (!drained.completed) log_pending(drained.status.pending_tasks);
 executor.shutdown(drained.completed);
 ```

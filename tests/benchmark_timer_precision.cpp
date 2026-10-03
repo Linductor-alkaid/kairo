@@ -129,20 +129,21 @@ void run_delayed(const Config& cfg, bool json_only) {
         for (size_t i = 0; i < cfg.tasks_per_period; ++i) {
             auto submit_time = clock::now();
             auto fut = ex.submit_delayed(D_ms, [&mtx, &jitters_us, D_ms, submit_time]() {
+
                 auto actual = clock::now();
                 auto expected = submit_time + std::chrono::milliseconds(D_ms);
                 double jitter_us =
                     std::chrono::duration<double, std::micro>(actual - expected).count();
                 std::lock_guard<std::mutex> lock(mtx);
                 jitters_us[D_ms].push_back(jitter_us);
-            });
+            }).future;
             futures.push_back(std::move(fut));
         }
 
         for (auto& f : futures) f.get();
     }
 
-    ex.wait_for_completion();
+    (void)ex.wait_for_completion(std::chrono::seconds{300});
     ex.shutdown(true);
 
     if (cfg.json_output) {
@@ -200,7 +201,7 @@ void run_periodic(const Config& cfg, bool json_only) {
         std::vector<double> samples;
         clock::time_point start;
         size_t k = 0;
-        std::string task_id;
+        kairo::TimerHandle periodic_handle;
 
         auto fn = [&]() {
             auto now = clock::now();
@@ -222,17 +223,17 @@ void run_periodic(const Config& cfg, bool json_only) {
             }
         };
 
-        task_id = ex.submit_periodic(P_ms, fn);
+        periodic_handle = ex.submit_periodic(P_ms, fn);
 
         {
             std::unique_lock<std::mutex> lock(mtx);
             cv.wait(lock, [&] { return cycles_done.count(P_ms) && cycles_done[P_ms] >= target_cycles; });
         }
 
-        ex.cancel_task(task_id);
+        (void)periodic_handle.cancel();
     }
 
-    ex.wait_for_completion();
+    (void)ex.wait_for_completion(std::chrono::seconds{300});
     ex.shutdown(true);
 
     if (cfg.json_output) {

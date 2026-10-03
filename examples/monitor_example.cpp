@@ -59,7 +59,7 @@ int main() {
     }
 
     for (auto& f : futures) f.get();
-    exec.wait_for_completion();
+    (void)exec.wait_for_completion(std::chrono::seconds{300});
 
     std::cout << "任务已执行完毕，查询监控数据：\n\n";
 

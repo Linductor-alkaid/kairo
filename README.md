@@ -53,7 +53,7 @@ int main() {
 }
 ```
 
-`submit_auto(lambda)` uses the ordinary asynchronous executor by default. `future::get()` returns the result and rethrows task exceptions. Call `initialize_ex()` explicitly only when you need custom thread counts, capacities, or monitoring settings.
+`submit_auto(lambda)` uses the ordinary asynchronous executor by default. `future::get()` returns the result and rethrows task exceptions. Call `initialize()` explicitly only when you need custom thread counts, capacities, or monitoring settings.
 
 See [Your first task](website/en/quick-start/first-task.md) for the complete build, link, and error-handling path.
 

@@ -84,11 +84,11 @@ int main() {
     {
         auto start_time = std::chrono::steady_clock::now();
 
-        auto future = executor.submit_delayed(200, []() {
+        auto submission = executor.submit_delayed(200, []() {
             return std::string("Delayed task executed");
         });
 
-        std::string result = future.get();
+        std::string result = submission.future.get();
         auto end_time = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             end_time - start_time).count();
@@ -103,18 +103,18 @@ int main() {
     {
         std::atomic<int> counter(0);
 
-        std::string task_id = executor.submit_periodic(100, [&counter]() {
+        auto periodic = executor.submit_periodic(100, [&counter]() {
             int count = counter.fetch_add(1) + 1;
             std::cout << "  Periodic task execution #" << count << std::endl;
         });
 
-        std::cout << "  Periodic task started (ID: " << task_id << ")" << std::endl;
+        std::cout << "  Periodic task started (ID: " << periodic.id() << ")" << std::endl;
 
         // 运行几个周期
         std::this_thread::sleep_for(std::chrono::milliseconds(350));
 
         // 取消周期性任务
-        executor.cancel_task(task_id);
+        periodic.cancel();
         std::cout << "  Periodic task cancelled" << std::endl;
     }
     std::cout << std::endl;

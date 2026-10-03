@@ -13,7 +13,7 @@ description: 公开 API 的模块入口与稳定性边界。
 | --- | --- | --- | --- |
 | 生命周期 | `instance`、独立实例、`initialize[_ex]`、`shutdown` | [初始化与关闭](/zh/quick-start/lifecycle) | `docs/API.md` 的生命周期与配置章节。 |
 | 普通任务与路由 | `submit_auto`、`TaskOptions`、`RoutingDecision`、`submit` | [执行模型与路由边界](/zh/guides/execution-models-and-routing)、[任务输入与所有权](/zh/quick-start/task-inputs-and-ownership) | `Executor` 模板 API。 |
-| 周期与批量 | `submit_periodic`、`cancel_task`、周期状态、三种 batch | [延迟与周期](/zh/tutorial/delayed-and-periodic)、[批量](/zh/tutorial/batch) | Facade 定时与批量章节。 |
+| 周期与批量 | `submit_periodic`、`TimerHandle::cancel`、周期状态、三种 batch | [延迟与周期](/zh/tutorial/delayed-and-periodic)、[批量](/zh/tutorial/batch) | Facade 定时与批量章节。 |
 | 任务图 | `submit_with_handle`、`submit_after[_with_handle]`、`when_all` | [任务依赖](/zh/tutorial/dependencies) | 任务依赖章节。 |
 | 失败与等待 | failure callback/status、recent failures、`wait_for_completion[_ex]`、完成状态 | [失败可观察性](/zh/reliability/failure-observability)、[有界等待](/zh/tutorial/waiting-and-status) | 失败、等待与类型章节。 |
 | 监控 | `enable_monitoring`、采样率、任务统计 | [监控与采样](/zh/reliability/monitoring) | 监控 API 章节。 |
@@ -38,7 +38,7 @@ description: 公开 API 的模块入口与稳定性边界。
 | 监控与统计 | 监控与采样 | 采样率和统计开销。 |
 | realtime 注册、push、列表与状态 | 实时控制教程 | 权限降级、周期预算和拒绝计数。 |
 | `submit_cancellable*`、`request_task_cancel`、`get_cancellation_status` | 取消与定时教程 | 协作语义、registry 容量与取消计数。 |
-| `submit_delayed_with_handle`、`submit_periodic_with_handle`、`TimerHandle` / `ScopedTimerHandle` | 取消与定时教程 | cancel/reschedule、终态与定时计数。 |
+| `submit_delayed`、`submit_periodic`、`TimerHandle` / `ScopedTimerHandle` | 取消与定时教程 | cancel/reschedule、终态与定时计数。 |
 | `submit_on`、`submit_on_with_handle`、`SerialExecutionContext` | 事件循环互操作指南 | FIFO ticket 顺序、非阻塞派发与 shutdown 拒绝。 |
 | `max_in_flight_tasks`、`set/get_max_in_flight_tasks`、`get_in_flight_submissions` | 容量与告警 | 覆盖路径、capacity 拒绝语义与计数。 |
 | `register_lockfree_executor` / `start_` / `stop_` / `get_lockfree_executor_names` | 提交接口选型、高级与原理 | 后端生命周期；`dispatch_auto` 的 `accepted` 只代表队列接收。 |

@@ -64,7 +64,7 @@ auto future = executor.submit_auto(characteristics, "cuda0",
 
 ## 不会隐式回退的情况
 
-新双路径 `submit_auto()` 会按 `FallbackPolicy` 处理不可用 GPU：仅 `AllowCpu` 会回退 CPU；`NoFallback` 和 legacy overload 都会明确失败，不会偷偷改走 CPU。推荐流程是先完成 `register_gpu_executor_ex()`、检查状态，再允许 GPU 特征或 `prefer_gpu` 进入调度器。
+新双路径 `submit_auto()` 会按 `FallbackPolicy` 处理不可用 GPU：仅 `AllowCpu` 会回退 CPU；`NoFallback` 和 legacy overload 都会明确失败，不会偷偷改走 CPU。推荐流程是先完成 `register_gpu_executor()`、检查状态，再允许 GPU 特征或 `prefer_gpu` 进入调度器。
 
 ## 调整配置
 

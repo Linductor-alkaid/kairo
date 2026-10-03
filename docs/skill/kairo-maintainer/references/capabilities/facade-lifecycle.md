@@ -8,7 +8,7 @@ Choose `Executor::instance()` only for process-wide sharing; use an `Executor` o
 
 ## Public Boundary
 
-- `include/executor/executor.hpp`: `Executor`, `initialize_ex()`, `shutdown()`, completion wait/status APIs.
+- `include/executor/executor.hpp`: `Executor`, `initialize()`, `shutdown()`, completion wait/status APIs.
 - `include/executor/config.hpp` and `include/executor/types.hpp`: configuration and observable results.
 - `include/executor/executor_manager.hpp`: registry and owner boundary.
 

@@ -29,7 +29,7 @@ Retain the returned future and use bounded `wait_for()` to distinguish unfinishe
 
 | Observation | Likely cause | Next action |
 | --- | --- | --- |
-| `is_initialized=false` | No initialization or default executor failed to establish | Call `initialize_ex()` before first submission; inspect code/message |
+| `is_initialized=false` | No initialization or default executor failed to establish | Call `initialize()` before first submission; inspect code/message |
 | `is_running=false` | Shutdown or initialization failure | Do not reuse a shut-down instance; rebuild the isolated component |
 | Rejection count rises | Empty task, post-stop submission, unavailable entry | Find the call site from recent failure; return explicit request failure |
 | `queued_tasks>0`, active unchanged | Blocked worker or dependency that cannot complete | Inspect running I/O, locks, dependency ownership |
@@ -50,7 +50,7 @@ Rate-limit intake, merge overly fine work, bound I/O, and remove permanent loops
 
 ## Symptom 3: wait timeout
 
-Use `wait_for_completion_ex(timeout)`, not a bare `false`, then record its
+Use `wait_for_completion(timeout)`, not a bare `false`, then record its
 message/status and `get_snapshot()` before the predetermined degradation policy.
 
 | Timeout snapshot | Meaning | Direction |
@@ -93,7 +93,7 @@ Compute window deltas for cumulative counters. `dropped_task_count` is the inclu
 
 ## Symptom 6: GPU unavailable or submission fails
 
-Check in order: CMake backend enabled, runtime/device visibility for the final service account, `register_gpu_executor_ex()` error code/message, `GpuExecutorStatus` fields after registration, then each `submit_gpu()` future via `get()`. `BackendUnavailable` often means no compiled/implemented backend, no runtime, or no usable device; correct `InvalidConfig` first and investigate device/driver after `StartFailed`.
+Check in order: CMake backend enabled, runtime/device visibility for the final service account, `register_gpu_executor()` error code/message, `GpuExecutorStatus` fields after registration, then each `submit_gpu()` future via `get()`. `BackendUnavailable` often means no compiled/implemented backend, no runtime, or no usable device; correct `InvalidConfig` first and investigate device/driver after `StartFailed`.
 
 After registration failure, stop submitting to that named executor. If GPU is optional, take an explicit CPU path and record degradation; if required, fail health checks and stop intake rather than returning an empty success.
 

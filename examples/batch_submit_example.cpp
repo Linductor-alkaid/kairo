@@ -52,7 +52,7 @@ void example_batch_no_future() {
     std::cout << "提交耗时: " << duration_us << " μs\n";
 
     // 等待任务完成
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
 
     std::cout << "已完成任务数: " << completed.load() << "\n";
 }
@@ -112,7 +112,7 @@ void example_performance_comparison() {
         }
         auto end = steady_clock::now();
 
-        executor.wait_for_completion();
+        (void)executor.wait_for_completion(std::chrono::seconds{300});
 
         auto duration_us = duration_cast<microseconds>(end - start).count();
         std::cout << "循环 submit:           " << duration_us << " μs\n";
@@ -135,7 +135,7 @@ void example_performance_comparison() {
         executor.submit_batch_no_future(tasks);
         auto end = steady_clock::now();
 
-        executor.wait_for_completion();
+        (void)executor.wait_for_completion(std::chrono::seconds{300});
 
         auto duration_us = duration_cast<microseconds>(end - start).count();
         std::cout << "submit_batch_no_future: " << duration_us << " μs\n";
@@ -172,7 +172,7 @@ void example_batch_data_processing() {
     auto start = steady_clock::now();
 
     executor.submit_batch_no_future(tasks);
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
 
     auto end = steady_clock::now();
     auto duration_ms = duration_cast<milliseconds>(end - start).count();
@@ -208,7 +208,7 @@ void example_anti_pattern() {
         t.join();
     }
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     std::cout << "任务完成（但性能不如循环 submit）\n";
 }
 

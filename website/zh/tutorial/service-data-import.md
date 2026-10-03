@@ -137,7 +137,7 @@ callback 应保持短小、非阻塞。生产中不要在 worker 失败路径同
 
 ### 取消
 
-`wait_for_completion_ex()` 超时不会强制终止正在执行的数据库调用。为连接和语句设置超时，让长批次检查业务 deadline；请求取消后还要决定已经提交的副作用是否保留。
+`wait_for_completion()` 超时不会强制终止正在执行的数据库调用。为连接和语句设置超时，让长批次检查业务 deadline；请求取消后还要决定已经提交的副作用是否保留。
 
 ### 结果保留
 
@@ -168,7 +168,7 @@ flowchart TD
     A[负载均衡器停止发送新流量] --> B[HTTP 层进入 draining<br/>拒绝新导入]
     B --> C[停止 CSV reader / job producer]
     C --> D[等待当前请求消费 futures]
-    D --> E[wait_for_completion_ex<br/>排空预算]
+    D --> E[wait_for_completion<br/>排空预算]
     E --> F[记录 pending、失败计数<br/>和未完成 job IDs]
     F --> G[shutdown Kairo]
     G --> H[销毁连接池、结果存储和日志设施]

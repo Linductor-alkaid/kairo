@@ -116,7 +116,6 @@ struct TimerRecord {
     uint64_t generation = 0;
     TimerState state = TimerState::Scheduled;
     bool periodic = false;
-    bool legacy_periodic = false;  // submit_periodic()/cancel_task() 兼容路径
     int64_t interval_ms = 0;
     std::chrono::steady_clock::time_point next_execute_time{};
 
@@ -132,7 +131,7 @@ struct TimerRecord {
     std::vector<std::pair<std::string, std::shared_ptr<TaskCancellationState>>>
         active_ticks;
 
-    // 兼容 submit_periodic 的 PeriodicTaskStatus 查询。
+    // get_periodic_status() 查询用的周期任务状态。
     PeriodicTaskStatus periodic_status;
 };
 
@@ -288,7 +287,7 @@ public:
     /**
      * @brief 登记一次性 timer；返回 timer id（空表示调度线程已停止）。
      *
-     * task_state 可为空（legacy submit_delayed 无句柄取消）。
+     * task_state 可为空（无协作取消状态的一次性任务）。
      */
     std::string schedule_once(
         int64_t delay_ms,
@@ -325,8 +324,7 @@ public:
      */
     std::string schedule_periodic(int64_t period_ms,
                                   std::string timer_id,
-                                  TickBuilderFactory tick_builder,
-                                  bool legacy_periodic) {
+                                  TickBuilderFactory tick_builder) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!running_.load(std::memory_order_acquire)) {
             return {};
@@ -334,7 +332,6 @@ public:
         auto record = std::make_unique<TimerRecord>();
         record->timer_id = timer_id;
         record->periodic = true;
-        record->legacy_periodic = legacy_periodic;
         record->interval_ms = period_ms;
         record->next_execute_time =
             std::chrono::steady_clock::now() + std::chrono::milliseconds(period_ms);
@@ -387,10 +384,6 @@ public:
                         record.tick_builder = nullptr;
                         active_ticks = std::move(record.active_ticks);
                         record.active_ticks.clear();
-                        if (record.legacy_periodic) {
-                            // 旧 cancel_task 语义：取消后即从注册表移除。
-                            records_.erase(it);
-                        }
                     } else {
                         on_cancelled = std::move(record.on_cancelled);
                         record.on_cancelled = nullptr;
@@ -497,26 +490,6 @@ public:
         status.active_callback_count = record.active_ticks.size();
         status.next_execute_time = record.next_execute_time;
         return status;
-    }
-
-    /** 兼容旧 cancel_task：找到周期任务即移除并返回 true（任何状态）。 */
-    bool cancel_periodic_legacy(const std::string& timer_id) noexcept {
-        try {
-            std::lock_guard<std::mutex> lock(mutex_);
-            auto it = records_.find(timer_id);
-            if (it == records_.end() || !it->second->periodic) {
-                return false;
-            }
-            if (it->second->state == TimerState::Scheduled) {
-                it->second->state = TimerState::Cancelled;
-                ++summary_.cancelled_count;
-                it->second->tick_builder = nullptr;
-            }
-            records_.erase(it);
-            return true;
-        } catch (...) {
-            return false;
-        }
     }
 
     std::optional<PeriodicTaskStatus> get_periodic_status(

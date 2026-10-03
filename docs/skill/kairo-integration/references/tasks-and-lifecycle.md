@@ -10,7 +10,7 @@ Finite background work, values, exceptions, a bounded wait, service shutdown, an
 executor::Executor executor;
 executor::ExecutorConfig config;
 config.max_threads = 4;
-if (!executor.initialize_ex(config)) return 1;
+if (!executor.initialize(config)) return 1;
 
 auto result = executor.submit_auto([] { return compute(); });
 auto value = result.get();
@@ -23,7 +23,7 @@ executor.shutdown(true);
 
 - A successful submission is not successful execution. Retain and inspect the future when the outcome matters.
 - `task_timeout_ms` is a pre-execution soft timeout: it skips queued work that waited too long and never kills running C++ code.
-- `wait_for_completion_ex()` waits only for default future-style asynchronous work. It does not wait for realtime queues, GPU executors, or blocking I/O workers.
+- `wait_for_completion()` waits only for default future-style asynchronous work. It does not wait for realtime queues, GPU executors, or blocking I/O workers.
 - Stop producers before `shutdown(true)`. If shutdown is called by a pool worker, it requests stop without joining itself; an external owner must complete teardown.
 
 ## Related Guide

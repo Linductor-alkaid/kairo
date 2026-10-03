@@ -31,7 +31,7 @@ try {
 }
 ```
 
-不要把异常误当作初始化失败：`initialize_ex()` 的失败通过 `ExecutorResult` 的 `ok`、`error_code` 与 `message` 表达；任务失败则由 future、failure callback 或 failure status 观察。
+不要把异常误当作初始化失败：`initialize()` 的失败通过 `ExecutorResult` 的 `ok`、`error_code` 与 `message` 表达；任务失败则由 future、failure callback 或 failure status 观察。
 
 `DispatchResult::accepted` 和 `WorkerHandle` 不是 future：前者表示有界队列接收，后者表示 worker 生命周期。不要把它们当作完成；先阅读[执行模型与路由边界](/zh/guides/execution-models-and-routing)。
 
@@ -41,4 +41,4 @@ try {
 
 ## 下一步
 
-阅读[初始化与关闭](/zh/quick-start/lifecycle)，了解何时使用 `initialize_ex()` 和 `shutdown(true)`。
+阅读[初始化与关闭](/zh/quick-start/lifecycle)，了解何时使用 `initialize()` 和 `shutdown(true)`。

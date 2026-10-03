@@ -23,7 +23,7 @@ ctest --test-dir build -L tutorial --output-on-failure
 
 ## Recommended path
 
-Use `register_gpu_executor_ex()` and select business fallback from `ExecutorResult`. The tutorial deliberately chooses unimplemented SYCL, so any machine verifies the diagnostic path:
+Use `register_gpu_executor()` and select business fallback from `ExecutorResult`. The tutorial deliberately chooses unimplemented SYCL, so any machine verifies the diagnostic path:
 
 <<< @/../examples/tutorial/09_gpu.cpp{1-27}
 

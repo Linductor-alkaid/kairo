@@ -55,7 +55,7 @@ bool test_singleton_workflow() {
     }
     
     // 等待所有任务完成
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     
     // 验证任务完成
     TEST_ASSERT(task_counter.load() == num_tasks, "All tasks should be completed");
@@ -175,7 +175,7 @@ bool test_instance_workflow() {
         });
     }
     
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     TEST_ASSERT(task_counter.load() == num_tasks, "All tasks should be completed");
     std::cout << "  Step 2: Completed " << num_tasks << " async tasks" << std::endl;
     

@@ -44,7 +44,7 @@ flowchart TD
 | Dependent task does not run | Facade `TaskGraphState`, `submit_after_with_handle` | `src/kairo/task/task_dependency_manager.cpp` | Facade/dependency tests and tutorial smoke |
 | Priority does not preempt | `PriorityScheduler::dequeue()` | `TaskDispatcher::dispatch()`, worker loop | Priority tests and queue status |
 | Resize does not lose tasks | `ThreadPool::resize_local_queues()` | `TaskDispatcher::dispatch_batch()` requeue branch | Resize/concurrent-stop tests |
-| Real-time task drops | `Executor::push_realtime_task()` | `RealtimeThreadExecutor::push_task_ex()` | Push-overflow tests and status counters |
+| Real-time task drops | `Executor::push_realtime_task()` | `RealtimeThreadExecutor::push_task()` | Push-overflow tests and status counters |
 | Lock-free queue appears empty/full | `src/kairo/util/lockfree_queue.hpp` | Caller capacity/object-pool logic | MPSC benchmark, TSAN/stress |
 
 First find object ownership and exit authority: `Executor` owns a manager in its instance model, manager owns executors, adapters use `shared_ptr` snapshots for stop/submit races, while the caller owns a realtime `cycle_manager` and Kairo only borrows it.

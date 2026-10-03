@@ -34,8 +34,8 @@ kairo::RealtimeThreadConfig config;
 config.cycle_manager = &clock;
 config.cycle_callback = [] { run_control_cycle(); };
 
-executor.register_realtime_task_ex("control", config);
-executor.start_realtime_task_ex("control");
+executor.register_realtime_task("control", config);
+executor.start_realtime_task("control");
 // 停止前确保 clock 仍然存活。
 executor.stop_realtime_task("control");
 ```

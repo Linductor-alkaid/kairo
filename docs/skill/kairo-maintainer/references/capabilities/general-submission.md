@@ -8,7 +8,7 @@ Use `submit_auto()` for ordinary finite work and `submit()` when explicit defaul
 
 ## Public Boundary
 
-- `include/executor/executor.hpp`: `submit_auto`, `submit`, batch submission, `wait_for_completion_ex`.
+- `include/executor/executor.hpp`: `submit_auto`, `submit`, batch submission, `wait_for_completion`.
 - `include/executor/task_options.hpp`: task-level options.
 - `include/executor/types.hpp`: completion, wait, and failure status.
 

@@ -53,7 +53,7 @@ int main() {
 }
 ```
 
-`submit_auto(lambda)` 默认使用普通异步执行器。`future::get()` 返回结果，并在任务失败时重新抛出异常。需要自定义线程数、容量或监控配置时，再显式调用 `initialize_ex()`。
+`submit_auto(lambda)` 默认使用普通异步执行器。`future::get()` 返回结果，并在任务失败时重新抛出异常。需要自定义线程数、容量或监控配置时，再显式调用 `initialize()`。
 
 完整的构建、链接和异常处理过程见[第一个任务](website/zh/quick-start/first-task.md)。
 

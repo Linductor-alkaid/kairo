@@ -141,7 +141,7 @@ std::set<std::string> realtime_status_fields() {
     return {
         "name", "is_running", "cycle_period_ns", "cycle_count",
         "cycle_timeout_count", "avg_cycle_time_ns", "max_cycle_time_ns",
-        "priority_applied", "cpu_affinity_applied", "memory_locked",
+        "priority_applied", "cpu_affinity_applied", "process_memory_lock_applied",
         "timer_slack_applied", "dropped_task_count", "failed_pushes",
         "peak_queue_size", "queue_capacity", "rejected_not_running_count",
         "rejected_empty_task_count", "pool_exhausted_count", "queue_full_count",

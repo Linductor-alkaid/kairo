@@ -15,10 +15,10 @@ description: 以有界等待、WaitResult 和状态快照安全完成一次流�
 
 ## 推荐方案
 
-新代码优先使用 `wait_for_completion_ex(timeout)`：
+新代码优先使用 `wait_for_completion(timeout)`：
 
 ```cpp
-auto result = executor.wait_for_completion_ex(std::chrono::milliseconds{200});
+auto result = executor.wait_for_completion(std::chrono::milliseconds{200});
 if (!result.completed) {
     // result.timed_out 为 true；result.status 是超时瞬间的状态快照。
     std::cerr << "pending=" << result.status.pending_tasks << '\n';
@@ -34,7 +34,7 @@ if (!result.completed) {
 | 兼容旧调用方 | `wait_for_completion()` | 最多等待默认时长；超时不抛出。 |
 | 只要完成/超时判断 | `try_wait_for_completion(timeout)` | `bool`。 |
 | 以任意 chrono 时长表达边界 | `wait_for_completion_for(timeout)` | `bool`。 |
-| 需要诊断超时 | `wait_for_completion_ex(timeout)` | `WaitResult` 与状态快照。 |
+| 需要诊断超时 | `wait_for_completion(timeout)` | `WaitResult` 与状态快照。 |
 
 `is_idle()` 用于快速判断默认异步执行器当前是否空闲；`get_completion_status()` 提供初始化、排队、活跃和待完成数量的快照。需要确认执行器生命周期时，再查询 `get_async_executor_status()`。
 
@@ -55,7 +55,7 @@ if (!result.completed) {
 当超时还可能涉及实时、Blocking I/O 或 GPU 后端时，在选择后续策略前采集完整 Kairo 现场：
 
 ```cpp
-const auto result = executor.wait_for_completion_ex(std::chrono::milliseconds{200});
+const auto result = executor.wait_for_completion(std::chrono::milliseconds{200});
 if (!result.completed) {
     const auto snapshot = executor.get_snapshot();
     // 持久化 lifecycle、后端状态、failures 和 snapshot.partial。
@@ -68,7 +68,7 @@ if (!result.completed) {
 ## 正确收尾顺序
 
 1. 停止产生新任务，例如取消不再需要的周期任务。
-2. 以业务可接受的 timeout 调用 `wait_for_completion_ex()`。
+2. 以业务可接受的 timeout 调用 `wait_for_completion()`。
 3. 完成时调用 `shutdown(true)`；超时时记录 `WaitResult` 与完整 snapshot，并按业务策略重试、降级或调用 `shutdown(false)`。
 
 不要在超时后假设任务已经停止：超时只说明它们尚未全部完成。

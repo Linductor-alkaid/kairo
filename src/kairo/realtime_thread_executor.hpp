@@ -89,22 +89,15 @@ public:
      * @brief 推送任务到无锁队列（在周期回调中处理）
      *
      * 任务通过无锁队列传递，在实时线程的下一个周期回调中执行。
-     * P-001 (260615): 未运行、空任务、队列满或对象池耗尽时静默丢弃,
-     * dropped_task_count_++ (始终累计, 不依赖 enable_stats). 调用方必须
-     * 通过 get_status() 观察 dropped_task_count 与 failed_pushes.
+     * 未运行、空任务、队列满或对象池耗尽时拒绝并计入 dropped_task_count_
+     * (始终累计, 不依赖 enable_stats)。返回值直接反映该次 push 的成败
+     * (无 toctou)；调用方也可通过 get_status() 观察 dropped_task_count
+     * 与 failed_pushes。
      *
      * @param task 任务函数
+     * @return ExecutorResult 任务被接受时 ok；否则携带失败类别
      */
-    void push_task(std::function<void()> task) override;
-
-    /**
-     * @brief 推送任务并回传是否成功 (P-001 260615)
-     *
-     * 走与 push_task 完全相同的路径, 但返回值真实反映该次 push 的成败
-     * (无 toctou). stop() 后返回 false, 同时 dropped_task_count_ 同步累加
-     * (失败时).
-     */
-    bool push_task_ex(std::function<void()> task) override;
+    ExecutorResult push_task(std::function<void()> task) override;
 
     // Test-only hook invoked immediately after a producer wins the admission
     // CAS in enter_push() and before it observes running_. Blocking inside it
@@ -205,9 +198,9 @@ private:
     bool stop_finalization_in_progress_{false};
     std::atomic<bool> cycle_manager_active_{false};
     std::atomic<bool> self_stop_requested_{false};
-    // P-002: single-atom admission gate for push_task_ex(). Bit 31 marks the
+    // P-002: single-atom admission gate for push_task(). Bit 31 marks the
     // gate closed by stop_and_join(); the low bits count producers that won
-    // admission and are still inside push_task_ex(). Registration and the
+    // admission and are still inside push_task(). Registration and the
     // closed check are one RMW, so a producer either counts itself before the
     // close — and stop waits for it before the final drain — or rejects
     // without touching the object pool, queue, or any other member. The

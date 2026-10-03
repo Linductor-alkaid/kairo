@@ -35,7 +35,7 @@ task failed: expected tutorial failure
 - `future.get()` is both a result operation and an exception-observation boundary.
 - `get_last_routing_decision()` explains why the default Facade selected its path; it is not a completion result.
 - Default configuration is appropriate for this minimal example.
-- Configure thread counts, queue capacity, or monitoring with `initialize_ex()` before the first submission.
+- Configure thread counts, queue capacity, or monitoring with `initialize()` before the first submission.
 - The example ends with `shutdown()`. Applications must choose their shutdown semantics at a real component boundary.
 
 ## Common mistakes

@@ -520,30 +520,14 @@ public:
      *
      * 任务通过无锁队列传递，在实时线程的下一个周期回调中执行。
      *
-     * P-001 (260615) 破坏性约束说明: 接口签名保持 void 不变以保证 ABI/调用方兼容
-     * (plan 提议的 bool 返回是破坏性的, 这里走"次优"方案 — 通过 get_status() 暴露
-     *  dropped_task_count_, 并保留 push_task() 的 void 形态). 任务是否被丢弃
-     * 必须通过 RealtimeExecutorStatus::dropped_task_count 与 failed_pushes 观察.
+     * P-001 (260615) 曾为 ABI 兼容保持 void 签名、以 push_task_ex 扩展返回值；
+     * 0.6.0 起接口直接返回 ExecutorResult，背压失败同时通过返回值与
+     * RealtimeExecutorStatus::dropped_task_count / failed_pushes 可见。
      *
      * @param task 任务函数
+     * @return ExecutorResult 任务被接受时 ok；队列满/未运行/空任务时携带失败类别
      */
-    virtual void push_task(std::function<void()> task) = 0;
-
-    /**
-     * @brief 推送任务并回传是否成功 (P-001 260615, 非破坏扩展)
-     *
-     * 默认实现回退到 push_task(), 返回 true 仅表示任务已交给旧接口处理。
-     * 派生类应 override 以直接返回 push 路径的实际成功/失败结果。
-     *
-     * @param task 任务函数
-     * @return true 表示任务已被接受或已交给旧接口; false 表示派生类确认拒绝。
-     */
-    virtual bool push_task_ex(std::function<void()> task) {
-        // 默认实现保持 ABI/源码兼容: 交给 void push_task(), 无法精确报告失败。
-        // 派生类 override 可返回队列 push 的实际结果。
-        push_task(std::move(task));
-        return true;
-    }
+    virtual ExecutorResult push_task(std::function<void()> task) = 0;
 
     /**
      * @brief 获取执行器名称

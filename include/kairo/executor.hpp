@@ -78,19 +78,14 @@ public:
     Executor& operator=(const Executor&) = delete;
 
     /**
-     * @brief 初始化执行器
-     * 
-     * 初始化默认异步执行器（线程池）。
-     * 
-     * @param config 执行器配置
-     * @return 是否初始化成功
-     */
-    bool initialize(const ExecutorConfig& config);
-
-    /**
      * @brief 初始化执行器并返回可诊断结果
+     *
+     * 初始化默认异步执行器（线程池）。
+     *
+     * @param config 执行器配置
+     * @return ExecutorResult 携带失败类别与可读原因的诊断结果
      */
-    ExecutorResult initialize_ex(const ExecutorConfig& config);
+    ExecutorResult initialize(const ExecutorConfig& config);
 
     /**
      * @brief 关闭执行器
@@ -189,41 +184,25 @@ public:
         -> std::future<typename std::invoke_result<F, Args...>::type>;
 
     /**
-     * @brief 提交延迟任务
-     * 
-     * 任务将在指定延迟时间后执行。
-     * 
-     * @tparam F 可调用对象类型
-     * @tparam Args 参数类型
-     * @param delay_ms 延迟时间（毫秒）
-     * @param f 可调用对象
-     * @param args 参数
-     * @return std::future 任务执行结果的 future
+     * @brief 提交带句柄的延迟任务。
+     *
+     * 任务在指定延迟时间后执行；返回可取消/可重排的 TimerHandle 与 future
+     * （析构不取消）。调度线程停止（shutdown）时未到期任务以
+     * TaskCancelled(Shutdown) 就绪，不产生 failure 事件。
      */
     template<typename F, typename... Args>
     auto submit_delayed(int64_t delay_ms, F&& f, Args&&... args)
-        -> std::future<typename std::invoke_result<F, Args...>::type>;
+        -> TimerSubmission<typename std::invoke_result<F, Args...>::type>;
 
     /**
-     * @brief 提交周期性任务
-     * 
-     * 任务将按指定周期重复执行。
-     * 
-     * @param period_ms 周期（毫秒）
-     * @param task 任务函数
-     * @return 任务 ID（可用于取消任务）
-     */
-    std::string submit_periodic(int64_t period_ms, std::function<void()> task);
-
-    /**
-     * @brief 取消任务
+     * @brief 提交带句柄、可协作取消的延迟任务（StopToken 作为首参数注入）。
      *
-     * 取消指定的周期性任务。
-     *
-     * @param task_id 任务 ID
-     * @return 是否取消成功
+     * 取消在到期前生效时任务不执行；到期派发后取消继续向排队/运行中的
+     * 任务传播（CancellationRequestedAfterDispatch）。
      */
-    bool cancel_task(const std::string& task_id);
+    template<typename F, typename... Args>
+    auto submit_delayed_cancellable(int64_t delay_ms, F&& f, Args&&... args)
+        -> TimerSubmission<typename std::invoke_result<F, StopToken, Args...>::type>;
 
     // ------------------------------------------------------------------
     // 任务级协作取消（C1）
@@ -305,35 +284,14 @@ public:
     // ------------------------------------------------------------------
 
     /**
-     * @brief 提交带句柄的延迟任务。
-     *
-     * 与 submit_delayed() 的 future 语义一致，额外返回可取消/可重排的
-     * TimerHandle（析构不取消）。调度线程停止（shutdown）时未到期任务以
-     * TaskCancelled(Shutdown) 就绪，不产生 failure 事件。
-     */
-    template<typename F, typename... Args>
-    auto submit_delayed_with_handle(int64_t delay_ms, F&& f, Args&&... args)
-        -> TimerSubmission<typename std::invoke_result<F, Args...>::type>;
-
-    /**
-     * @brief 提交带句柄、可协作取消的延迟任务（StopToken 作为首参数注入）。
-     *
-     * 取消在到期前生效时任务不执行；到期派发后取消继续向排队/运行中的
-     * 任务传播（CancellationRequestedAfterDispatch）。
-     */
-    template<typename F, typename... Args>
-    auto submit_delayed_cancellable_with_handle(int64_t delay_ms, F&& f, Args&&... args)
-        -> TimerSubmission<typename std::invoke_result<F, StopToken, Args...>::type>;
-
-    /**
      * @brief 提交带句柄的周期任务。
      *
-     * 与 submit_periodic() 的诊断语义一致（tick 异常进入 failure 体系与
-     * PeriodicTaskStatus），额外返回 TimerHandle：cancel 阻止后续 tick，
+     * 任务将按指定周期重复执行（tick 异常进入 failure 体系与
+     * PeriodicTaskStatus）。返回 TimerHandle：cancel 阻止后续 tick，
      * reschedule_after 只改下一次到期时间、不改周期。
      */
-    TimerHandle submit_periodic_with_handle(int64_t period_ms,
-                                            std::function<void()> task);
+    TimerHandle submit_periodic(int64_t period_ms,
+                                std::function<void()> task);
 
     /**
      * @brief 提交带句柄、可协作取消的周期任务（StopToken 作为首参数注入）。
@@ -341,7 +299,7 @@ public:
      * 每个 tick 独立注入 token；cancel 原子阻止后续 tick 并对在途 tick
      * 请求排队/协作取消，但不撤回已取得执行权的 callback，也不等待完成。
      */
-    TimerHandle submit_periodic_cancellable_with_handle(
+    TimerHandle submit_periodic_cancellable(
         int64_t period_ms, std::function<void(StopToken)> task);
 
     /** @brief 定时任务计数快照（pending/executed/cancelled）。 */
@@ -424,35 +382,24 @@ public:
         const std::vector<F>& tasks);
 
     /**
-     * @brief 注册实时任务
-     * 
+     * @brief 注册实时任务并返回可诊断结果
+     *
      * 创建并注册实时执行器（专用实时线程）。
-     * 
+     *
      * @param name 任务名称
      * @param config 实时线程配置
-     * @return 是否注册成功
+     * @return ExecutorResult 携带失败类别与可读原因的诊断结果
      */
-    bool register_realtime_task(const std::string& name,
-                               const RealtimeThreadConfig& config);
-
-    /**
-     * @brief 注册实时任务并返回可诊断结果
-     */
-    ExecutorResult register_realtime_task_ex(const std::string& name,
-                                             const RealtimeThreadConfig& config);
-
-    /**
-     * @brief 启动实时任务
-     * 
-     * @param name 任务名称
-     * @return 是否启动成功
-     */
-    bool start_realtime_task(const std::string& name);
+    ExecutorResult register_realtime_task(const std::string& name,
+                                          const RealtimeThreadConfig& config);
 
     /**
      * @brief 启动实时任务并返回可诊断结果
+     *
+     * @param name 任务名称
+     * @return ExecutorResult 携带失败类别与可读原因的诊断结果
      */
-    ExecutorResult start_realtime_task_ex(const std::string& name);
+    ExecutorResult start_realtime_task(const std::string& name);
 
     /**
      * @brief 停止实时任务
@@ -461,17 +408,12 @@ public:
      */
     void stop_realtime_task(const std::string& name);
 
-    bool register_blocking_io_worker(const std::string& name,
-                                     const BlockingIoConfig& config,
-                                     std::unique_ptr<IBlockingIoWorker> worker);
-
-    ExecutorResult register_blocking_io_worker_ex(
+    ExecutorResult register_blocking_io_worker(
         const std::string& name,
         const BlockingIoConfig& config,
         std::unique_ptr<IBlockingIoWorker> worker);
 
-    bool start_blocking_io_worker(const std::string& name);
-    ExecutorResult start_blocking_io_worker_ex(const std::string& name);
+    ExecutorResult start_blocking_io_worker(const std::string& name);
     void stop_blocking_io_worker(const std::string& name);
     BlockingIoExecutorStatus get_blocking_io_worker_status(const std::string& name) const;
     std::vector<std::string> get_blocking_io_worker_list() const;
@@ -620,12 +562,14 @@ public:
     std::map<std::string, TaskStatistics> get_all_task_statistics() const;
 
     /**
-     * @brief 等待默认异步后端已提交的 future 型任务完成
+     * @brief 等待默认异步后端已提交的 future 型任务完成并返回诊断结果
      *
-     * 兼容旧调用方，最多等待 kDefaultWaitForCompletionTimeout。
-     * 超时时不抛异常，但会记录 FailureKind::WaitTimeout。
+     * @param timeout 最长等待时间
+     * @return WaitResult 携带完成状态与可观测诊断；超时时记录
+     *         FailureKind::WaitTimeout，可通过 get_failure_status()
+     *         观察 wait_timeout_count。
      */
-    void wait_for_completion();
+    WaitResult wait_for_completion(std::chrono::milliseconds timeout);
 
     /**
      * @brief 等待默认异步后端已提交的 future 型任务完成并返回是否完成
@@ -643,11 +587,6 @@ public:
     template<typename Rep, typename Period>
     bool wait_for_completion_for(
         const std::chrono::duration<Rep, Period>& timeout);
-
-    /**
-     * @brief 等待默认异步后端已提交的 future 型任务完成并返回诊断结果
-     */
-    WaitResult wait_for_completion_ex(std::chrono::milliseconds timeout);
 
     /**
      * @brief 当前默认异步执行器是否没有排队或执行中的任务
@@ -681,22 +620,16 @@ public:
     void set_snapshot_diagnostic_callback(ExecutorSnapshotCallback callback);
 
     /**
-     * @brief 注册 GPU 执行器
-     * 
+     * @brief 注册 GPU 执行器并返回可诊断结果
+     *
      * 创建并注册 GPU 执行器。
-     * 
+     *
      * @param name 执行器名称
      * @param config GPU 执行器配置
-     * @return 是否注册成功
+     * @return ExecutorResult 携带失败类别与可读原因的诊断结果
      */
-    bool register_gpu_executor(const std::string& name,
-                              const gpu::GpuExecutorConfig& config);
-
-    /**
-     * @brief 注册 GPU 执行器并返回可诊断结果
-     */
-    ExecutorResult register_gpu_executor_ex(const std::string& name,
-                                            const gpu::GpuExecutorConfig& config);
+    ExecutorResult register_gpu_executor(const std::string& name,
+                                         const gpu::GpuExecutorConfig& config);
 
     /**
      * @brief 提交 GPU kernel 任务
@@ -744,31 +677,6 @@ public:
      * @return 执行器名称到状态的映射
      */
     std::map<std::string, gpu::GpuExecutorStatus> get_all_gpu_executor_status() const;
-
-    /**
-     * @brief 自动选择 CPU/GPU 执行器提交任务（legacy overload）
-     *
-     * 根据任务特征自动选择 CPU 或 GPU 执行器。
-     * 如果选择 GPU，调用 submit_gpu()；如果选择 CPU，在 CPU 线程池执行。
-     *
-     * @deprecated 迁移期内保持现有语义：CPU 路径会以 nullptr stream 调用
-     * kernel，GPU 不可用时不会隐式回退。新代码应使用 cpu_gpu_task()，由两条
-     * 明确 callable 表达 CPU 与 GPU 路径。
-     *
-     * @tparam KernelFunc GPU kernel 函数类型
-     * @param characteristics 任务特征（数据大小、计算强度等）
-     * @param gpu_executor_name GPU 执行器名称（GPU 被选中时使用）
-     * @param kernel GPU kernel 函数（需支持 nullptr stream 用于 CPU 执行）
-     * @param gpu_config GPU 任务配置（GPU 被选中时使用）
-     * @return std::future<void> 任务执行结果的 future
-     */
-    template<typename KernelFunc>
-    auto submit_auto(
-        const gpu::TaskCharacteristics& characteristics,
-        const std::string& gpu_executor_name,
-        KernelFunc&& kernel,
-        const gpu::GpuTaskConfig& gpu_config)
-        -> std::future<void>;
 
     /**
      * @brief 提交一般 CPU 任务到自动路由入口。
@@ -958,7 +866,7 @@ private:
      * @brief submit_delayed 系列的统一实现。
      *
      * kInjectToken 为 true 时向 callable 首位注入 StopToken。返回句柄 +
-     * future；legacy submit_delayed() 丢弃句柄保持旧返回类型。
+     * future；submit_delayed() 返回句柄与 future。
      */
     template <bool kInjectToken, typename F, typename... Args>
     auto submit_delayed_impl(int64_t delay_ms, F&& f, Args&&... args)
@@ -1081,7 +989,7 @@ private:
     // 依赖图任务的超时定时器以此为时长、自提交时刻起算（D1，见
     // docs/design/dependency_driven_scheduling.md）：池自身的队列计时器
     // 在出队后才武装，parked 期间的预算由 facade 定时器覆盖。取值与
-    // initialize_ex 的 ExecutorConfig.task_timeout_ms 一致——默认池正是
+    // initialize 的 ExecutorConfig.task_timeout_ms 一致——默认池正是
     // 由同一配置创建。
     std::atomic<int64_t> default_task_timeout_ms_{0};
     // 超时闭包墓地：输家/赢家 on_timeout 闭包的 promise/state 捕获转入
@@ -1171,7 +1079,7 @@ private:
 template<typename Rep, typename Period>
 bool Executor::wait_for_completion_for(
     const std::chrono::duration<Rep, Period>& timeout) {
-    return wait_for_completion_ex(
+    return wait_for_completion(
         std::chrono::duration_cast<std::chrono::milliseconds>(timeout)).completed;
 }
 
@@ -2402,21 +2310,13 @@ auto Executor::submit_priority(int priority, F&& f, Args&&... args)
 
 template<typename F, typename... Args>
 auto Executor::submit_delayed(int64_t delay_ms, F&& f, Args&&... args)
-    -> std::future<typename std::invoke_result<F, Args...>::type> {
-    // legacy 变体：保持只返回 future；句柄被丢弃，因此不可按句柄取消。
-    return submit_delayed_impl<false>(
-        delay_ms, std::forward<F>(f), std::forward<Args>(args)...).future;
-}
-
-template<typename F, typename... Args>
-auto Executor::submit_delayed_with_handle(int64_t delay_ms, F&& f, Args&&... args)
     -> TimerSubmission<typename std::invoke_result<F, Args...>::type> {
     return submit_delayed_impl<false>(
         delay_ms, std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template<typename F, typename... Args>
-auto Executor::submit_delayed_cancellable_with_handle(
+auto Executor::submit_delayed_cancellable(
     int64_t delay_ms, F&& f, Args&&... args)
     -> TimerSubmission<typename std::invoke_result<F, StopToken, Args...>::type> {
     return submit_delayed_impl<true>(
@@ -2910,36 +2810,6 @@ auto Executor::submit_gpu(const std::string& executor_name,
         throw std::runtime_error("GPU executor '" + executor_name + "' not found. Call register_gpu_executor() first.");
     }
     return executor->submit_kernel(std::forward<KernelFunc>(kernel), config);
-}
-
-// 智能调度模板方法实现
-template<typename KernelFunc>
-auto Executor::submit_auto(
-    const gpu::TaskCharacteristics& characteristics,
-    const std::string& gpu_executor_name,
-    KernelFunc&& kernel,
-    const gpu::GpuTaskConfig& gpu_config)
-    -> std::future<void> {
-
-    TaskOptions routing_options;
-    routing_options.name = "facade_submit_auto_legacy";
-    routing_options.intent = ExecutionIntent::CpuOrGpu;
-    routing_options.preferred_executor = gpu_executor_name;
-    record_routing_decision(route_task(
-        routing_options,
-        true,
-        scheduler_.decide(characteristics) == gpu::ExecutorChoice::GPU));
-
-    auto choice = scheduler_.decide(characteristics);
-
-    if (choice == gpu::ExecutorChoice::GPU) {
-        return submit_gpu(gpu_executor_name, std::forward<KernelFunc>(kernel), gpu_config);
-    } else {
-        // CPU fallback: execute kernel with nullptr stream
-        return submit([kernel = std::forward<KernelFunc>(kernel)]() mutable {
-            kernel(nullptr);
-        });
-    }
 }
 
 template<typename F, typename... Args>

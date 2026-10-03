@@ -11,7 +11,7 @@ executor.set_failure_callback([](const executor::ExecutorFailureEvent& event) {
     report_failure(event.kind, event.message);
 });
 
-const auto wait = executor.wait_for_completion_ex(std::chrono::seconds(1));
+const auto wait = executor.wait_for_completion(std::chrono::seconds(1));
 const auto status = executor.get_completion_status();
 const auto snapshot = executor.get_snapshot_text();
 ```

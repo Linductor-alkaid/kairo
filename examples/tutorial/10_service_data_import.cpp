@@ -14,7 +14,7 @@ int main() {
     config.min_threads = 2;
     config.max_threads = 2;
     config.queue_capacity = 32;
-    if (!executor.initialize_ex(config)) {
+    if (!executor.initialize(config)) {
         return 1;
     }
 
@@ -59,7 +59,7 @@ int main() {
     }
 
     const auto drained =
-        executor.wait_for_completion_ex(std::chrono::seconds{1});
+        executor.wait_for_completion(std::chrono::seconds{1});
     std::cout << "prepared=" << (is_prepared ? "yes" : "no")
               << ", schema=" << schema_name
               << ", table=" << table_name << '\n';

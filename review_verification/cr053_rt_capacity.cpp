@@ -55,7 +55,7 @@ int main() {
 
     size_t ok = 0, failed = 0;
     for (size_t i = 0; i < kPushCount; ++i) {
-        if (executor.push_task_ex([] {})) {
+        if (executor.push_task([] {})) {
             ++ok;
         } else {
             ++failed;

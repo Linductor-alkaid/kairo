@@ -86,7 +86,7 @@ bool test_high_concurrency() {
         thread.join();
     }
     
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     
     auto end_time = std::chrono::steady_clock::now();
     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -278,7 +278,7 @@ bool test_long_running() {
     submitter.join();
     
     // 等待所有任务完成
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     
     auto end_time = std::chrono::steady_clock::now();

@@ -303,7 +303,6 @@ struct RealtimeExecutorStatus {
     bool cpu_affinity_applied = false;            // 请求的 CPU 亲和性是否成功应用；Android 受 cgroup/SELinux 限制
     bool process_memory_lock_applied = false;     // 请求的进程级 mlockall 是否成功应用；Android 普通 App 通常为 false
     int process_memory_lock_errno = 0;            // mlockall 失败时的 errno；未请求或成功时为 0
-    bool memory_locked = false;                   // 兼容字段，等同于 process_memory_lock_applied
     bool timer_slack_applied = false;             // 请求的 timer slack 是否成功应用；Android 厂商内核可能忽略
     // P-001 (260615): 背压可见性字段
     uint64_t dropped_task_count = 0;              // 累计丢任务数 (未运行+空任务+队列满+池耗尽, 始终累计)

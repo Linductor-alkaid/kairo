@@ -4,6 +4,72 @@
 
 ---
 
+## 从 0.5.x 升级到 0.6.0：项目更名 kairo + 兼容层清理
+
+0.6.0 是破坏性变更窗口，包含两类变化：项目更名为 kairo，以及历史兼容层
+的全面移除。**历史版本的 `_ex` 后缀 API 与弱兼容 API 全部清理**，主名由
+可诊断的 Result 版本接管。
+
+### 更名（Executor → kairo）
+
+- namespace：`executor::` → `kairo::`。领域类名不变（`kairo::Executor`、
+  `kairo::ExecutorManager` 等）。
+- include 路径：`<executor/...>` → `<kairo/...>`，目录 `include/kairo/`。
+- CMake：`find_package(executor)` → `find_package(kairo)`，target
+  `executor::executor` → `kairo::kairo`，产物 `libexecutor` → `libkairo`，
+  构建选项/宏 `EXECUTOR_*` → `KAIRO_*`（如 `-DKAIRO_ENABLE_GPU=ON`）。
+- 项目图标：`docs/executor.svg` → `docs/kairo.png`。
+
+### `initialize` / `wait_for_completion` / 注册类 API
+
+旧 `bool`/`void` 弱版本删除，`_ex` 版本接管主名（返回类型不变）：
+
+| 0.5.x | 0.6.0 |
+|---|---|
+| `bool initialize(cfg)` / `ExecutorResult initialize_ex(cfg)` | `ExecutorResult initialize(cfg)` |
+| `void wait_for_completion()` | `WaitResult wait_for_completion(std::chrono::milliseconds)` |
+| `WaitResult wait_for_completion_ex(ms)` | `wait_for_completion(ms)` |
+| `bool register_realtime_task(...)` / `_ex` | `ExecutorResult register_realtime_task(...)` |
+| `bool start_realtime_task(...)` / `_ex` | `ExecutorResult start_realtime_task(...)` |
+| `bool register_blocking_io_worker(...)` / `_ex` | `ExecutorResult register_blocking_io_worker(...)` |
+| `bool start_blocking_io_worker(...)` / `_ex` | `ExecutorResult start_blocking_io_worker(...)` |
+| `bool register_gpu_executor(...)` / `_ex` | `ExecutorResult register_gpu_executor(...)` |
+
+注意 `ExecutorResult`/`WaitResult` 的 `operator bool` 是 explicit：
+`if (ex.initialize(cfg))` 与 `ASSERT_TRUE(...)` 继续编译，但
+`bool ok = ex.initialize(cfg);` 这类拷贝初始化需改为 `auto ok = ...`。
+
+### 定时器 API（submit_delayed / submit_periodic / cancel_task）
+
+字符串任务 ID 体系删除，句柄体系接管主名：
+
+| 0.5.x | 0.6.0 |
+|---|---|
+| `submit_delayed(ms, f) -> future` | `submit_delayed(ms, f) -> TimerSubmission<T>`（`.future` / `.handle`） |
+| `submit_delayed_with_handle(ms, f)` | `submit_delayed(ms, f)` |
+| `submit_delayed_cancellable_with_handle(ms, f)` | `submit_delayed_cancellable(ms, f)` |
+| `submit_periodic(ms, f) -> std::string` | `submit_periodic(ms, f) -> TimerHandle` |
+| `submit_periodic_with_handle(ms, f)` | `submit_periodic(ms, f)` |
+| `submit_periodic_cancellable_with_handle(ms, f)` | `submit_periodic_cancellable(ms, f)` |
+| `cancel_task(task_id)` | `handle.cancel()`（返回 `TimerOperationResult`） |
+| `get_periodic_task_status(task_id)` | 保留；id 用 `handle.id()` 获取 |
+
+### 其他清理
+
+- `IRealtimeExecutor::push_task()` 从 `void` 改为返回
+  `ExecutorResult`（0.2.2 P-001 的 ABI 兼容约束解除），
+  `push_task_ex()` 删除。外部派生类需更新 override 签名。
+- 4 参 legacy `submit_auto(characteristics, gpu_name, kernel, gpu_config)`
+  删除；使用 `cpu_gpu_task()` / `submit_auto(CpuGpuTask)`。
+- comm 组件的 `is_lock_free()` 别名删除；使用
+  `is_synchronization_lock_free()`。
+- `RealtimeExecutorStatus::memory_locked` 兼容字段删除；使用
+  `process_memory_lock_applied`。
+- 保留：`StopToken`/`JThread` 平台兼容层；`ExecutorConfig` 队列容量
+  0=不限的语义。
+
+---
+
 ## 从 0.5.2 升级到 0.5.3：评审修复与定时器事件驱动
 
 0.5.3 是稳定性与性能维护版本，公开 API 签名与既有语义保持兼容，无需改
