@@ -13,7 +13,7 @@ English pages use the same repository examples and commands as Chinese pages; no
 | Chinese route | English route | Status | Fact source |
 | --- | --- | --- | --- |
 | `/` | `/en/` | Published | Repository README and tutorial example `01` |
-| `/zh/getting-started/what-is-executor` | `/en/getting-started/what-is-executor` | Published | Repository README capability boundaries, public Facade, and website design guidance |
+| `/zh/getting-started/what-is-kairo` | `/en/getting-started/what-is-kairo` | Published | Repository README capability boundaries, public Facade, and website design guidance |
 | `/zh/quick-start/build` | `/en/quick-start/build` | Published | `docs/BUILD.md` |
 | `/zh/quick-start/first-task` | `/en/quick-start/first-task` | Published | `examples/tutorial/01_first_task.cpp` |
 | `/zh/guides/execution-models-and-routing` | `/en/guides/execution-models-and-routing` | Published | Unified Facade routing and result-model public APIs |

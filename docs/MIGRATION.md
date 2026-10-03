@@ -68,6 +68,31 @@
 - 保留：`StopToken`/`JThread` 平台兼容层；`ExecutorConfig` 队列容量
   0=不限的语义。
 
+### Scheduling Runtime（新增能力，非 breaking）
+
+0.6.0 核心主题：调度决策解耦为可注入的 `IScheduler`
+（`<kairo/scheduler.hpp>`），并引入统一的任务调度模型
+（`<kairo/scheduling.hpp>`；设计见 `docs/design/scheduling_runtime.md`）。
+不迁移任何代码即可继续使用——`submit_auto(task(...))` 行为不变。新能力：
+
+```cpp
+auto result = ex.submit_auto(
+    kairo::task([] { return compute(); })
+        .qos(kairo::QosClass::Interactive)   // 未显式 priority 时映射排队优先级
+        .deadline(std::chrono::steady_clock::now() + std::chrono::seconds(1))
+        .affinity(kairo::AffinityHint{{0, 1}})
+        .resources(kairo::ResourceRequirements{.memory_bytes = 1u << 28,
+                                               .gpu_device = 0}));
+```
+
+- `deadline`：同优先级内 EDF 排序；提交时已过期被拒绝；开始执行时已
+  错过记录 `DeadlineMissed`（`deadline_missed_count`），任务仍执行。
+- `qos`：未显式 priority 时映射默认排队优先级；严格优先级无 aging
+  （CR-024 契约），BestEffort 可被饿死。
+- `affinity`/`resources`：advisory 诊断与 GPU 声明核对（不满足时拒绝）。
+- 自定义调度器：`ex.set_scheduler(std::make_unique<MyScheduler>())`
+  （首次提交前调用；`nullptr` 恢复默认）。
+
 ---
 
 ## 从 0.5.2 升级到 0.5.3：评审修复与定时器事件驱动

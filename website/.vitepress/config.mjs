@@ -15,7 +15,7 @@ export default defineConfig({
       title: 'Kairo Guide',
       description: 'In-process concurrency infrastructure for C++20 applications: one facade for ordinary async tasks, low-latency queues, periodic realtime threads, long-lived blocking I/O, and optional GPU work.',
       themeConfig: {
-        logo: '/executor.svg',
+        logo: '/kairo.svg',
         siteTitle: 'Kairo Guide',
         nav: [
           { text: 'Quick Start', link: '/en/quick-start/build' },
@@ -24,7 +24,7 @@ export default defineConfig({
           {
             text: 'Reference',
             items: [
-              { text: 'Versions and Migration · v0.5.3', link: '/en/reference/version-and-migration' },
+              { text: 'Versions and Migration · v0.6.0', link: '/en/reference/version-and-migration' },
               { text: 'API Reference', link: '/en/reference/api' }
             ]
           },
@@ -184,13 +184,13 @@ export default defineConfig({
     }
   },
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/kairo/executor.svg?v=1', sizes: 'any' }],
-    ['link', { rel: 'shortcut icon', type: 'image/svg+xml', href: '/kairo/executor.svg?v=1' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/kairo/kairo.svg?v=1', sizes: 'any' }],
+    ['link', { rel: 'shortcut icon', type: 'image/svg+xml', href: '/kairo/kairo.svg?v=1' }],
     ['meta', { name: 'keywords', content: 'C++20, task executor, thread pool, real-time, realtime, robotics, lock-free, concurrent programming, C++ 任务执行器, 线程池, 实时系统, 机器人, 无锁' }],
     ['meta', { name: 'theme-color', content: '#181d26' }]
   ],
   themeConfig: {
-    logo: '/executor.svg',
+    logo: '/kairo.svg',
     siteTitle: 'Kairo 使用手册',
     nav: [
       { text: '快速开始', link: '/zh/quick-start/build' },
@@ -199,7 +199,7 @@ export default defineConfig({
       {
         text: '参考',
         items: [
-          { text: '版本与迁移 · v0.5.3', link: '/zh/reference/version-and-migration' },
+          { text: '版本与迁移 · v0.6.0', link: '/zh/reference/version-and-migration' },
           { text: '完整 API 参考', link: '/zh/reference/api' }
         ]
       },

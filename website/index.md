@@ -10,7 +10,7 @@ hero:
       link: /zh/quick-start/build
     - theme: alt
       text: 了解 Executor
-      link: /zh/getting-started/what-is-executor
+      link: /zh/getting-started/what-is-kairo
 features:
   - title: 先完成一个任务
     details: 从 submit_auto() 和 future.get() 开始，不要求先理解线程池、GPU 或实时调度器。
@@ -33,7 +33,7 @@ executor.shutdown();
 
 ## 能力边界
 
-Executor 不是协程运行时、分布式消息系统或硬实时操作系统；它不能安全地强制终止任意正在运行的 C++ 函数，`submit_periodic()` 只是普通线程池上的软周期任务。完整边界（含 0.4.0 起的同步无锁保证）见 [Executor 是什么](/zh/getting-started/what-is-executor)。
+Executor 不是协程运行时、分布式消息系统或硬实时操作系统；它不能安全地强制终止任意正在运行的 C++ 函数，`submit_periodic()` 只是普通线程池上的软周期任务。完整边界（含 0.4.0 起的同步无锁保证）见 [Executor 是什么](/zh/getting-started/what-is-kairo)。
 
 ## 从这里继续
 
