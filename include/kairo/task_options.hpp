@@ -216,7 +216,7 @@ inline TaskPriority default_priority_for_qos(QosClass qos) noexcept {
         return TaskPriority::LOW;
     case QosClass::Interactive:
         return TaskPriority::HIGH;
-    case QosClass::HardRealtime:
+    case QosClass::Critical:
         return TaskPriority::CRITICAL;
     case QosClass::Standard:
     default:

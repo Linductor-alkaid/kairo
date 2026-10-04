@@ -118,18 +118,17 @@ TEST(SchedulingModelTypes, QosClassValuesAndStableNames) {
     static_assert(static_cast<uint8_t>(QosClass::BestEffort) == 0);
     static_assert(static_cast<uint8_t>(QosClass::Standard) == 1);
     static_assert(static_cast<uint8_t>(QosClass::Interactive) == 2);
-    static_assert(static_cast<uint8_t>(QosClass::HardRealtime) == 3);
+    static_assert(static_cast<uint8_t>(QosClass::Critical) == 3);
 
     EXPECT_STREQ(qos_class_to_string(QosClass::BestEffort), "BestEffort");
     EXPECT_STREQ(qos_class_to_string(QosClass::Standard), "Standard");
     EXPECT_STREQ(qos_class_to_string(QosClass::Interactive), "Interactive");
-    EXPECT_STREQ(qos_class_to_string(QosClass::HardRealtime), "HardRealtime");
+    EXPECT_STREQ(qos_class_to_string(QosClass::Critical), "Critical");
 }
 
 TEST(SchedulingModelTypes, StructDefaults) {
     AffinityHint affinity;
     EXPECT_TRUE(affinity.cpus.empty());
-    EXPECT_FALSE(affinity.exclusive);
 
     ResourceRequirements resources;
     EXPECT_EQ(resources.memory_bytes, 0u);
@@ -154,7 +153,7 @@ TEST(SchedulingQosMapping, DefaultPriorityForAllQosClasses) {
     EXPECT_EQ(default_priority_for_qos(QosClass::BestEffort), TaskPriority::LOW);
     EXPECT_EQ(default_priority_for_qos(QosClass::Standard), TaskPriority::NORMAL);
     EXPECT_EQ(default_priority_for_qos(QosClass::Interactive), TaskPriority::HIGH);
-    EXPECT_EQ(default_priority_for_qos(QosClass::HardRealtime), TaskPriority::CRITICAL);
+    EXPECT_EQ(default_priority_for_qos(QosClass::Critical), TaskPriority::CRITICAL);
 }
 
 TEST(SchedulingQosMapping, TaskBuilderQosDoesNotSetPriorityFlag) {
@@ -166,10 +165,10 @@ TEST(SchedulingQosMapping, TaskBuilderQosDoesNotSetPriorityFlag) {
 }
 
 TEST(SchedulingQosMapping, ExplicitPrioritySetsFlagAndWinsOverQos) {
-    auto built = task([] {}).qos(QosClass::HardRealtime).priority(TaskPriority::LOW);
+    auto built = task([] {}).qos(QosClass::Critical).priority(TaskPriority::LOW);
     EXPECT_TRUE(built.options().priority_set);
     EXPECT_EQ(built.options().priority, TaskPriority::LOW);
-    EXPECT_EQ(built.options().qos, QosClass::HardRealtime);
+    EXPECT_EQ(built.options().qos, QosClass::Critical);
 }
 
 TEST(SchedulingQosMapping, CpuGpuTaskQosSyncsGpuConfigUnlessExplicitPriority) {
@@ -182,7 +181,7 @@ TEST(SchedulingQosMapping, CpuGpuTaskQosSyncsGpuConfigUnlessExplicitPriority) {
     cg.priority(TaskPriority::LOW);  // 显式设置后 QoS 不再覆盖
     EXPECT_TRUE(cg.options().priority_set);
     EXPECT_EQ(cg.gpu_config().priority, 0);
-    cg.qos(QosClass::HardRealtime);
+    cg.qos(QosClass::Critical);
     EXPECT_EQ(cg.gpu_config().priority, 0);
 }
 
@@ -196,14 +195,13 @@ TEST(SchedulingTaskBuilder, SchedulingSettersPopulateOptions) {
                      .name("builder-extended")
                      .deadline(at)
                      .qos(QosClass::BestEffort)
-                     .affinity(AffinityHint{{2, 3}, true})
+                     .affinity(AffinityHint{{2, 3}})
                      .resources(ResourceRequirements{4096, 0});
 
     ASSERT_TRUE(built.options().deadline.has_value());
     EXPECT_EQ(built.options().deadline->time_since_epoch(), at.time_since_epoch());
     EXPECT_EQ(built.options().qos, QosClass::BestEffort);
     EXPECT_EQ(built.options().affinity.cpus, (std::vector<int>{2, 3}));
-    EXPECT_TRUE(built.options().affinity.exclusive);
     EXPECT_EQ(built.options().resources.memory_bytes, 4096u);
     EXPECT_EQ(built.options().resources.gpu_device, 0);
 }
@@ -476,7 +474,7 @@ TEST(SchedulingQosEndToEnd, AllQosClassesSubmitAndExecute) {
 
     std::atomic<int> executed{0};
     const QosClass classes[] = {QosClass::BestEffort, QosClass::Standard,
-                                QosClass::Interactive, QosClass::HardRealtime};
+                                QosClass::Interactive, QosClass::Critical};
     for (const QosClass qos : classes) {
         auto future = executor.submit_auto(task([&executed, qos] {
             executed.fetch_add(1, std::memory_order_relaxed);

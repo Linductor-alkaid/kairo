@@ -374,10 +374,10 @@ auto result = ex.submit_auto(task);
 
 | 模型 | 语义 | 违约行为 |
 |------|------|----------|
-| `deadline` | 同优先级内 EDF 排序；开始执行时已错过记录 `FailureKind::DeadlineMissed`（`deadline_missed_count`），任务仍执行 | 提交时已过期 → 拒绝（`RoutingReason::Rejected`） |
-| `qos` | `BestEffort/Standard/Interactive/HardRealtime` 映射默认排队优先级（LOW/NORMAL/HIGH/CRITICAL）；显式 `priority()` 优先 | 严格优先级无 aging（CR-024）：BestEffort 可被饿死 |
-| `affinity` | per-task advisory；与后端 `bound_cpus` 不相交时写入 `RoutingDecision.detail` 警告，不拒绝 | 不重新绑定 OS 线程 |
-| `resources` | GPU `device`/`memory_bytes` 声明与能力快照核对 | device 不符 → `BackendUnavailable`；内存不足 → `CapacityPressure` |
+| `deadline` | 同优先级内 EDF 排序（层次 `priority → EDF → FIFO`，非全局 EDF）；开始执行时已错过记录 `FailureKind::DeadlineMissed`（`deadline_missed_count`），任务仍执行 | 提交时已过期 → 拒绝（`RoutingReason::Rejected`） |
+| `qos` | `BestEffort/Standard/Interactive/Critical` 映射默认排队优先级（LOW/NORMAL/HIGH/CRITICAL）；显式 `priority()` 优先。QoS 是排队优先级 preset，不提供抢占/延迟界/带宽保证 | 严格优先级无 aging（CR-024）：BestEffort 可被饿死 |
+| `affinity` | per-task advisory；与后端 `bound_cpus` 不相交时写入 `RoutingDecision.detail` 警告，不拒绝 | 不重新绑定 OS 线程，无独占核保留 |
+| `resources` | GPU `device`/`memory_bytes` 声明与能力快照核对（feasibility hint，非资源保证；存在 TOCTOU 窗口） | device 不符 → `BackendUnavailable`；内存不足 → `CapacityPressure` |
 
 自定义调度器：`ex.set_scheduler(std::make_unique<MyScheduler>())`
 （须在首次提交前调用；`nullptr` 恢复默认）。调度器只产出决策，

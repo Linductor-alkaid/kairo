@@ -10,17 +10,19 @@ namespace kairo {
 /**
  * @brief 任务服务质量类别（0.6.0 Scheduling Runtime）。
  *
- * QoS 是任务向调度器声明的服务期望，决定默认池内的排队优先级映射
- * （default_priority_for_qos()，见 task_options.hpp）。它不改变执行
- * 模型——硬实时周期执行仍须通过 RealtimeQueue 意图与专用实时线程表达
- * （见 ExecutionIntent）。
+ * QoS 是任务向调度器声明的排队优先级 preset，决定默认池内的排队
+ * 优先级映射（default_priority_for_qos()，见 task_options.hpp）。
+ * 它不改变执行模型——硬实时周期执行仍须通过 RealtimeQueue 意图与
+ * 专用实时线程表达（见 ExecutionIntent）；也不提供带宽、延迟界或
+ * 实时性保证。
  */
 enum class QosClass : uint8_t {
     BestEffort,   // 后台/可延迟工作；映射 LOW。严格优先级下可能被持续
                   // 的高优先级负载饿死（CR-024 契约），适合可丢弃负载
     Standard,     // 默认；映射 NORMAL
     Interactive,  // 延迟敏感；映射 HIGH
-    HardRealtime  // 映射 CRITICAL 排队优先级；但池内任务不会被抢占，
+    Critical      // 映射 CRITICAL 排队优先级。QoS 是排队优先级 preset，
+                  // 不提供抢占、延迟界或带宽保证；池内任务不会被抢占，
                   // 需要周期确定性时必须改用 RealtimeQueue 意图
 };
 
@@ -37,7 +39,6 @@ const char* qos_class_to_string(QosClass qos) noexcept;
  */
 struct AffinityHint {
     std::vector<int> cpus;     // 空 = 无约束
-    bool exclusive = false;    // 请求独占核（advisory；诊断可见）
 };
 
 /**

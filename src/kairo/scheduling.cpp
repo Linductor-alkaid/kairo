@@ -8,8 +8,8 @@ const char* qos_class_to_string(QosClass qos) noexcept {
         return "BestEffort";
     case QosClass::Interactive:
         return "Interactive";
-    case QosClass::HardRealtime:
-        return "HardRealtime";
+    case QosClass::Critical:
+        return "Critical";
     case QosClass::Standard:
     default:
         return "Standard";
