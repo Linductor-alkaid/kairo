@@ -15,7 +15,7 @@ export default defineConfig({
       title: 'Kairo Guide',
       description: 'In-process concurrency infrastructure for C++20 applications: one facade for ordinary async tasks, low-latency queues, periodic realtime threads, long-lived blocking I/O, and optional GPU work.',
       themeConfig: {
-        logo: '/kairo.svg',
+        logo: '/kairo-logo.png',
         siteTitle: 'Kairo Guide',
         nav: [
           { text: 'Quick Start', link: '/en/quick-start/build' },
@@ -185,13 +185,13 @@ export default defineConfig({
     }
   },
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/kairo/kairo.svg?v=1', sizes: 'any' }],
-    ['link', { rel: 'shortcut icon', type: 'image/svg+xml', href: '/kairo/kairo.svg?v=1' }],
+    ['link', { rel: 'icon', type: 'image/png', href: '/kairo/kairo-favicon.png?v=2', sizes: '64x64' }],
+    ['link', { rel: 'apple-touch-icon', href: '/kairo/kairo-180.png?v=2' }],
     ['meta', { name: 'keywords', content: 'C++20, task executor, thread pool, real-time, realtime, robotics, lock-free, concurrent programming, C++ 任务执行器, 线程池, 实时系统, 机器人, 无锁' }],
     ['meta', { name: 'theme-color', content: '#181d26' }]
   ],
   themeConfig: {
-    logo: '/kairo.svg',
+    logo: '/kairo-logo.png',
     siteTitle: 'Kairo 使用手册',
     nav: [
       { text: '快速开始', link: '/zh/quick-start/build' },

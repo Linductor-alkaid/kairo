@@ -217,7 +217,7 @@
 }
 
 .dark .VPButton.brand { background: #f8fafc; border-color: #f8fafc; color: #181d26; }
-.dark .VPNavBarTitle .logo { content: url('/executor/kairo-dark.svg'); }
+.dark .VPNavBarTitle .logo { content: url('/kairo/kairo-logo.png'); }
 .dark .language-switch { color: #e0e2e6; }
 .dark .VPButton.brand:active { background: #e0e2e6; border-color: #e0e2e6; }
 .dark .VPButton.alt { background: transparent; border-color: #9297a0; color: #f8fafc; }
