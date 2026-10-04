@@ -465,12 +465,16 @@ bool test_submit_periodic() {
     TEST_ASSERT(periodic_handle.cancel() == kairo::TimerOperationResult::CancelledBeforeDispatch,
                 "Task cancellation should succeed");
     
-    // 等待一段时间，验证任务不再执行
+    // 等待一段时间，验证任务不再产生新 tick。契约（见 docs/design/
+    // task_cancellation_and_timers.md）：cancel 阻止后续 tick，但不追回
+    // 已登记的在途 tick——在慢 runner（如 Windows Debug）上该 tick 可能
+    // 在 cancel 之后才取得执行权，因此容忍至多一次在途执行。
     int count_before = execution_count.load();
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
     int count_after = execution_count.load();
     
-    TEST_ASSERT(count_after == count_before, "Task should not execute after cancellation");
+    TEST_ASSERT(count_after - count_before <= 1,
+                "Task should not execute more than one in-flight tick after cancellation");
     
     executor.shutdown();
     

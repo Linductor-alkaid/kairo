@@ -344,7 +344,14 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
             LABELS "integration;concurrency;thread_pool"
             TIMEOUT 120
         )
-    elseif(TEST_NAME MATCHES "^test_(util|task|thread_pool|thread_pool_empty_task_rejection|statistics_collector|task_monitor|cuda_executor|gpu_memory_manager|push_task_ex_default)$")
+    elseif(TEST_NAME STREQUAL "test_thread_pool")
+        # 核心线程池测试含多组压力子用例，CI 高负载下 30s 会超时
+        #（master CI 两次偶发 Timeout；本地直跑恒绿）。
+        set_tests_properties(${TEST_NAME} PROPERTIES
+            LABELS "unit;concurrency;thread_pool"
+            TIMEOUT 120
+        )
+    elseif(TEST_NAME MATCHES "^test_(util|task|thread_pool_empty_task_rejection|statistics_collector|task_monitor|cuda_executor|gpu_memory_manager|realtime_push_task_contract)$")
         set_tests_properties(${TEST_NAME} PROPERTIES
             LABELS "unit"
             TIMEOUT 30
