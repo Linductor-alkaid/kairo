@@ -58,9 +58,9 @@
   保持"取消是请求不是中断"，错过的任务仍执行。
 - **QoS 模型**：`QosClass{BestEffort, Standard, Interactive, Critical}`
   在未显式设置 priority 时映射默认排队优先级；QoS 定位为排队优先级
-  preset（命名有意避开 HardRealtime——硬实时语义预留给 RealtimeQueue
-  执行模型）；严格优先级无 aging 的 CR-024 契约文档化（BestEffort
-  可被饿死，防饿死在应用层拆分）。
+  preset，不提供抢占、延迟界或实时性保证（确定性周期使用
+  RealtimeQueue 意图 + 专用实时线程）；严格优先级无 aging 的 CR-024
+  契约文档化（BestEffort 可被饿死，防饿死在应用层拆分）。
 - **affinity 模型**：per-task advisory 亲和提示，与后端绑核集合不相交时
   在路由决策 detail 给出 `AffinityMismatch` 警告（不拒绝、不重绑线程）。
 - **resource 模型**：声明式 `gpu_device`/`memory_bytes` 与能力快照核对，

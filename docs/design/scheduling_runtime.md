@@ -69,11 +69,9 @@ Executor::set_scheduler(std::unique_ptr<IScheduler>);  // nullptr 恢复默认
   Critical→CRITICAL（`default_priority_for_qos()`）；
   `TaskBuilder::priority()` 显式设置后 QoS 不再覆盖。
 - `CpuGpuTask::qos()` 同步映射到 `gpu_config.priority`。
-- **语义定位（0.6.0 评审确认）**：QoS 是**排队优先级 preset**，不是
-  完整的 QoS policy——它不提供带宽、延迟界、抢占或实时性保证。
-  命名有意避开 "HardRealtime"：真正的硬实时（周期确定性）必须使用
-  RealtimeQueue 意图 + 专用实时线程执行模型，该名称预留给未来具备
-  对应执行模型与系统约束的能力。
+- **语义定位**：QoS 是**排队优先级 preset**，不是完整的 QoS
+  policy——它不提供带宽、延迟界、抢占或实时性保证。真正的硬实时
+  （周期确定性）必须使用 RealtimeQueue 意图 + 专用实时线程执行模型。
 - **饥饿契约（CR-024）**：PriorityScheduler 保持严格优先级、无自动
   aging——持续高优先级负载会饿死 BestEffort。这是有意设计（实时场景
   要求高优先级零干扰）；防饿死应在应用层拆分流量或使用独立执行器。
@@ -86,11 +84,7 @@ Executor::set_scheduler(std::unique_ptr<IScheduler>);  // nullptr 恢复默认
   新维度）的相交性：不相交时任务仍被接受，但
   `RoutingDecision.detail` 附加 `AffinityMismatch` 警告。
 - 线程绑核是后端启动期属性（ThreadPoolConfig::cpu_affinity 等）；
-  per-task hint 不会重新绑定 OS 线程。
-- **设计决定（0.6.0 评审）**：不公开 `exclusive` 字段。声明一个暂时
-  没有行为差异的强语义字段，长期比暂时缺少字段更容易产生兼容性
-  负担；独占核请求留待真正实现 CPU reservation / exclusive ownership
-  语义时随对应 enforcement 一起公开。
+  per-task hint 不会重新绑定 OS 线程，也不提供独占核保留。
 
 ### 3.4 resource
 
@@ -119,7 +113,7 @@ submit_auto(TaskBuilder)
   → worker 执行前 deadline 检查 → DeadlineMissed 诊断（不中断）
 ```
 
-## 5. 演进方向（0.6.0 评审记录，非本版承诺）
+## 5. 演进方向（非本版承诺）
 
 以下扩展点在 0.6.0 中只保留接口/文档空间，不提前实现：
 
@@ -141,8 +135,8 @@ submit_auto(TaskBuilder)
   missed、failure kind、实际资源用量，形成
   `decision → execution → measurement → feedback → next decision`
   闭环，支撑 adaptive/load-aware scheduler。
-- **独占核 reservation**：`AffinityHint` 的独占语义随 CPU reservation
-  机制一起引入（见 3.3 设计决定）。
+- **独占核 reservation**：CPU reservation / exclusive ownership 语义
+  随 resource reservation 机制一起引入（见 3.4）。
 
 ## 6. 测试与验证
 
