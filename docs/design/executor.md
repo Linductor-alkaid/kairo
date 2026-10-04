@@ -1,5 +1,9 @@
 # Executor 工具项目架构设计
 
+> [!NOTE]
+> 原始架构总纲（0.1 时代设计快照）。项目现名 kairo，命名空间为 `kairo::`；0.6.0 起 Scheduling Runtime 的设计另见 scheduling_runtime.md。
+
+
 ## 概述
 
 `executor` 是一个轻量级的任务执行和线程管理工具库，为应用程序提供统一的线程管理和任务调度服务。该工具采用混合架构设计，支持两种执行模式：**线程池模式**用于普通并发任务，**专用实时线程模式**用于高实时性要求的任务（如实时通信、传感器采集）。通过集中式管理，提高CPU利用率，确保系统的高效并发执行。
@@ -975,8 +979,9 @@ auto Executor::submit_delayed(int64_t delay_ms, F&& f, Args&&... args)
 std::string Executor::submit_periodic(int64_t period_ms, 
                                         std::function<void()> task);
 
-// 取消任务
-bool Executor::cancel_task(const std::string& task_id);
+// 0.6.0 起定时器取消统一为句柄模型（历史设计中的字符串 ID
+// cancel_task(task_id) 已移除，见 CHANGELOG 0.6.0）：
+TimerHandle submit_periodic(int64_t period_ms, std::function<void()> task);
 ```
 
 **3. 实时任务注册API**：

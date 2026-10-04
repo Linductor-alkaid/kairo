@@ -17,12 +17,12 @@ executor 提供的托管入口是 `Executor::start_worker()`（`IBlockingIoWorke
 把外部事件循环挂进去的正确形态（等价于 heyaki 的 `AsioWorker` 路线）：
 
 ```cpp
-class AsioLoopWorker final : public executor::IBlockingIoWorker {
+class AsioLoopWorker final : public kairo::IBlockingIoWorker {
 public:
     explicit AsioLoopWorker(boost::asio::io_context& io) : io_(io) {}
 
     // 托管线程上运行事件循环；stop_token 置位后退出并排空。
-    void run(executor::StopToken stop_token) override {
+    void run(kairo::StopToken stop_token) override {
         // 用一个空任务观察 stop 请求（io_context 自身没有 stop token 概念）。
         boost::asio::post(io_, [this, stop_token] {
             std::thread([this, stop_token] {
@@ -44,7 +44,7 @@ private:
     boost::asio::io_context& io_;
 };
 
-executor::WorkerHandle worker = executor.start_worker(
+kairo::WorkerHandle worker = executor.start_worker(
     {"asio_loop", worker_config, std::make_unique<AsioLoopWorker>(io)});
 ```
 
@@ -54,7 +54,7 @@ executor::WorkerHandle worker = executor.start_worker(
 这不是缺陷，是边界（见 §3）。
 
 收尾语义：`worker.request_stop()` 置位 stop_token 后由 `worker.stop()` join 托管线程；
-需要"整批工作完成后再关闭"时，用 `executor::comm::PhaseGate` 做批次收尾（§4）。
+需要"整批工作完成后再关闭"时，用 `kairo::comm::PhaseGate` 做批次收尾（§4）。
 
 ## 2. strand 延续派发：合法但不可见
 
@@ -104,7 +104,7 @@ strand 上访问。
 批次收尾的推荐形态（完整可运行版本见 `examples/event_loop_interop.cpp`）：
 
 ```cpp
-executor::comm::PhaseGate gate("batch");
+kairo::comm::PhaseGate gate("batch");
 
 // 串行侧：每完成一步推进相位。
 for (uint64_t i = 0; i < kBatchSize; ++i) {

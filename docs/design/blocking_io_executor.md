@@ -1,5 +1,9 @@
 # 阻塞 I/O 执行器扩展设计
 
+
+> [!NOTE]
+> 历史设计快照：Blocking I/O worker 设计。0.5.2 起推荐 `start_worker(BlockingWorkerSpec)` 一站式入口。
+
 ## 概述
 
 本文定义 `BlockingIoExecutor` 的核心库边界：它管理一个**专属、允许有限阻塞、可唤醒退出**的 worker 的注册、生命周期和状态。具体协议、设备、文件描述符或业务数据面由使用方实现，不属于 `executor` 项目。

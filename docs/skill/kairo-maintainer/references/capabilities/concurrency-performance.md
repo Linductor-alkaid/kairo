@@ -4,12 +4,12 @@
 
 Search terms: thread pool, scheduler, dispatch, work stealing, resize, lock-free queue, object pool, CAS, throughput, jitter, TSAN, benchmark.
 
-This card is for internal behavior changes. Public compatibility applies to `include/executor/`; source layouts and algorithms may change only when externally observable guarantees and tests remain valid.
+This card is for internal behavior changes. Public compatibility applies to `include/kairo/`; source layouts and algorithms may change only when externally observable guarantees and tests remain valid.
 
 ## Public Boundary
 
-- Public results/statuses in `include/executor/executor.hpp`, `types.hpp`, and configuration headers.
-- Internal owners: `src/executor/thread_pool/`, `src/executor/task/`, and `src/executor/util/lockfree_queue.hpp`.
+- Public results/statuses in `include/kairo/executor.hpp`, `types.hpp`, and configuration headers.
+- Internal owners: `src/kairo/thread_pool/`, `src/kairo/task/`, and `src/kairo/util/lockfree_queue.hpp`.
 
 ## Implementation Trail
 

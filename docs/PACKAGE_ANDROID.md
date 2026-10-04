@@ -175,7 +175,7 @@ Android 不保证进程退出时执行 C++ 静态析构。JNI 层应显式关闭
 
 ```cpp
 #include <jni.h>
-#include <kairo/kairo.hpp>
+#include <kairo/executor.hpp>
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_example_app_NativeExecutor_shutdown(JNIEnv*, jobject) {
@@ -199,7 +199,7 @@ Java_com_example_app_NativeExecutor_shutdown(JNIEnv*, jobject) {
 若要把 kairo 作为 AAR 分发给 AGP 消费者，建议结构：
 
 ```text
-kairo-android-0.5.0.aar
+kairo-android-0.6.0.aar
 ├── prefab/modules/kairo/
 │   ├── module.json
 │   ├── include/kairo/...

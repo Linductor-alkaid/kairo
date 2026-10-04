@@ -8,13 +8,13 @@ Treat GPU support as an optional expert path. Begin with ordinary CPU behavior a
 
 ## Public Boundary
 
-- `include/executor/gpu/`: device query, scheduler, launch and transfer optimizers.
-- `include/executor/executor.hpp`: registration, status, and dual-path submission facade.
-- `include/executor/config.hpp` and `types.hpp`: GPU configuration and status.
+- `include/kairo/gpu/`: device query, scheduler, launch and transfer optimizers.
+- `include/kairo/executor.hpp`: registration, status, and dual-path submission facade.
+- `include/kairo/config.hpp` and `types.hpp`: GPU configuration and status.
 
 ## Implementation Trail
 
-Read `src/executor/gpu/` for CUDA/OpenCL executor, loader lease, memory manager, and scheduler ownership. Advanced raw executor access is non-owning and must not outlive or race shutdown.
+Read `src/kairo/gpu/` for CUDA/OpenCL executor, loader lease, memory manager, and scheduler ownership. Advanced raw executor access is non-owning and must not outlive or race shutdown.
 
 ## Observable Contract
 

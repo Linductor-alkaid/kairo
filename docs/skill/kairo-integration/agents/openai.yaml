@@ -1,4 +1,4 @@
 interface:
   display_name: "Executor Integration"
   short_description: "Integrate Executor into a C++20 application."
-  default_prompt: "Use $executor-integration to add Executor task execution, realtime control, communication, or GPU work to this application."
+  default_prompt: "Use $kairo-integration to add Kairo task execution, realtime control, communication, or GPU work to this application."

@@ -8,13 +8,13 @@ Route only when the requested backend and acceptance semantics are explicit. Aut
 
 ## Public Boundary
 
-- `include/executor/task_options.hpp`: route request and fallback policy.
-- `include/executor/task_router.hpp`: `TaskRouter` and `RoutingDecision`.
-- `include/executor/executor.hpp`: dispatch/auto submission facade.
+- `include/kairo/task_options.hpp`: route request and fallback policy.
+- `include/kairo/task_router.hpp`: `TaskRouter` and `RoutingDecision`.
+- `include/kairo/executor.hpp`: dispatch/auto submission facade.
 
 ## Implementation Trail
 
-Follow `src/executor/task_router.cpp` and Facade admission into manager registry snapshots. Registration lookup and physical queue admission are separate stages and can race with stop or capacity change.
+Follow `src/kairo/task_router.cpp` and Facade admission into manager registry snapshots. Registration lookup and physical queue admission are separate stages and can race with stop or capacity change.
 
 ## Observable Contract
 

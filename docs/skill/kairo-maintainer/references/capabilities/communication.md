@@ -8,12 +8,12 @@ Choose by data semantics, not by familiarity with a container. Single-consumer F
 
 ## Public Boundary
 
-- `include/executor/comm.hpp`: aggregate include.
-- `include/executor/comm/`: channels, in-process Topic/subscriptions, mailbox, double buffer, phase gate, types, and realtime-memory helpers.
+- `include/kairo/comm.hpp`: aggregate include.
+- `include/kairo/comm/`: channels, in-process Topic/subscriptions, mailbox, double buffer, phase gate, types, and realtime-memory helpers.
 
 ## Implementation Trail
 
-Read the header for the chosen primitive and `src/executor/comm/realtime_memory.cpp` where relevant. Comm components maintain their own result/status/event surfaces rather than automatically entering Facade failure status.
+Read the header for the chosen primitive and `src/kairo/comm/realtime_memory.cpp` where relevant. Comm components maintain their own result/status/event surfaces rather than automatically entering Facade failure status.
 
 ## Observable Contract
 

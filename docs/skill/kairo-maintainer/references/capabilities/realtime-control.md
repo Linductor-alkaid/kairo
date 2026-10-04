@@ -8,12 +8,12 @@ Use this path for periodic control with explicit cycle and intake budgets. It is
 
 ## Public Boundary
 
-- `include/executor/executor.hpp`: realtime registration, start/stop, and push APIs.
-- `include/executor/config.hpp`, `interfaces.hpp`, and `types.hpp`: `RealtimeThreadConfig`, cycle manager, results and status.
+- `include/kairo/executor.hpp`: realtime registration, start/stop, and push APIs.
+- `include/kairo/config.hpp`, `interfaces.hpp`, and `types.hpp`: `RealtimeThreadConfig`, cycle manager, results and status.
 
 ## Implementation Trail
 
-Trace `src/executor/realtime_thread_executor.*`, `src/executor/util/thread_utils.*`, and bounded queue/pool paths. The application owns a custom cycle manager; Executor borrows it.
+Trace `src/kairo/realtime_thread_executor.*`, `src/kairo/util/thread_utils.*`, and bounded queue/pool paths. The application owns a custom cycle manager; Executor borrows it.
 
 ## Observable Contract
 

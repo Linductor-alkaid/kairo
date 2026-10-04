@@ -9,18 +9,18 @@ cmake_minimum_required(VERSION 3.16)
 project(executor_app LANGUAGES CXX)
 find_package(executor REQUIRED)
 add_executable(executor_app main.cpp)
-target_link_libraries(executor_app PRIVATE executor::executor)
+target_link_libraries(executor_app PRIVATE kairo::executor)
 ```
 
 `main.cpp`:
 
 ```cpp
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <exception>
 #include <iostream>
 
 int main() {
-    executor::Executor executor;
+    kairo::Executor executor;
     const auto init = executor.initialize({});
     if (!init) {
         std::cerr << init.message << '\n';

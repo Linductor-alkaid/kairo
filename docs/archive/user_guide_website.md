@@ -2,7 +2,7 @@
 
 本文档定义 Executor 使用手册网站的目标、用户分层、信息架构、教程主线、接口教学顺序、示例质量约束和分阶段落地方案。它用于指导后续网站建设与内容编写，不替代现有的 `README`、`docs/API.md`、设计文档和版本记录。
 
-具体任务拆分与验收清单见：[Executor 使用手册网站实施计划](../todolists/user_guide_website_plan.md)。
+具体任务拆分与验收清单见：[Executor 使用手册网站实施计划](../archive/todolists/user_guide_website_plan.md)。
 
 ---
 

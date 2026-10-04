@@ -1,9 +1,13 @@
 # 任务协作取消与定时句柄设计
 
+
+> [!NOTE]
+> 历史设计快照（0.5.0 定时句柄设计）。0.6.0 起 `submit_delayed`/`submit_periodic` 直接返回句柄（`_with_handle` 拼写已消失），字符串 ID 体系已移除。
+
 ## 1. 文档状态
 
 - 状态：C0 设计提案，先行评审
-- 输入：[客户端反馈缺口收敛计划](../todolists/client_feedback_update_plan.md)、
+- 输入：[客户端反馈缺口收敛计划](../archive/todolists/client_feedback_update_plan.md)、
   `include/executor/stop_token.hpp`、`Executor` facade 当前任务图和定时器实现
 - 目标阶段：C1（任务级协作取消）和 T1（通用定时句柄）
 - 条件阶段：T2/S2（外部序列化上下文绑定）

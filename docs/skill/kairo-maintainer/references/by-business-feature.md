@@ -6,6 +6,7 @@
 | Start, configure, or stop an application runtime | [Facade and lifecycle](capabilities/facade-lifecycle.md) | `executor.cpp`, lifecycle tests |
 | Run urgent work before routine work | [Scheduling and task graphs](capabilities/scheduling-task-graph.md) | priority scheduler tests |
 | Retry later, run periodic maintenance, submit a batch, or compose dependencies | [Scheduling and task graphs](capabilities/scheduling-task-graph.md) | timer/task graph tests |
+| Declare deadlines, priority classes (QoS), CPU hints, or GPU resource needs for tasks; customize admission/routing decisions | [Scheduling Runtime](capabilities/scheduling-runtime.md) | `test_scheduling_runtime` |
 | Route work to a named low-latency, realtime, or GPU backend | [Routing](capabilities/routing.md) | routing tests and backend status |
 | Build a periodic control loop with bounded intake | [Realtime control](capabilities/realtime-control.md) | realtime overflow and cycle tests |
 | Own a long-running transport/read loop | [Blocking I/O workers](capabilities/blocking-io.md) | blocking I/O tests |

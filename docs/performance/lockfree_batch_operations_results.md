@@ -97,7 +97,7 @@ size_t pop_batch(T* items, size_t max_count);
 
 ### 下一步优化
 
-根据 [lockfree_queue_optimization.md](../todolists/lockfree_queue_optimization.md)：
+根据 [lockfree_queue_optimization.md](../archive/todolists/lockfree_queue_optimization.md)：
 
 **优先级 P0**: 实施 CAS 指数退避策略（阶段 2.3）
 - 目标：进一步降低单个操作的失败率

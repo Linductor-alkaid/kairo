@@ -7,7 +7,7 @@ Service-level failure reporting, bounded wait diagnosis, queue/worker health, ta
 ## Minimal Usage
 
 ```cpp
-executor.set_failure_callback([](const executor::ExecutorFailureEvent& event) {
+executor.set_failure_callback([](const kairo::ExecutorFailureEvent& event) {
     report_failure(event.kind, event.message);
 });
 

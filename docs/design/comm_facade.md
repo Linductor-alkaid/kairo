@@ -1,10 +1,14 @@
 # 通信与并发辅助 Facade 设计
 
+
+> [!NOTE]
+> 历史设计快照（0.4.0）：记录设计时的决策与权衡。项目已更名为 kairo，文中 `executor::`/`EXECUTOR_*` 等命名已对应更替为 `kairo::`/`KAIRO_*`。
+
 本文档是阶段 7 的设计稿，目标是把常见跨线程通信模式提升到 `executor::comm`
 层，让用户默认走类型安全、生命周期清晰、可观察的抽象，而不是直接组合
 `mutex`、`atomic`、`condition_variable`、共享可变对象和底层无锁队列。
 
-关联计划：[通信与并发辅助 Facade 更新计划](../todolists/comm_facade_update_plan.md)。
+关联计划：[通信与并发辅助 Facade 更新计划](../archive/todolists/comm_facade_update_plan.md)。
 
 ---
 

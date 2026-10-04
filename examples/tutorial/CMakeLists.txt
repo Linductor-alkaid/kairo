@@ -12,6 +12,7 @@ set(TUTORIAL_SOURCES
     11_task_inputs.cpp
     12_blocking_io_worker.cpp
     13_cancellation_and_timers.cpp
+    14_scheduling_runtime.cpp
 )
 
 set(TUTORIAL_TARGETS)

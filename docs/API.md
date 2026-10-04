@@ -1,4 +1,4 @@
-# Executor API 使用说明
+# Kairo API 使用说明
 
 本文档说明 `kairo` 库的主要 API、配置与类型，便于集成与扩展。完整接口定义见头文件 `include/kairo/`。
 
@@ -1452,7 +1452,7 @@ variable 或分配内部存储；`T` 必须可无异常复制。失败的 `CommR
   spin/yield，仅供普通控制线程使用。
 - 这些组件在构造时检查所需同步原子，平台不能提供 lock-free 原子时抛出异常拒绝构造。
 
-`is_synchronization_lock_free()` 只回答组件内部同步原子是否 lock-free，兼容的 `is_lock_free()`
+`is_synchronization_lock_free()` 只回答组件内部同步原子是否 lock-free
 返回相同结果。它不证明操作 wait-free，也不覆盖 `T` 的复制/移动/析构、时钟、字符串和
 `CommResult` 构造、诊断 callback、调用方分配、page fault 或 OS 调度。因此必须分别陈述：
 data-race-free、系统级同步无锁、固定次数读取尝试、内部存储无分配，以及整条路径满足硬实时预算。
@@ -2137,4 +2137,4 @@ exec.stop_realtime_task("can_channel_0");
 - **实时场景**：`register_realtime_task` + `start_realtime_task`，在 `cycle_callback` 中做周期逻辑；与线程池之间通过无锁队列等交换数据（见示例 `realtime_can`）。
 - **GPU 场景**：`register_gpu_executor` + `submit_gpu`，kernel 与内存/流由 `IGpuExecutor` 管理（见示例 `gpu_basic`、`gpu_multi_device`，设计 [gpu_executor.md](design/gpu_executor.md)）。
 
-更多示例见 [examples/](examples/) 与 [设计文档](design/kairo.md)。
+更多示例见 [examples/](examples/) 与 [架构总纲](design/executor.md)。

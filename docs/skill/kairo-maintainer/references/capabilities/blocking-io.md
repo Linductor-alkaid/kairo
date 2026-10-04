@@ -8,13 +8,13 @@ Use a blocking I/O worker when progress depends on an externally blocked read/po
 
 ## Public Boundary
 
-- `include/executor/blocking_io.hpp`: `IBlockingIoWorker`, `BlockingWorkerSpec`, `WorkerHandle`.
-- `include/executor/config.hpp` and `types.hpp`: worker configuration/status.
-- `include/executor/executor.hpp`: `start_worker` facade.
+- `include/kairo/blocking_io.hpp`: `IBlockingIoWorker`, `BlockingWorkerSpec`, `WorkerHandle`.
+- `include/kairo/config.hpp` and `types.hpp`: worker configuration/status.
+- `include/kairo/executor.hpp`: `start_worker` facade.
 
 ## Implementation Trail
 
-Read `src/executor/blocking_io_executor.*` and manager registration/teardown paths. The worker implementation belongs to the application, while Executor owns the executor thread lifecycle.
+Read `src/kairo/blocking_io_executor.*` and manager registration/teardown paths. The worker implementation belongs to the application, while Executor owns the executor thread lifecycle.
 
 ## Observable Contract
 

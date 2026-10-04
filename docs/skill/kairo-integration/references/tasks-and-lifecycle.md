@@ -7,8 +7,8 @@ Finite background work, values, exceptions, a bounded wait, service shutdown, an
 ## Minimal Usage
 
 ```cpp
-executor::Executor executor;
-executor::ExecutorConfig config;
+kairo::Executor executor;
+kairo::ExecutorConfig config;
 config.max_threads = 4;
 if (!executor.initialize(config)) return 1;
 

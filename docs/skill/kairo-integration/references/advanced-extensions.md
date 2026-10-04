@@ -10,7 +10,7 @@ Implement `ICycleManager` only when an external clock or scheduler must drive th
 
 ```cpp
 MyCycleManager clock;
-executor::RealtimeThreadConfig config;
+kairo::RealtimeThreadConfig config;
 config.thread_name = "control";
 config.cycle_period_ns = 1'000'000;
 config.cycle_manager = &clock;

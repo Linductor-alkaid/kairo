@@ -8,13 +8,13 @@ Choose `Executor::instance()` only for process-wide sharing; use an `Executor` o
 
 ## Public Boundary
 
-- `include/executor/executor.hpp`: `Executor`, `initialize()`, `shutdown()`, completion wait/status APIs.
-- `include/executor/config.hpp` and `include/executor/types.hpp`: configuration and observable results.
-- `include/executor/executor_manager.hpp`: registry and owner boundary.
+- `include/kairo/executor.hpp`: `Executor`, `initialize()`, `shutdown()`, completion wait/status APIs.
+- `include/kairo/config.hpp` and `include/kairo/types.hpp`: configuration and observable results.
+- `include/kairo/executor_manager.hpp`: registry and owner boundary.
 
 ## Implementation Trail
 
-Follow `src/executor/executor.cpp` into `executor_manager.cpp`. The manager owns default async and registered backend lifetimes; callers own application resources and must serialize any borrowed advanced pointer with shutdown.
+Follow `src/kairo/executor.cpp` into `executor_manager.cpp`. The manager owns default async and registered backend lifetimes; callers own application resources and must serialize any borrowed advanced pointer with shutdown.
 
 ## Observable Contract
 

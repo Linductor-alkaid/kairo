@@ -27,6 +27,7 @@ Load only the card needed for the current change. The cards are intentionally sm
 - [Facade and lifecycle](references/capabilities/facade-lifecycle.md)
 - [General submission and completion](references/capabilities/general-submission.md)
 - [Scheduling and task graphs](references/capabilities/scheduling-task-graph.md)
+- [Scheduling Runtime](references/capabilities/scheduling-runtime.md)
 - [Routing and named backends](references/capabilities/routing.md)
 - [Realtime control](references/capabilities/realtime-control.md)
 - [Blocking I/O workers](references/capabilities/blocking-io.md)

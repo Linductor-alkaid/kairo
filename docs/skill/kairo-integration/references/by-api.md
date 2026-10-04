@@ -9,6 +9,7 @@
 | `BlockingWorkerSpec`, `IBlockingIoWorker`, `WorkerHandle` | [Blocking I/O](blocking-io.md) |
 | `MpscChannel`, `LatestMailbox`, `DoubleBuffer`, `PhaseGate`, `CommStats` | [Communication](communication.md) |
 | `GpuExecutorConfig`, `register_gpu_executor`, `submit_gpu`, `GpuExecutorStatus` | [GPU](gpu.md) |
+| `QosClass`, `AffinityHint`, `ResourceRequirements`, `SchedulingSpec`, `TaskSchedulingMeta`, `IScheduler`, `set_scheduler`, `deadline()`, `FailureKind::DeadlineMissed` | [Scheduling](scheduling.md) and `docs/design/scheduling_runtime.md` |
 | `TaskOptions`, `RoutingDecision`, `dispatch_auto`, `LockFreeTaskExecutor` | [Routing and low-latency](routing-low-latency.md) |
 | `ExecutorFailureEvent`, `ExecutorSnapshot`, `get_snapshot_text`, task statistics | [Observability](observability.md) |
 | `ICycleManager`, `ExecutorManager`, `IAsyncExecutor`, `IGpuExecutor` | [Advanced extensions](advanced-extensions.md) |

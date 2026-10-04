@@ -7,12 +7,12 @@ An explicitly named lock-free backend, bounded fire-and-forget admission, or a r
 ## Minimal Usage
 
 ```cpp
-auto events = std::make_unique<executor::LockFreeTaskExecutor>(256);
+auto events = std::make_unique<kairo::LockFreeTaskExecutor>(256);
 if (!executor.register_lockfree_executor("events", std::move(events))) return 1;
 if (!executor.start_lockfree_executor("events")) return 1;
 
-executor::TaskOptions options;
-options.intent = executor::ExecutionIntent::LowLatency;
+kairo::TaskOptions options;
+options.intent = kairo::ExecutionIntent::LowLatency;
 options.preferred_executor = "events";
 const auto admission = executor.dispatch_auto(options, [] { publish_event(); });
 ```

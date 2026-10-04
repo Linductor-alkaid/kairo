@@ -1,4 +1,4 @@
-# Executor 构建与安装说明
+# Kairo 构建与安装说明
 
 本文档说明如何配置、构建、测试、安装 kairo 库，以及如何在其他项目通过 `find_package(kairo)` 集成。
 
@@ -172,7 +172,7 @@ cmake --install build --prefix /opt/kairo
 
 安装内容包含：
 
-- **头文件**：`<prefix>/include/kairo/`（如 `kairo.hpp`、`config.hpp`、`types.hpp` 等）
+- **头文件**：`<prefix>/include/kairo/`（如 `executor.hpp`、`scheduling.hpp`、`scheduler.hpp`、`config.hpp`、`types.hpp` 等）
 - **库文件**：`<prefix>/lib/` 或 `<prefix>/lib64/`（`libkairo.a` 或 `libkairo.so`）
 - **CMake 配置**：`<prefix>/lib/cmake/kairo/`（`kairoConfig.cmake`、`kairoConfigVersion.cmake`、`kairoTargets.cmake` 等），供 `find_package(kairo)` 使用
 
@@ -246,7 +246,7 @@ ctest --test-dir build -L "unit|integration" --output-on-failure
 |------|------|
 | `find_package(kairo)` 找不到 | 确认已 `cmake --install`，且 `CMAKE_PREFIX_PATH` 包含安装前缀；或使用 `add_subdirectory`。 |
 | 链接错误（如 `pthread`） | kairo 通过 `Threads::Threads` 拉取 `pthread`，确保消费者项目同样使用 `kairo::kairo` 而不是手动 `-lpthread` 覆盖。 |
-| 头文件 `kairo/kairo.hpp` 找不到 | 使用 `target_link_libraries(… kairo::kairo)`，勿手动添加 `-I`；`kairo::kairo` 已携带 `INTERFACE_INCLUDE_DIRECTORIES`。 |
+| 找不到 kairo 头文件 | 使用 `target_link_libraries(… kairo::kairo)`，勿手动添加 `-I`；`kairo::kairo` 已携带 `INTERFACE_INCLUDE_DIRECTORIES`。 |
 | 静态库与动态库混用 | 同一进程内链接的 kairo 应与主程序同类型（全静态或全动态），避免符号重复或加载冲突。 |
 
 ---
@@ -256,7 +256,7 @@ ctest --test-dir build -L "unit|integration" --output-on-failure
 以当前工程创建源码归档，便于分发或发布：
 
 ```bash
-git archive --format=tar.gz --prefix=kairo-0.5.0/ -o kairo-0.5.0.tar.gz HEAD
+git archive --format=tar.gz --prefix=kairo-0.6.0/ -o kairo-0.6.0.tar.gz HEAD
 ```
 
 或仅打包 `include/`、`src/`、`cmake/`、`examples/`、`tests/`、`CMakeLists.txt`、`README.md`、`CHANGELOG.md`、`docs/` 等必要目录与文件（按需调整）。解压后按 [§3](#3-配置与构建) 配置与构建即可。
@@ -278,7 +278,9 @@ build/
 ```
 <prefix>/
 ├── include/kairo/
-│   ├── kairo.hpp
+│   ├── executor.hpp
+│   ├── scheduling.hpp
+│   ├── scheduler.hpp
 │   ├── config.hpp
 │   ├── types.hpp
 │   ├── interfaces.hpp

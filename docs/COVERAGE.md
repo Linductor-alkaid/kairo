@@ -60,7 +60,7 @@ lcov --remove coverage.info \
 
 # 生成 HTML 报告
 genhtml coverage_filtered.info --output-directory coverage_html \
-  --title "Executor Code Coverage" --show-details --legend
+  --title "Kairo Code Coverage" --show-details --legend
 ```
 
 ### 4. 查看覆盖率

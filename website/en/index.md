@@ -41,7 +41,7 @@ Kairo is not a coroutine runtime, a distributed messaging system, or a hard real
 - Learn the library boundary: [what is Kairo?](/en/getting-started/what-is-kairo).
 - Upgrade existing code: [versions and migration](/en/reference/version-and-migration).
 - The complete API signatures, options, and compatibility notes remain in [`docs/API.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md).
-- Integrating Kairo with AI? Start with the progressive [Kairo integration skill](https://github.com/Linductor-alkaid/kairo/blob/master/docs/skill/executor-integration/SKILL.md); it also explains how to make the skill available from a downstream project.
+- Integrating Kairo with AI? Start with the progressive [Kairo integration skill](https://github.com/Linductor-alkaid/kairo/blob/master/docs/skill/kairo-integration/SKILL.md); it also explains how to make the skill available from a downstream project.
 
 ## Release information
 

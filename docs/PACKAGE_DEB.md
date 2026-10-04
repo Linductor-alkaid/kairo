@@ -36,14 +36,14 @@ devel 容器）中执行：
 ```bash
 # 在带 CUDA Toolkit 的环境下
 cmake -B build -DKAIRO_ENABLE_CUDA=ON
-sudo ./scripts/build_and_package_deb.sh --version 0.5.0 --maintainer "Your Name <your.email@example.com>"
+sudo ./scripts/build_and_package_deb.sh --version 0.6.0 --maintainer "Your Name <your.email@example.com>"
 ```
 
 ### 自定义构建选项
 
 ```bash
 ./scripts/build_and_package_deb.sh \
-    --version "0.5.0" \
+    --version "0.6.0" \
     --build-type "Release" \
     --maintainer "Your Name <your.email@example.com>" \
     --deb-package-type "all"
@@ -53,7 +53,7 @@ sudo ./scripts/build_and_package_deb.sh --version 0.5.0 --maintainer "Your Name 
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--version` | `0.5.0` | 版本号，用于打包命名 |
+| `--version` | `0.6.0` | 版本号，用于打包命名 |
 | `--build-type` | `Release` | 构建类型（Release/Debug） |
 | `--build-static` | `true` | 是否构建静态库 |
 | `--build-shared` | `true` | 是否构建动态库 |
@@ -81,13 +81,13 @@ sudo ./scripts/build_and_package_deb.sh --version 0.5.0 --maintainer "Your Name 
 
 ```bash
 # 打包所有类型（开发包 + 运行时包）
-./scripts/package_deb.sh --version "0.5.0" --maintainer "Your Name <email@example.com>"
+./scripts/package_deb.sh --version "0.6.0" --maintainer "Your Name <email@example.com>"
 
 # 仅打包开发包
-./scripts/package_deb.sh --version "0.5.0" --package-type dev --maintainer "Your Name <email@example.com>"
+./scripts/package_deb.sh --version "0.6.0" --package-type dev --maintainer "Your Name <email@example.com>"
 
 # 仅打包运行时包
-./scripts/package_deb.sh --version "0.5.0" --package-type runtime --maintainer "Your Name <email@example.com>"
+./scripts/package_deb.sh --version "0.6.0" --package-type runtime --maintainer "Your Name <email@example.com>"
 ```
 
 ---
@@ -129,13 +129,13 @@ sudo ./scripts/build_and_package_deb.sh --version 0.5.0 --maintainer "Your Name 
 **对于开发者（推荐）：**
 ```bash
 # 使用默认 all 模式，只需安装一个包
-sudo dpkg -i dist/libkairo-dev_0.5.0_amd64.deb
+sudo dpkg -i dist/libkairo-dev_0.6.0_amd64.deb
 ```
 
 **对于仅运行应用程序的用户：**
 ```bash
 # 只需安装运行时包
-sudo dpkg -i dist/libkairo_0.5.0_amd64.deb
+sudo dpkg -i dist/libkairo_0.6.0_amd64.deb
 ```
 
 ---
@@ -147,13 +147,13 @@ sudo dpkg -i dist/libkairo_0.5.0_amd64.deb
 **推荐方式（默认 all 模式，只需安装一个包）：**
 ```bash
 # 安装开发包（包含所有内容：静态库、动态库、头文件、CMake 配置）
-sudo dpkg -i dist/libkairo-dev_0.5.0_amd64.deb
+sudo dpkg -i dist/libkairo-dev_0.6.0_amd64.deb
 
 # 如果依赖缺失，修复依赖
 sudo apt-get install -f
 
 # 或者使用 apt 安装（如果已添加到仓库）
-sudo apt install ./dist/libkairo-dev_0.5.0_amd64.deb
+sudo apt install ./dist/libkairo-dev_0.6.0_amd64.deb
 ```
 
 **说明：**
@@ -281,13 +281,13 @@ A: 使用 `dpkg-deb` 命令：
 
 ```bash
 # 查看包信息
-dpkg-deb -I dist/libkairo-dev_0.5.0_amd64.deb
+dpkg-deb -I dist/libkairo-dev_0.6.0_amd64.deb
 
 # 查看包内容
-dpkg-deb -c dist/libkairo-dev_0.5.0_amd64.deb
+dpkg-deb -c dist/libkairo-dev_0.6.0_amd64.deb
 
 # 提取包内容（不解压）
-dpkg-deb -x dist/libkairo-dev_0.5.0_amd64.deb /tmp/extracted
+dpkg-deb -x dist/libkairo-dev_0.6.0_amd64.deb /tmp/extracted
 ```
 
 ### Q: 如何创建本地 apt 仓库？
@@ -318,7 +318,7 @@ reprepro -b repo includedeb focal dist/*.deb
 
 在发布 deb 包前，请确认：
 
-- [ ] 版本号正确：`CMakeLists.txt`、README 与打包命令均为 `0.5.0`
+- [ ] 版本号正确：`CMakeLists.txt`、README 与打包命令均为 `0.6.0`
 - [ ] 维护者信息正确
 - [ ] 静态库和动态库都已成功构建
 - [ ] v0.5.0 发布包在带 CUDA Toolkit 的环境下完成完整构建（`KAIRO_ENABLE_CUDA=ON`）
@@ -357,7 +357,7 @@ cmake -B build -DKAIRO_ENABLE_CUDA=OFF
 
 ```bash
 ./scripts/package_deb.sh \
-    --version "0.5.0" \
+    --version "0.6.0" \
     --maintainer "Your Name <email@example.com>" \
     --description "Custom description for the package"
 ```
@@ -368,7 +368,7 @@ cmake -B build -DKAIRO_ENABLE_CUDA=OFF
 
 ```bash
 ./scripts/package_deb.sh \
-    --version "0.5.0" \
+    --version "0.6.0" \
     --build-dir build_linux \
     --maintainer "Your Name <email@example.com>"
 ```
@@ -377,8 +377,8 @@ cmake -B build -DKAIRO_ENABLE_CUDA=OFF
 
 ```bash
 # 先打包开发包
-./scripts/package_deb.sh --package-type dev --version "0.5.0"
+./scripts/package_deb.sh --package-type dev --version "0.6.0"
 
 # 再打包运行时包
-./scripts/package_deb.sh --package-type runtime --version "0.5.0"
+./scripts/package_deb.sh --package-type runtime --version "0.6.0"
 ```

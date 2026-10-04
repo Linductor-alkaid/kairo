@@ -95,7 +95,7 @@ alignas(64) std::atomic<size_t> dequeue_pos_;
 
 ### 下一步优化
 
-根据 [lockfree_queue_optimization.md](../todolists/lockfree_queue_optimization.md)：
+根据 [lockfree_queue_optimization.md](../archive/todolists/lockfree_queue_optimization.md)：
 
 **优先级 P0**：实施 CAS 指数退避策略
 - 目标：降低 4-32 生产者场景的失败率

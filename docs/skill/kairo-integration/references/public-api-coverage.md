@@ -1,11 +1,12 @@
 # Public API Coverage Matrix
 
-This audit matrix is intentionally not linked from `SKILL.md`. Use it when upgrading Executor, adding a user-visible capability, or checking that the integration skill still maps every public header. It is not a normal task router.
+This audit matrix is intentionally not linked from `SKILL.md`. Use it when upgrading Kairo, adding a user-visible capability, or checking that the integration skill still maps every public header. It is not a normal task router.
 
 | Public header or API family | Integration card | Scope |
 | --- | --- | --- |
 | `executor.hpp`, `config.hpp`, `types.hpp` | [Quick start](quick-start.md), [tasks and lifecycle](tasks-and-lifecycle.md), [scheduling](scheduling.md) | Facade, configuration, futures, lifecycle, task graph, scheduler APIs |
 | `task_options.hpp`, `task_router.hpp`, `lockfree_task_executor.hpp` | [Routing and low-latency](routing-low-latency.md) | Named bounded dispatch, routing decisions, direct lock-free worker |
+| `scheduling.hpp`, `scheduler.hpp` | [Scheduling](scheduling.md) | Per-task scheduling model (deadline/QoS/affinity/resources), injectable `IScheduler`, `DefaultScheduler` constraints |
 | `blocking_io.hpp` | [Blocking I/O](blocking-io.md) | Interruptible dedicated worker |
 | `comm.hpp`, `comm/*.hpp` | [Communication](communication.md) | FIFO/latest/realtime channels, snapshots, phases, sequencing, allocation diagnostics |
 | `interfaces.hpp`, `executor_manager.hpp` | [Advanced extensions](advanced-extensions.md) | Custom cycle and executor composition, lifecycle snapshots |

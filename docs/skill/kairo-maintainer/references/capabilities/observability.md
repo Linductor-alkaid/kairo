@@ -8,13 +8,13 @@ Every failed admission, task exception, drop, and wait timeout needs a queryable
 
 ## Public Boundary
 
-- `include/executor/executor.hpp`: failure callbacks, failure status, completion status, snapshots.
-- `include/executor/monitor/`: monitor and formatter APIs.
-- `include/executor/types.hpp` and `comm/types.hpp`: result/status/event records.
+- `include/kairo/executor.hpp`: failure callbacks, failure status, completion status, snapshots.
+- `include/kairo/monitor/`: monitor and formatter APIs.
+- `include/kairo/types.hpp` and `comm/types.hpp`: result/status/event records.
 
 ## Implementation Trail
 
-Follow `src/executor/executor.cpp` failure recording plus `src/executor/monitor/`. Callbacks must execute after releasing internal diagnostic locks to avoid re-entry deadlocks.
+Follow `src/kairo/executor.cpp` failure recording plus `src/kairo/monitor/`. Callbacks must execute after releasing internal diagnostic locks to avoid re-entry deadlocks.
 
 ## Observable Contract
 

@@ -10,6 +10,7 @@
 | Need a latest value, FIFO message, immutable snapshot, or phase ordering | [Communication primitives](capabilities/communication.md) | What delivery semantics does the data require? |
 | Need independent consumers to receive the same subsequent events | [Communication primitives](capabilities/communication.md) | What is each subscriber's capacity and loss policy? |
 | Need priority, delay, periodic work, batch throughput, or dependencies | [Scheduling and task graphs](capabilities/scheduling-task-graph.md) | Which scheduling semantic is actually required? |
+| Need deadline-aware ordering, QoS classes, per-task CPU/GPU declarations, or a custom admission/routing policy | [Scheduling Runtime](capabilities/scheduling-runtime.md) | Is the request about execution semantics (task graph) or scheduling decisions (runtime)? |
 | Need latency/throughput improvement | [Concurrency internals](capabilities/concurrency-performance.md) | What correctness invariant and measurement gate prove it? |
 | Need diagnostics, counters, alerts, or a bounded wait | [Observability](capabilities/observability.md) | Which state surface exposes the failure? |
 | GPU may be unavailable or must fall back to CPU | [GPU execution](capabilities/gpu.md) | Is CPU fallback explicitly permitted? |

@@ -7,7 +7,7 @@ A fixed-period control loop with explicit cycle configuration, bounded command i
 ## Minimal Usage
 
 ```cpp
-executor::RealtimeThreadConfig config;
+kairo::RealtimeThreadConfig config;
 config.thread_name = "control";
 config.cycle_period_ns = 2'000'000;
 config.cycle_callback = [] { run_control_cycle(); };

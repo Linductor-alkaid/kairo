@@ -7,9 +7,9 @@ Passing data across threads. Choose the component from delivery semantics, not e
 ## Minimal Usage
 
 ```cpp
-#include <executor/comm.hpp>
+#include <kairo/comm.hpp>
 
-executor::comm::MpscChannel<int> commands({.capacity = 64});
+kairo::comm::MpscChannel<int> commands({.capacity = 64});
 if (!commands.try_send(7)) handle_full_queue();
 
 int command = 0;
@@ -21,7 +21,7 @@ Use `LatestMailbox<T>` when only the newest value matters, `MpscChannel<T>` when
 ## Phase And Sequence Usage
 
 ```cpp
-executor::comm::Sequencer sequencer("startup");
+kairo::comm::Sequencer sequencer("startup");
 const auto ticket = sequencer.next_ticket();
 if (!sequencer.publish(ticket)) handle_sequence_error();
 if (!sequencer.wait_until_published(ticket, std::chrono::seconds(1))) handle_sequence_error();

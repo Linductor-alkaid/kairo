@@ -7,7 +7,7 @@ One long-lived, interruptible socket, serial, CAN, or transport wait. Do not run
 ## Minimal Usage
 
 ```cpp
-executor::BlockingWorkerSpec spec;
+kairo::BlockingWorkerSpec spec;
 spec.name = "transport";
 spec.config.thread_name = "transport";
 spec.worker = std::make_unique<MyInterruptibleWorker>();

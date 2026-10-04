@@ -23,7 +23,7 @@
 
 ```bash
 ./scripts/build_and_package_linux.sh \
-    --version "0.5.0" \
+    --version "0.6.0" \
     --build-type "Release" \
     --build-static true \
     --build-shared true
@@ -33,7 +33,7 @@
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--version` | `0.5.0` | 版本号，用于打包命名 |
+| `--version` | `0.6.0` | 版本号，用于打包命名 |
 | `--build-type` | `Release` | 构建类型（Release/Debug） |
 | `--build-static` | `true` | 是否构建静态库 |
 | `--build-shared` | `true` | 是否构建动态库 |
@@ -66,7 +66,7 @@
 构建完成后，使用打包脚本创建发行包：
 
 ```bash
-./scripts/package_linux.sh --version "0.5.0"
+./scripts/package_linux.sh --version "0.6.0"
 ```
 
 打包脚本会：
@@ -122,7 +122,7 @@ cmake --install build_shared
 打包后的目录结构如下：
 
 ```
-kairo-0.5.0-linux-x86_64/
+kairo-0.6.0-linux-x86_64/
 ├── static/                    # 静态库
 │   ├── lib/
 │   │   ├── libkairo.a      # 静态库文件
@@ -153,7 +153,7 @@ kairo-0.5.0-linux-x86_64/
 2. 在 CMake 配置时设置路径：
 
 ```bash
-cmake -B build -DCMAKE_PREFIX_PATH=path/to/kairo-0.5.0-linux-x86_64/static
+cmake -B build -DCMAKE_PREFIX_PATH=path/to/kairo-0.6.0-linux-x86_64/static
 ```
 
 3. 在项目的 `CMakeLists.txt` 中：
@@ -169,7 +169,7 @@ target_link_libraries(your_target PRIVATE kairo::kairo)
 2. 在 CMake 配置时设置路径：
 
 ```bash
-cmake -B build -DCMAKE_PREFIX_PATH=path/to/kairo-0.5.0-linux-x86_64/shared
+cmake -B build -DCMAKE_PREFIX_PATH=path/to/kairo-0.6.0-linux-x86_64/shared
 ```
 
 3. 在项目的 `CMakeLists.txt` 中：
@@ -186,10 +186,10 @@ target_link_libraries(your_target PRIVATE kairo::kairo)
 
 ```bash
 # 方法 1: 设置 LD_LIBRARY_PATH
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/kairo-0.5.0-linux-x86_64/shared/lib
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/kairo-0.6.0-linux-x86_64/shared/lib
 
 # 方法 2: 安装到系统目录
-sudo cp /path/to/kairo-0.5.0-linux-x86_64/shared/lib/libkairo.so* /usr/local/lib/
+sudo cp /path/to/kairo-0.6.0-linux-x86_64/shared/lib/libkairo.so* /usr/local/lib/
 sudo ldconfig
 ```
 
@@ -263,14 +263,14 @@ A: 分别运行两次构建：
 A: 解压 tar.gz 文件查看：
 
 ```bash
-tar -tzf dist/kairo-0.5.0-linux-x86_64.tar.gz
+tar -tzf dist/kairo-0.6.0-linux-x86_64.tar.gz
 ```
 
 或解压到临时目录：
 
 ```bash
 mkdir -p /tmp/package_test
-tar -xzf dist/kairo-0.5.0-linux-x86_64.tar.gz -C /tmp/package_test
+tar -xzf dist/kairo-0.6.0-linux-x86_64.tar.gz -C /tmp/package_test
 tree /tmp/package_test
 ```
 

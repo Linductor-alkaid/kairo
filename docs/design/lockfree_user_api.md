@@ -1,5 +1,9 @@
 # 无锁队列用户接口设计
 
+
+> [!NOTE]
+> 历史设计快照：LockFreeTaskExecutor 用户 API 设计。项目现名 kairo。
+
 ## 背景
 
 项目已实现 SPSC 无锁队列 (`LockFreeQueue<T>`)，但仅在内部使用。用户需要处理高性能、低延迟的数据传递场景时，应提供友好的接口。

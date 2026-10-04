@@ -16,6 +16,8 @@
 | `10_service_data_import.cpp` | 服务端数据导入与部分失败 | 基础 | 是 |
 | `11_task_inputs.cpp` | 自由函数、成员函数、捕获与输入所有权 | 基础 | 是 |
 | `12_blocking_io_worker.cpp` | `start_worker()` 管理可中断阻塞 worker 的唤醒与停止 | 基础 | 是 |
+| `13_cancellation_and_timers.cpp` | 协作取消与定时句柄 | 基础 | 是 |
+| `14_scheduling_runtime.cpp` | QoS preset、deadline 准入与可注入调度器（0.6.0 Scheduling Runtime） | 基础 | 是 |
 
 构建并运行全部示例：
 

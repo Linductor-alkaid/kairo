@@ -222,7 +222,7 @@ comm·timer·取消原语 / GPU·监控路径 / 文档同步），问题登记 P
   （随 0.5.0 合入，详见 performance_audit_2026-09_plan.md 阶段 P1 ✅）
 - [x] P2：ObjectPool 无锁化与 RT 优先级反转消除、LockFreeWorkerQueue 兑现
   （随 0.5.0 合入，详见 performance_audit_2026-09_plan.md 阶段 P2 ✅）
-- [ ] P3：timer 1kHz 轮询改条件编译驻停、comm 阻塞原语退避、Topic RCU、
+- [x] P3：timer 1kHz 轮询改条件编译驻停、comm 阻塞原语退避、Topic RCU、（0.5.3 已完成：定时器线程事件驱动改造）
   取消/周期 tick 热路径分配（2026-09-22 逐项核实确未实施）
 - [ ] P4：task graph 分片、默认执行器原子快照、TaskMonitor 先查再锁
   （PA-14 已随 P1 顺带落地；PA-6 的调度侧唤醒深化转入阶段 21）

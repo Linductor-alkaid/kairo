@@ -8,12 +8,12 @@ Select the smallest scheduling semantic that fulfills the request. A soft period
 
 ## Public Boundary
 
-- `include/executor/executor.hpp`: priority, delayed, periodic, batch, `submit_with_handle`, `submit_after`, and `when_all` APIs.
-- `include/executor/types.hpp`: task IDs, task handles, periodic status.
+- `include/kairo/executor.hpp`: priority, delayed, periodic, batch, `submit_with_handle`, `submit_after`, and `when_all` APIs.
+- `include/kairo/types.hpp`: task IDs, task handles, periodic status.
 
 ## Implementation Trail
 
-Read `src/executor/thread_pool/priority_scheduler.*`, `src/executor/task/task_dependency_manager.*`, and timer-related Facade code. Dispatch failure must return accepted work to a viable path rather than strand its future.
+Read `src/kairo/thread_pool/priority_scheduler.*`, `src/kairo/task/task_dependency_manager.*`, and timer-related Facade code. Dispatch failure must return accepted work to a viable path rather than strand its future.
 
 ## Observable Contract
 

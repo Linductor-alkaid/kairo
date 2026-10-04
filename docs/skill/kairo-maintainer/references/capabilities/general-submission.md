@@ -8,13 +8,13 @@ Use `submit_auto()` for ordinary finite work and `submit()` when explicit defaul
 
 ## Public Boundary
 
-- `include/executor/executor.hpp`: `submit_auto`, `submit`, batch submission, `wait_for_completion`.
-- `include/executor/task_options.hpp`: task-level options.
-- `include/executor/types.hpp`: completion, wait, and failure status.
+- `include/kairo/executor.hpp`: `submit_auto`, `submit`, batch submission, `wait_for_completion`.
+- `include/kairo/task_options.hpp`: task-level options.
+- `include/kairo/types.hpp`: completion, wait, and failure status.
 
 ## Implementation Trail
 
-Trace Facade templates to `src/executor/thread_pool_executor.cpp`, `thread_pool/`, and `task/`. `ThreadPool` and dispatcher own acceptance, dispatch, execution, and completion accounting.
+Trace Facade templates to `src/kairo/thread_pool_executor.cpp`, `thread_pool/`, and `task/`. `ThreadPool` and dispatcher own acceptance, dispatch, execution, and completion accounting.
 
 ## Observable Contract
 

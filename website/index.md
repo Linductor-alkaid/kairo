@@ -43,7 +43,7 @@ Executor 不是协程运行时、分布式消息系统或硬实时操作系统�
 - 验证服务端模型：[数据导入案例](/zh/tutorial/service-data-import)讲清部分失败、幂等与请求排空。
 - 准备接入服务：[生产接入检查清单](/zh/guides/production-readiness)。
 - 深入原理：[高级与原理](/zh/advanced/)；按需了解实时线程、通信、GPU 与底层执行路径。
-- 使用 AI 集成 Executor 时，先阅读渐进式 [Executor 集成 skill](https://github.com/Linductor-alkaid/executor/blob/master/docs/skill/executor-integration/SKILL.md)；其中也说明了如何让下游项目中的 AI 获取该 skill。
+- 使用 AI 集成 Kairo 时，先阅读渐进式 [Kairo 集成 skill](https://github.com/Linductor-alkaid/kairo/blob/master/docs/skill/kairo-integration/SKILL.md)；其中也说明了如何让下游项目中的 AI 获取该 skill。
 
 ## 发布信息
 
@@ -54,6 +54,6 @@ Executor 不是协程运行时、分布式消息系统或硬实时操作系统�
 | 构建系统 | CMake 3.16+ |
 | 版本 | `v0.5.3` |
 | 持续集成 | [GitHub Actions](https://github.com/Linductor-alkaid/executor/actions/workflows/c-cpp.yml) |
-| 许可证 | [MIT](https://github.com/Linductor-alkaid/executor/blob/master/LICENSE) |
+| 许可证 | [MIT](https://github.com/Linductor-alkaid/kairo/blob/master/LICENSE) |
 
 <div class="version-note">本手册对应 `v0.5.3`；后续 `master` 开发能力需在发布 tag 后才构成稳定版承诺。</div>

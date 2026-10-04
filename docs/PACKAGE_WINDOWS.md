@@ -32,7 +32,7 @@ CPU-only）并附到 GitHub Release；本地可用同一脚本复现。
 
 ```powershell
 .\scripts\build_and_package_windows.ps1 `
-    -Version "0.5.0" `
+    -Version "0.6.0" `
     -BuildType "Release" `
     -Generator "" `
     -Architecture "x64" `
@@ -44,7 +44,7 @@ CPU-only）并附到 GitHub Release；本地可用同一脚本复现。
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `-Version` | `0.5.0` | 版本号，用于打包命名 |
+| `-Version` | `0.6.0` | 版本号，用于打包命名 |
 | `-BuildType` | `Release` | 构建类型（Release/Debug） |
 | `-Generator` | 空（自动选择） | CMake 生成器；留空跟随 CMake 默认（自动适配本机/runner 安装的 VS，例如 VS 2022 或 VS 2026） |
 | `-Architecture` | `x64` | 目标架构（x64/x86） |
@@ -77,7 +77,7 @@ CPU-only）并附到 GitHub Release；本地可用同一脚本复现。
 构建完成后，使用打包脚本创建发行包：
 
 ```powershell
-.\scripts\package_windows.ps1 -Version "0.5.0"
+.\scripts\package_windows.ps1 -Version "0.6.0"
 ```
 
 打包脚本会：
@@ -142,7 +142,7 @@ cmake --install build_shared --config Release
 打包后的目录结构如下：
 
 ```
-kairo-0.5.0-windows-x64/
+kairo-0.6.0-windows-x64/
 ├── static/                    # 静态库
 │   ├── lib/
 │   │   ├── kairo.lib      # 静态库文件
@@ -175,7 +175,7 @@ kairo-0.5.0-windows-x64/
 2. 在 CMake 配置时设置路径：
 
 ```powershell
-cmake -B build -DCMAKE_PREFIX_PATH=path\to\kairo-0.5.0-windows-x64\static
+cmake -B build -DCMAKE_PREFIX_PATH=path\to\kairo-0.6.0-windows-x64\static
 ```
 
 3. 在项目的 `CMakeLists.txt` 中：
@@ -191,7 +191,7 @@ target_link_libraries(your_target PRIVATE kairo::kairo)
 2. 在 CMake 配置时设置路径：
 
 ```powershell
-cmake -B build -DCMAKE_PREFIX_PATH=path\to\kairo-0.5.0-windows-x64\shared
+cmake -B build -DCMAKE_PREFIX_PATH=path\to\kairo-0.6.0-windows-x64\shared
 ```
 
 3. 在项目的 `CMakeLists.txt` 中：

@@ -132,7 +132,7 @@ You can also integrate the source tree with `add_subdirectory(path/to/kairo)`. S
 | Upgrade from an earlier release | [Migration guide](docs/MIGRATION.md) |
 | Review release changes | [CHANGELOG](CHANGELOG.md) |
 
-More runnable code is available in [examples](examples/) and [tutorial](examples/tutorial/). For AI-assisted integration, ask the agent to read the [Executor integration skill](docs/skill/executor-integration/SKILL.md) first.
+More runnable code is available in [examples](examples/) and [tutorial](examples/tutorial/). For AI-assisted integration, ask the agent to read the [Kairo integration skill](docs/skill/kairo-integration/SKILL.md) first.
 
 ## Version and License
 

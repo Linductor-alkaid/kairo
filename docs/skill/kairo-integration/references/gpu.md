@@ -7,12 +7,12 @@ Optional CUDA/OpenCL execution after a correct CPU path exists. Build and query 
 ## Minimal Usage
 
 ```cpp
-executor::gpu::GpuExecutorConfig config;
+kairo::gpu::GpuExecutorConfig config;
 config.name = "cuda0";
-config.backend = executor::gpu::GpuBackend::CUDA;
+config.backend = kairo::gpu::GpuBackend::CUDA;
 
 if (!executor.register_gpu_executor("cuda0", config)) return run_on_cpu();
-executor::gpu::GpuTaskConfig task;
+kairo::gpu::GpuTaskConfig task;
 auto done = executor.submit_gpu("cuda0", [](void* stream) { launch_kernel(stream); }, task);
 done.get();
 ```
