@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "../src/executor/gpu/cuda_executor.hpp"
+#include "../src/kairo/gpu/cuda_executor.hpp"
 #include <vector>
 #include <chrono>
 #include <string>

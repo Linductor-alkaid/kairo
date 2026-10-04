@@ -888,7 +888,7 @@ bool test_cuda_executor_priority_queue() {
             completion_order.push_back(200 + i);
         }, high_cfg);
     }
-    (void)executor.wait_for_completion(std::chrono::seconds{300});
+    executor.wait_for_completion();
     TEST_ASSERT(completion_order.size() == static_cast<size_t>(num_low + num_high),
                 "All tasks should complete");
     int first_high = -1;
@@ -946,7 +946,7 @@ bool test_cuda_executor_batch_submit() {
     for (auto& f : batch_futures) {
         f.get();
     }
-    (void)executor.wait_for_completion(std::chrono::seconds{300});
+    executor.wait_for_completion();
     auto status = executor.get_status();
     TEST_ASSERT(status.completed_kernels >= n, "All batch tasks should complete");
 
@@ -978,7 +978,7 @@ bool test_cuda_executor_batch_submit() {
             executor.submit_kernel(empty_kernel, cfg);
         }
         auto t1 = std::chrono::high_resolution_clock::now();
-        (void)executor.wait_for_completion(std::chrono::seconds{300});
+        executor.wait_for_completion();
         st_single[run] = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
         // 2) 单线程：一次 submit_kernels_batch(1024)
@@ -986,7 +986,7 @@ bool test_cuda_executor_batch_submit() {
         auto futures = executor.submit_kernels_batch(batch_1024);
         t1 = std::chrono::high_resolution_clock::now();
         for (auto& f : futures) { f.get(); }
-        (void)executor.wait_for_completion(std::chrono::seconds{300});
+        executor.wait_for_completion();
         st_batch[run] = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
         // 3) 多线程：每线程 512 次 submit_kernel（高锁竞争）
@@ -1003,7 +1003,7 @@ bool test_cuda_executor_batch_submit() {
             for (auto& th : threads) th.join();
         }
         t1 = std::chrono::high_resolution_clock::now();
-        (void)executor.wait_for_completion(std::chrono::seconds{300});
+        executor.wait_for_completion();
         mt_single[run] = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
         // 4) 多线程：每线程一次 submit_kernels_batch(512)（低锁竞争）
@@ -1018,7 +1018,7 @@ bool test_cuda_executor_batch_submit() {
             for (auto& th : threads) th.join();
         }
         t1 = std::chrono::high_resolution_clock::now();
-        (void)executor.wait_for_completion(std::chrono::seconds{300});
+        executor.wait_for_completion();
         mt_batch[run] = std::chrono::duration<double, std::milli>(t1 - t0).count();
     }
 
@@ -1074,7 +1074,7 @@ bool test_cuda_executor_task_dependency() {
     future_b.get();
     TEST_ASSERT(task_a_done.load(), "Task A should have completed");
     TEST_ASSERT(task_b_started_after_a.load(), "Task B should start after A (dependency)");
-    (void)executor.wait_for_completion(std::chrono::seconds{300});
+    executor.wait_for_completion();
     executor.stop();
     std::cout << "  CudaExecutor task dependency: PASSED" << std::endl;
     return true;

@@ -74,7 +74,7 @@ bool test_wait_for_completion_race() {
     // pop/active++ window and could observe a false quiescent state.
     std::thread waiter([&]() {
         while (!stop_waiter.load()) {
-            (void)executor.wait_for_completion(std::chrono::seconds{300});
+            executor.wait_for_completion();
             std::this_thread::sleep_for(std::chrono::microseconds(50));
         }
     });
@@ -98,7 +98,7 @@ bool test_wait_for_completion_race() {
     }
 
     // One final drain after every submission is queued.
-    (void)executor.wait_for_completion(std::chrono::seconds{300});
+    executor.wait_for_completion();
 
     // Stop the waiter only after the queue is drained so its in-flight
     // wait_for_completion() unblocks promptly.

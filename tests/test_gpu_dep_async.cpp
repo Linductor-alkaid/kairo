@@ -321,7 +321,7 @@ bool test_gpu_dependency_does_not_starve_worker() {
                   << std::endl;
     }
 
-    (void)exec.wait_for_completion(std::chrono::seconds{300});
+    exec.wait_for_completion();
     exec.stop();
     std::cout << "  P-005 dep-async test: PASSED" << std::endl;
     return true;
