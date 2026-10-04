@@ -47,7 +47,7 @@ gpu backend=unavailable, submit=diagnosed, failures=2
 
 ## 硬件验证边界
 
-无硬件环境可以持续验证头文件、`_ex` 诊断与拒绝路径；真实 CUDA/OpenCL kernel、设备内存、stream 和多设备表现必须在对应硬件、驱动与构建选项下验证。它们不应成为普通 PR 的稳定性能门禁。
+无硬件环境可以持续验证头文件、诊断结果与拒绝路径；真实 CUDA/OpenCL kernel、设备内存、stream 和多设备表现必须在对应硬件、驱动与构建选项下验证。它们不应成为普通 PR 的稳定性能门禁。
 
 ## 下一步阅读
 

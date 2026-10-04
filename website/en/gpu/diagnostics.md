@@ -41,6 +41,6 @@ Inspect failed registration `error_code` and `message`: invalid configuration is
 
 After registration failure, do not keep submitting to that GPU executor name. Continue ordinary CPU work with `submit_auto(lambda)`, or use `cpu_gpu_task()` with an explicit `AllowCpu` fallback after reading [automatic selection](/en/gpu/automatic-scheduling). Users without GPU do not need CUDA/OpenCL to complete the normal tutorials.
 
-GPU-free environments continuously validate headers, `_ex` diagnostics, and rejection. A real CUDA/OpenCL kernel, device memory, stream, and multi-device behavior requires matching hardware, driver, and build settings; it should not become a stable ordinary-PR performance gate.
+GPU-free environments continuously validate headers, diagnostic results, and rejection. A real CUDA/OpenCL kernel, device memory, stream, and multi-device behavior requires matching hardware, driver, and build settings; it should not become a stable ordinary-PR performance gate.
 
 Next: [register and submit GPU work](/en/gpu/register-and-submit), then [automatic selection](/en/gpu/automatic-scheduling).

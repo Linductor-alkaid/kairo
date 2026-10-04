@@ -5,7 +5,7 @@ description: Module entry points and stability boundaries for the public API.
 
 # API Reference
 
-This site anchors on `v0.5.3` as its stable baseline, covering unified auto-routing, waiting, communication, task graphs and diagnostics; unreleased capabilities on `master` do not constitute a stability commitment. Complete signatures, defaults, error codes and compatibility semantics are maintained only in the repository's [`docs/API.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md), so the site and the repository never carry two competing versions of the truth.
+This site anchors on `v0.6.0` as its stable baseline, covering unified auto-routing, waiting, communication, task graphs and diagnostics; unreleased capabilities on `master` do not constitute a stability commitment. Complete signatures, defaults, error codes and compatibility semantics are maintained only in the repository's [`docs/API.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md), so the site and the repository never carry two competing versions of the truth.
 
 ## Locate by module first
 

@@ -7,11 +7,11 @@ aside: false
 
 # 内容维护
 
-本手册以“用户能完成任务并处理失败”为完成标准，而不是以公开接口是否被提到为标准。当前内容基线为 `v0.5.3` 与后续 `master` 开发快照；页面中的待发布能力不能视为已有稳定版本承诺。
+本手册以“用户能完成任务并处理失败”为完成标准，而不是以公开接口是否被提到为标准。当前内容基线为 `v0.6.0` 与后续 `master` 开发快照；页面中的待发布能力不能视为已有稳定版本承诺。
 
 <div class="maintenance-hero">
   <p class="maintenance-eyebrow">CURRENT BASELINE</p>
-  <p class="maintenance-version">v0.5.3 + master 开发快照</p>
+  <p class="maintenance-version">v0.6.0 + master 开发快照</p>
   <p>稳定 tag 发布、公开 API 行为变化或教程示例修改时，必须重新核对对应责任域。</p>
 </div>
 
@@ -53,7 +53,7 @@ aside: false
 - 对优先级、超时、实时性和性能不作超出实现与测量的承诺。
 - 新入口同时出现在侧边栏、相关上一层页面和站内搜索可达内容中。
 - 运行网站构建与链接检查；涉及示例时运行对应 CTest。
-- 更新页面版本口径，并在需要时执行[发布文档同步清单](https://github.com/Linductor-alkaid/executor/blob/master/docs/RELEASE_CHECKLIST.md)。
+- 更新页面版本口径，并在需要时执行[发布文档同步清单](https://github.com/Linductor-alkaid/kairo/blob/master/docs/RELEASE_CHECKLIST.md)。
 
 ## 内容成熟度
 
@@ -64,5 +64,5 @@ aside: false
     <strong>发现讲不清、复现不了或行为已变化？</strong>
     <p>请附上页面 URL、使用版本、最小复现、实际行为与期望行为。若问题来自真实接入场景，也请说明任务规模、线程模型和关闭方式。</p>
   </div>
-  <a href="https://github.com/Linductor-alkaid/executor/issues/new/choose">提交文档问题</a>
+  <a href="https://github.com/Linductor-alkaid/kairo/issues/new/choose">提交文档问题</a>
 </div>

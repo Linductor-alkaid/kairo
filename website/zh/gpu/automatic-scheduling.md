@@ -1,6 +1,6 @@
 ---
 title: CPU/GPU 自动选择
-description: 用 cpu_gpu_task 表达独立路径、配置回退，并理解 legacy submit_auto 的兼容边界。
+description: 用 cpu_gpu_task 表达独立路径、配置回退，并理解 GPU 不可用时的显式失败边界。
 ---
 
 # CPU/GPU 自动选择
@@ -45,26 +45,13 @@ future.get();
 
 `CpuGpuTask` 以 `data_size`、`compute_intensity` 和 `prefer_gpu()` 传递任务特征；Facade 的实际选择依赖显式 GPU 偏好和阈值。GPU 必须已注册、运行、无后端错误且未达到已知硬容量，才会进入候选。
 
-## 兼容路径：legacy 四参数 overload
+## 从 legacy 四参数 overload 迁移（0.6.0 已移除）
 
-`0.3.x` 保留以下 overload 以兼容既有代码；它的 CPU 路径仍以空 stream 调用同一个 callable，GPU 未就绪时也不会隐式 CPU 回退：
-
-```cpp
-auto future = executor.submit_auto(characteristics, "cuda0",
-    [data](void* stream) {
-        if (stream == nullptr) {
-            run_cpu(*data);
-        } else {
-            run_gpu(stream, *data);
-        }
-    }, gpu_task_config);
-```
-
-该模式仅用于渐进迁移。若两条路径需要不同输入或生命周期，新代码使用前一节的 `cpu_gpu_task()`；在下一个允许破坏性变更的主版本前，此 overload 不添加编译期弃用标记。
+0.3.x–0.5.x 曾保留一个四参数 `submit_auto(characteristics, gpu_name, kernel, gpu_config)` overload：单 callable 以空 stream 走 CPU、非空走 GPU。0.6.0 已将其移除——两条路径改由 `cpu_gpu_task()` 的两个独立 callable 表达（见上一节）。旧写法迁移时把"空 stream 分支"移入 CPU callable、"非空分支"移入 GPU callable，并按需拆分各自的输入与生命周期。
 
 ## 不会隐式回退的情况
 
-新双路径 `submit_auto()` 会按 `FallbackPolicy` 处理不可用 GPU：仅 `AllowCpu` 会回退 CPU；`NoFallback` 和 legacy overload 都会明确失败，不会偷偷改走 CPU。推荐流程是先完成 `register_gpu_executor()`、检查状态，再允许 GPU 特征或 `prefer_gpu` 进入调度器。
+新双路径 `submit_auto()` 会按 `FallbackPolicy` 处理不可用 GPU：仅 `AllowCpu` 会回退 CPU；`NoFallback` 会明确失败，不会偷偷改走 CPU。推荐流程是先完成 `register_gpu_executor()`、检查状态，再允许 GPU 特征或 `prefer_gpu` 进入调度器。
 
 ## 调整配置
 

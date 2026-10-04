@@ -50,7 +50,7 @@ Kairo is not a coroutine runtime, a distributed messaging system, or a hard real
 | Platform | Linux, Windows; Android CPU-only via NDK |
 | Language | C++20 |
 | Build system | CMake 3.16+ |
-| Version | `v0.5.3` |
+| Version | `v0.6.0` |
 | License | [MIT](https://github.com/Linductor-alkaid/kairo/blob/master/LICENSE) |
 
-<div class="version-note">This guide corresponds to `v0.5.3`; later `master` capabilities become stable promises only after their release tag.</div>
+<div class="version-note">This guide corresponds to `v0.6.0`; later `master` capabilities become stable promises only after their release tag.</div>

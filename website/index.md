@@ -1,21 +1,23 @@
 ---
 layout: home
 hero:
-  name: Executor
-  text: 面向 C++20 应用的进程内并发执行基础设施
-  tagline: 统一 Facade 管理普通异步任务、低延迟队列、周期实时线程、长期 Blocking I/O 和可选 GPU 工作；从 submit_auto() 开始。
+  name: Kairo
+  text: 面向 C++20 应用的进程内并发调度运行时
+  tagline: 统一 Facade 管理普通异步任务、低延迟队列、周期实时线程、长期 Blocking I/O 和可选 GPU 工作；0.6.0 起调度决策由可注入的 IScheduler 承载，任务可声明 deadline、QoS、affinity 与资源需求。
   actions:
     - theme: brand
       text: 十分钟开始使用
       link: /zh/quick-start/build
     - theme: alt
-      text: 了解 Executor
+      text: 了解 Kairo
       link: /zh/getting-started/what-is-kairo
 features:
   - title: 先完成一个任务
     details: 从 submit_auto() 和 future.get() 开始，不要求先理解线程池、GPU 或实时调度器。
   - title: 约束明确后再下钻
     details: 只有遇到明确的周期、容量、I/O 或数据传递约束时，才进入有界投递、长期 worker、实时、通信或 GPU 等专用路径。
+  - title: 声明式调度（0.6.0）
+    details: 任务可声明 deadline、QoS、affinity 与资源需求；调度器（IScheduler）可注入，排序层次为优先级 -> EDF -> FIFO，错过 deadline 可观测。
   - title: 示例可验证
     details: 页面核心代码对应仓库中的教程示例，并由根 CMake 工程持续编译和 smoke test。
 ---
@@ -23,7 +25,7 @@ features:
 ## 一眼看懂
 
 ```cpp
-auto& executor = executor::Executor::instance();
+auto& executor = kairo::Executor::instance();
 auto answer = executor.submit_auto([] { return 42; });
 std::cout << answer.get() << '\n';
 executor.shutdown();
@@ -33,7 +35,7 @@ executor.shutdown();
 
 ## 能力边界
 
-Executor 不是协程运行时、分布式消息系统或硬实时操作系统；它不能安全地强制终止任意正在运行的 C++ 函数，`submit_periodic()` 只是普通线程池上的软周期任务。完整边界（含 0.4.0 起的同步无锁保证）见 [Executor 是什么](/zh/getting-started/what-is-kairo)。
+Kairo 不是协程运行时、分布式消息系统或硬实时操作系统；它不能安全地强制终止任意正在运行的 C++ 函数，`submit_periodic()` 只是普通线程池上的软周期任务。完整边界（含 0.4.0 起的同步无锁保证）见 [Kairo 是什么](/zh/getting-started/what-is-kairo)。
 
 ## 从这里继续
 
@@ -52,8 +54,8 @@ Executor 不是协程运行时、分布式消息系统或硬实时操作系统�
 | 平台 | Linux、Windows；Android CPU-only（NDK） |
 | 语言 | C++20 |
 | 构建系统 | CMake 3.16+ |
-| 版本 | `v0.5.3` |
-| 持续集成 | [GitHub Actions](https://github.com/Linductor-alkaid/executor/actions/workflows/c-cpp.yml) |
+| 版本 | `v0.6.0` |
+| 持续集成 | [GitHub Actions](https://github.com/Linductor-alkaid/kairo/actions/workflows/c-cpp.yml) |
 | 许可证 | [MIT](https://github.com/Linductor-alkaid/kairo/blob/master/LICENSE) |
 
-<div class="version-note">本手册对应 `v0.5.3`；后续 `master` 开发能力需在发布 tag 后才构成稳定版承诺。</div>
+<div class="version-note">本手册对应 `v0.6.0`；后续 `master` 开发能力需在发布 tag 后才构成稳定版承诺。</div>
