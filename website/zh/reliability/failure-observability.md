@@ -29,7 +29,7 @@ description: 将 future、failure callback、状态计数和最近事件组合�
 
 <<< @/../examples/tutorial/06_observability.cpp{1-29}
 
-完整源码：[`examples/tutorial/06_observability.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/tutorial/06_observability.cpp)。
+完整源码：[`examples/tutorial/06_observability.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/06_observability.cpp)。
 
 ```bash
 ./build/examples/tutorial/tutorial_06_observability
@@ -55,11 +55,11 @@ failures=1, callback=1, recent=1
 
 ## 回调边界
 
-failure callback 运行在 Executor 的失败记录路径上。保持它短小、无阻塞并自行处理外部 I/O；callback 自身抛出的异常会被隔离，不会终止 worker 或后台线程。需要复杂处理时，只投递一条事件到你自己的日志/告警队列。
+failure callback 运行在 Kairo 的失败记录路径上。保持它短小、无阻塞并自行处理外部 I/O；callback 自身抛出的异常会被隔离，不会终止 worker 或后台线程。需要复杂处理时，只投递一条事件到你自己的日志/告警队列。
 
 ## 不同失败不是同一件事
 
-`TaskException`、`SubmitRejected`、`WaitTimeout`、实时 drop、GPU failure 和安全调优回退都可进入 `ExecutorFailureStatus`，但含义不同。任务异常需要处理业务结果；等待超时表示尚未完成；调优回退可能仍然安全运行。路由预检快照也不是投递 reservation：实际的 stop、队列满和对象池耗尽仍应产生 `DispatchResult` / future 拒绝及相应 failure event。通信组件事件默认停留在 `executor::comm` 本地 callback 与统计中，不会自动触发这个 callback。
+`TaskException`、`SubmitRejected`、`WaitTimeout`、实时 drop、GPU failure 和安全调优回退都可进入 `ExecutorFailureStatus`，但含义不同。任务异常需要处理业务结果；等待超时表示尚未完成；调优回退可能仍然安全运行。路由预检快照也不是投递 reservation：实际的 stop、队列满和对象池耗尽仍应产生 `DispatchResult` / future 拒绝及相应 failure event。通信组件事件默认停留在 `kairo::comm` 本地 callback 与统计中，不会自动触发这个 callback。
 
 ## 下一步阅读
 

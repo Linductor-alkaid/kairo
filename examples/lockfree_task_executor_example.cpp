@@ -4,13 +4,13 @@
  * 演示高性能无锁任务执行器的基本用法
  */
 
-#include <executor/lockfree_task_executor.hpp>
+#include <kairo/lockfree_task_executor.hpp>
 #include <iostream>
 #include <atomic>
 #include <chrono>
 #include <thread>
 
-using namespace executor;
+using namespace kairo;
 
 // 示例1: 基本使用
 void example_basic() {

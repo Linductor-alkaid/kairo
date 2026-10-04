@@ -1,0 +1,6 @@
+{
+  "schema_version": 2,
+  "name": "kairo",
+  "dependencies": [],
+  "export_library_names": ["kairo"]
+}

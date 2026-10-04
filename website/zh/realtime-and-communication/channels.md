@@ -14,11 +14,11 @@ description: 为普通数据流选择 MpscChannel，为实时周期选择有预�
 采集线程到规划线程的帧流通常要求 FIFO 消费。`MpscChannel<T>` 是有界的多生产者/单消费者通道；普通消费者可用 `receive_for()` 设置等待边界：
 
 ```cpp
-executor::comm::ChannelOptions options;
+kairo::comm::ChannelOptions options;
 options.capacity = 256;
-options.drop_policy = executor::comm::DropPolicy::RejectNewest;
+options.drop_policy = kairo::comm::DropPolicy::RejectNewest;
 
-executor::comm::MpscChannel<SensorFrame> frames(options);
+kairo::comm::MpscChannel<SensorFrame> frames(options);
 frames.try_send(SensorFrame{});
 
 SensorFrame frame;
@@ -48,11 +48,11 @@ if (!frames.try_send(std::move(frame))) {
 实时线程不应在周期内等待 condition variable，也不应无限清空积压。用 `drain_for_cycle()` 限制本周期处理量：
 
 ```cpp
-executor::comm::RealtimeChannelOptions options;
+kairo::comm::RealtimeChannelOptions options;
 options.capacity = 128;
 options.max_items_per_cycle = 8;
 
-executor::comm::RealtimeChannel<ControlCommand> commands(options);
+kairo::comm::RealtimeChannel<ControlCommand> commands(options);
 commands.try_send(ControlCommand{});
 commands.drain_for_cycle([](const ControlCommand& command) {
     apply_command(command);

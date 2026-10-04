@@ -8,11 +8,11 @@
 #include <string>
 #include <vector>
 
-#include <executor/config.hpp>
-#include <executor/executor.hpp>
-#include <executor/thread_pool/thread_pool.hpp>
+#include <kairo/config.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/thread_pool/thread_pool.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message)                                      \
     do {                                                                     \
@@ -170,7 +170,7 @@ bool test_executor_facade_empty_batch_future_is_exception() {
                     "empty batch futures should throw std::invalid_argument");
     }
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     TEST_ASSERT(ran.load(std::memory_order_relaxed) == 0,
                 "empty batch should not partially submit valid tasks");
 

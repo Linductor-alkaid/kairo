@@ -31,11 +31,11 @@ jobs:
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DEXECUTOR_BUILD_TESTS=ON \
-            -DEXECUTOR_BUILD_EXAMPLES=OFF \
-            -DEXECUTOR_ENABLE_GPU=OFF \
-            -DEXECUTOR_ENABLE_CUDA=OFF \
-            -DEXECUTOR_ENABLE_OPENCL=OFF
+            -DKAIRO_BUILD_TESTS=ON \
+            -DKAIRO_BUILD_EXAMPLES=OFF \
+            -DKAIRO_ENABLE_GPU=OFF \
+            -DKAIRO_ENABLE_CUDA=OFF \
+            -DKAIRO_ENABLE_OPENCL=OFF
 
       - name: Build standalone tests
         run: |
@@ -50,7 +50,7 @@ jobs:
       - name: Run standalone tests
         working-directory: build
         env:
-          EXECUTOR_ANDROID_SOAK_SECONDS: ${{ github.event.inputs.soak_seconds || '30' }}
+          KAIRO_ANDROID_SOAK_SECONDS: ${{ github.event.inputs.soak_seconds || '30' }}
         run: |
           ctest --output-on-failure -R \
             '^(android_smoke|test_stop_token_compat|test_executor_manager_android_defaults|test_android_lockfree_queue_core|test_multithread_mpsc|test_lockfree_worker_queue_concurrent_steal)$'
@@ -73,11 +73,11 @@ jobs:
           cmake -S . -B build-asan -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' \
-            -DEXECUTOR_BUILD_TESTS=ON \
-            -DEXECUTOR_BUILD_EXAMPLES=OFF \
-            -DEXECUTOR_ENABLE_GPU=OFF \
-            -DEXECUTOR_ENABLE_CUDA=OFF \
-            -DEXECUTOR_ENABLE_OPENCL=OFF
+            -DKAIRO_BUILD_TESTS=ON \
+            -DKAIRO_BUILD_EXAMPLES=OFF \
+            -DKAIRO_ENABLE_GPU=OFF \
+            -DKAIRO_ENABLE_CUDA=OFF \
+            -DKAIRO_ENABLE_OPENCL=OFF
 
       - name: Build sanitizer lockfree tests
         run: |

@@ -2,8 +2,8 @@
  * 多线程测试 - 定位段错误问题
  */
 
-#include "executor/lockfree_task_executor.hpp"
-#include "executor/util/lockfree_queue.hpp"
+#include "kairo/lockfree_task_executor.hpp"
+#include "kairo/util/lockfree_queue.hpp"
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -12,7 +12,7 @@
 #include <set>
 #include <cstdint>
 
-using namespace executor;
+using namespace kairo;
 
 struct ProducerStallHook {
     std::atomic<bool> entered{false};

@@ -1,7 +1,7 @@
 // P-260618-008: doc-vs-struct constraint test.
 // Parses docs/API.md §7.3 "RealtimeExecutorStatus" entry and asserts the
 // field names listed there match the actual members of
-// `executor::RealtimeExecutorStatus` in include/executor/types.hpp.
+// `kairo::RealtimeExecutorStatus` in include/executor/types.hpp.
 //
 // Prevents the recurrence of the bug fixed by P-260618-008: a struct gets
 // new fields (dropped_task_count, failed_pushes, peak_queue_size,
@@ -10,8 +10,8 @@
 // leaving users with stale documentation. Also covers P-008 batch performance
 // claim sources.
 
-#include <executor/types.hpp>
-#include "executor/thread_pool/thread_pool.hpp"
+#include <kairo/types.hpp>
+#include "kairo/thread_pool/thread_pool.hpp"
 
 #include <gtest/gtest.h>
 
@@ -141,7 +141,7 @@ std::set<std::string> realtime_status_fields() {
     return {
         "name", "is_running", "cycle_period_ns", "cycle_count",
         "cycle_timeout_count", "avg_cycle_time_ns", "max_cycle_time_ns",
-        "priority_applied", "cpu_affinity_applied", "memory_locked",
+        "priority_applied", "cpu_affinity_applied", "process_memory_lock_applied",
         "timer_slack_applied", "dropped_task_count", "failed_pushes",
         "peak_queue_size", "queue_capacity", "rejected_not_running_count",
         "rejected_empty_task_count", "pool_exhausted_count", "queue_full_count",
@@ -311,9 +311,9 @@ TEST(ApiDocStatusFields, GpuRegistrationDocsMatchSupportedBackends) {
         << "GPU registration/config docs must mention CUDA";
     EXPECT_NE(gpu_docs.find("OpenCL"), std::string::npos)
         << "GPU registration/config docs must mention OpenCL";
-    EXPECT_NE(gpu_docs.find("EXECUTOR_ENABLE_CUDA"), std::string::npos)
+    EXPECT_NE(gpu_docs.find("KAIRO_ENABLE_CUDA"), std::string::npos)
         << "GPU registration/config docs must mention the CUDA build option";
-    EXPECT_NE(gpu_docs.find("EXECUTOR_ENABLE_OPENCL"), std::string::npos)
+    EXPECT_NE(gpu_docs.find("KAIRO_ENABLE_OPENCL"), std::string::npos)
         << "GPU registration/config docs must mention the OpenCL build option";
 
     EXPECT_EQ(gpu_docs.find("仅支持 `GpuBackend::CUDA`"), std::string::npos)
@@ -388,11 +388,11 @@ TEST(ApiDocStatusFields, ApiDocPerformanceClaimsHaveSources) {
 }
 
 TEST(ApiDocThreadPoolSnippetCompiles, FixedThreadPoolExampleInitializes) {
-    executor::ThreadPoolConfig config;
+    kairo::ThreadPoolConfig config;
     config.min_threads = 16;
     config.max_threads = 16;
 
-    executor::ThreadPool pool;
+    kairo::ThreadPool pool;
     ASSERT_TRUE(pool.initialize(config));
 
     pool.shutdown(true);

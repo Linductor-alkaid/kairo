@@ -13,11 +13,11 @@
 //   Part C (control, initialize() OK): submission executes normally.
 //
 // Build (normal):
-//   g++ -std=c++20 -O1 -g -DEXECUTOR_THREAD_POOL_TEST_HOOKS -I include -I src
+//   g++ -std=c++20 -O1 -g -DKAIRO_THREAD_POOL_TEST_HOOKS -I include -I src
 //     review_verification/cr022_submit_after_failed_init_fixed.cpp
 //     build/src/libexecutor.a -lpthread -ldl
 //     -o review_verification/cr022_submit_after_failed_init_fixed
-#include "executor/thread_pool/thread_pool.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -27,11 +27,11 @@
 #include <string>
 #include <system_error>
 
-#if !defined(EXECUTOR_THREAD_POOL_TEST_HOOKS)
-#error "compile with -DEXECUTOR_THREAD_POOL_TEST_HOOKS (prebuilt lib has hooks)"
+#if !defined(KAIRO_THREAD_POOL_TEST_HOOKS)
+#error "compile with -DKAIRO_THREAD_POOL_TEST_HOOKS (prebuilt lib has hooks)"
 #endif
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 namespace {

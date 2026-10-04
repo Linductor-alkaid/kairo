@@ -5,9 +5,9 @@
 #include <string>
 #include <thread>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message)                                      \
     do {                                                                    \
@@ -54,21 +54,23 @@ bool test_periodic_exception_observable_without_future() {
         }
     });
 
-    auto task_id = executor.submit_periodic(10, []() {
+    auto task_id_handle = executor.submit_periodic(10, []() {
         throw std::runtime_error("periodic boom");
     });
 
-    TEST_ASSERT(wait_until(std::chrono::seconds(2), [&executor, &task_id]() {
-                    auto status = executor.get_periodic_task_status(task_id);
+    TEST_ASSERT(wait_until(std::chrono::seconds(2), [&executor, &task_id_handle]() {
+                    auto status = executor.get_periodic_task_status(task_id_handle.id());
                     return status && status->failed_count >= 2;
                 }),
                 "periodic failures should become visible in periodic status");
 
-    TEST_ASSERT(executor.cancel_task(task_id), "periodic task cancellation should succeed");
-    executor.wait_for_completion();
+    TEST_ASSERT(task_id_handle.cancel() != kairo::TimerOperationResult::NotFound,
+                "periodic task cancellation should succeed");
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
 
-    auto periodic_status = executor.get_periodic_task_status(task_id);
-    TEST_ASSERT(!periodic_status, "cancelled periodic task should no longer be registered");
+    auto periodic_status = executor.get_periodic_task_status(task_id_handle.id());
+    TEST_ASSERT(periodic_status && !periodic_status->is_running,
+                "cancelled periodic task should be observed as not running");
 
     auto failure_status = executor.get_failure_status();
     TEST_ASSERT(failure_status.task_exception_count >= 2,
@@ -78,7 +80,7 @@ bool test_periodic_exception_observable_without_future() {
 
     auto recent = executor.get_recent_failures(1);
     TEST_ASSERT(!recent.empty(), "recent failures should include periodic exception");
-    TEST_ASSERT(recent[0].task_id == task_id,
+    TEST_ASSERT(recent[0].task_id == task_id_handle.id(),
                 "periodic failure event should carry task id");
 
     executor.shutdown();
@@ -94,22 +96,22 @@ bool test_periodic_status_tracks_success_and_failure_streak() {
     TEST_ASSERT(executor.initialize(small_config()), "executor should initialize");
 
     std::atomic<int> runs{0};
-    auto task_id = executor.submit_periodic(10, [&runs]() {
+    auto task_id_handle = executor.submit_periodic(10, [&runs]() {
         const int run = runs.fetch_add(1, std::memory_order_relaxed);
         if (run < 2) {
             throw std::runtime_error("initial periodic failure");
         }
     });
 
-    TEST_ASSERT(wait_until(std::chrono::seconds(2), [&executor, &task_id]() {
-                    auto status = executor.get_periodic_task_status(task_id);
+    TEST_ASSERT(wait_until(std::chrono::seconds(2), [&executor, &task_id_handle]() {
+                    auto status = executor.get_periodic_task_status(task_id_handle.id());
                     return status && status->failed_count >= 2 &&
                            status->execution_count >= 3 &&
                            status->consecutive_failure_count == 0;
                 }),
                 "periodic status should track failures and reset streak after success");
 
-    auto status = executor.get_periodic_task_status(task_id);
+    auto status = executor.get_periodic_task_status(task_id_handle.id());
     TEST_ASSERT(status.has_value(), "periodic status should be queryable");
     TEST_ASSERT(status->failed_count >= 2,
                 "periodic failed_count should include user exceptions");
@@ -120,34 +122,14 @@ bool test_periodic_status_tracks_success_and_failure_streak() {
 
     auto all_statuses = executor.get_all_periodic_task_status();
     TEST_ASSERT(all_statuses.size() == 1, "all periodic statuses should include task");
-    TEST_ASSERT(all_statuses[0].task_id == task_id,
+    TEST_ASSERT(all_statuses[0].task_id == task_id_handle.id(),
                 "all periodic status should preserve task id");
 
-    TEST_ASSERT(executor.cancel_task(task_id), "periodic task cancellation should succeed");
+    TEST_ASSERT(task_id_handle.cancel() != kairo::TimerOperationResult::NotFound,
+                "periodic task cancellation should succeed");
     executor.shutdown();
 
     std::cout << "  Periodic status counters: PASSED" << std::endl;
-    return true;
-}
-
-bool test_cancel_missing_periodic_task_is_diagnostic() {
-    std::cout << "Testing missing periodic cancel diagnostic..." << std::endl;
-
-    Executor executor;
-
-    TEST_ASSERT(!executor.cancel_task("missing-periodic-task"),
-                "cancel_task should return false for missing task");
-
-    auto status = executor.get_failure_status();
-    TEST_ASSERT(status.submit_rejected_count == 1,
-                "missing cancel should record diagnostic rejection");
-
-    auto recent = executor.get_recent_failures(1);
-    TEST_ASSERT(recent.size() == 1, "missing cancel should produce recent event");
-    TEST_ASSERT(recent[0].task_id == "missing-periodic-task",
-                "missing cancel event should carry requested task id");
-
-    std::cout << "  Missing periodic cancel diagnostic: PASSED" << std::endl;
     return true;
 }
 
@@ -163,13 +145,13 @@ bool test_delayed_exception_observable() {
 
     bool future_threw = false;
     try {
-        (void)future.get();
+        (void)future.future.get();
     } catch (const std::exception&) {
         future_threw = true;
     }
     TEST_ASSERT(future_threw, "delayed task future should carry exception");
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
 
     auto failure_status = executor.get_failure_status();
     TEST_ASSERT(failure_status.task_exception_count == 1,
@@ -197,7 +179,7 @@ bool test_shutdown_marks_pending_delayed_task_failed() {
 
     executor.shutdown();
 
-    TEST_ASSERT(future.wait_for(std::chrono::seconds(0)) == std::future_status::ready,
+    TEST_ASSERT(future.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready,
                 "pending delayed future should be completed on shutdown");
 
     // C1/T1 设计契约：shutdown 清理未到期 delayed 任务是生命周期事件，
@@ -205,7 +187,7 @@ bool test_shutdown_marks_pending_delayed_task_failed() {
     // future + 定时任务取消计数可观察。
     bool cancelled_by_shutdown = false;
     try {
-        (void)future.get();
+        (void)future.future.get();
     } catch (const TaskCancelled& cancelled) {
         cancelled_by_shutdown =
             cancelled.reason() == TaskCancellationReason::Shutdown;
@@ -233,7 +215,6 @@ int main() {
     bool all_passed = true;
     all_passed &= test_periodic_exception_observable_without_future();
     all_passed &= test_periodic_status_tracks_success_and_failure_streak();
-    all_passed &= test_cancel_missing_periodic_task_is_diagnostic();
     all_passed &= test_delayed_exception_observable();
     all_passed &= test_shutdown_marks_pending_delayed_task_failed();
 

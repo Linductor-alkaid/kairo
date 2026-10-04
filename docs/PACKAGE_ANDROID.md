@@ -1,6 +1,6 @@
 # Android 打包与集成指南
 
-本文档说明如何用 NDK + CMake 构建 executor 的 Android 静态库/共享库，并将其接入
+本文档说明如何用 NDK + CMake 构建 kairo 的 Android 静态库/共享库，并将其接入
 AGP（Android Gradle Plugin）工程。一期 Android 能力边界：**CPU-only、调度调优
 best-effort、不承诺 GPU 与硬实时**。
 
@@ -15,7 +15,7 @@ best-effort、不承诺 GPU 与硬实时**。
 | Android API | `ANDROID_PLATFORM=android-21` 起 |
 | ABI | arm64-v8a 必选；armeabi-v7a / x86 / x86_64 为兼容目标 |
 | STL | `c++_static`（默认，单二进制便利）或 `c++_shared`（多模块共享 libc++） |
-| GPU | 一期关闭：`EXECUTOR_ENABLE_GPU=OFF` |
+| GPU | 一期关闭：`KAIRO_ENABLE_GPU=OFF` |
 
 ---
 
@@ -42,12 +42,12 @@ scripts/build_android.sh \
 
 ```text
 build-android/arm64-v8a/static/install/
-├── include/executor/...
-└── lib/libexecutor.a
+├── include/kairo/...
+└── lib/libkairo.a
 
 build-android/arm64-v8a/shared/install/
-├── include/executor/...
-└── lib/libexecutor.so
+├── include/kairo/...
+└── lib/libkairo.so
 ```
 
 `--build-tests true` 会额外构建 `tests/android_smoke` 等 standalone 测试；测试设备侧
@@ -61,8 +61,8 @@ build-android/arm64-v8a/shared/install/
 | --- | --- | --- |
 | APK 内额外产物 | 无 | 需要随 APK/AAR 携带 `libc++_shared.so` |
 | 多模块混用 | 每个 `.so` 都包含 libc++ 代码，注意 ODR | 所有模块共享一份 libc++，异常/RTTI 可跨模块 |
-| executor 自身 | 链接进业务 `.so` | 独立 `libexecutor.so` |
-| 推荐场景 | 单 native 模块或 smoke 工具 | 多 native 模块共享 executor |
+| kairo 自身 | 链接进业务 `.so` | 独立 `libkairo.so` |
+| 推荐场景 | 单 native 模块或 smoke 工具 | 多 native 模块共享 kairo |
 
 Android CMake 默认 STL 由 NDK toolchain 决定。静态库目标不会把 `librt` / `libatomic`
 错误导出；共享库目标只依赖 `libc.so` / `libm.so` / `libdl.so`。
@@ -90,7 +90,7 @@ cmake -S app -B app/build \
 ```
 
 关键点：Android toolchain 会把 `CMAKE_FIND_ROOT_PATH` 限制到 NDK sysroot，因此必须
-显式把 executor 安装目录加入 root path；也可以直接传 `-Dexecutor_DIR=/path/to/install/lib/cmake/executor`。
+显式把 kairo 安装目录加入 root path；也可以直接传 `-Dexecutor_DIR=/path/to/install/lib/cmake/kairo`。
 
 消费者 `CMakeLists.txt`：
 
@@ -98,10 +98,10 @@ cmake -S app -B app/build \
 cmake_minimum_required(VERSION 3.16)
 project(app LANGUAGES CXX)
 
-find_package(executor REQUIRED)
+find_package(kairo REQUIRED)
 
 add_library(app SHARED app_jni.cpp)
-target_link_libraries(app PRIVATE executor::executor)
+target_link_libraries(app PRIVATE kairo::kairo)
 ```
 
 ---
@@ -119,9 +119,9 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags += ["-std=c++20"]
-                arguments += ["-DEXECUTOR_BUILD_TESTS=OFF",
-                              "-DEXECUTOR_BUILD_EXAMPLES=OFF",
-                              "-DEXECUTOR_ENABLE_GPU=OFF"]
+                arguments += ["-DKAIRO_BUILD_TESTS=OFF",
+                              "-DKAIRO_BUILD_EXAMPLES=OFF",
+                              "-DKAIRO_ENABLE_GPU=OFF"]
             }
         }
     }
@@ -136,14 +136,14 @@ android {
 CMake 中可以直接 `add_subdirectory`：
 
 ```cmake
-set(EXECUTOR_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(EXECUTOR_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(EXECUTOR_ENABLE_GPU OFF CACHE BOOL "" FORCE)
+set(KAIRO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(KAIRO_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(KAIRO_ENABLE_GPU OFF CACHE BOOL "" FORCE)
 
-add_subdirectory(path/to/executor)
+add_subdirectory(path/to/kairo)
 
 add_library(app SHARED app_jni.cpp)
-target_link_libraries(app PRIVATE executor::executor)
+target_link_libraries(app PRIVATE kairo::kairo)
 ```
 
 ---
@@ -171,16 +171,16 @@ cp "$NDK_LIBCXX/x86_64-linux-android/libc++_shared.so" \
 
 ## 7. JNI 生命周期与显式 shutdown
 
-Android 不保证进程退出时执行 C++ 静态析构。JNI 层应显式关闭单例 executor：
+Android 不保证进程退出时执行 C++ 静态析构。JNI 层应显式关闭单例 kairo：
 
 ```cpp
 #include <jni.h>
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_example_app_NativeExecutor_shutdown(JNIEnv*, jobject) {
-    auto& executor = executor::Executor::instance();
-    executor.shutdown();  // 停止线程池、实时线程、Blocking I/O worker 并 join
+    auto& kairo = kairo::Executor::instance();
+    kairo.shutdown();  // 停止线程池、实时线程、Blocking I/O worker 并 join
 }
 ```
 
@@ -189,36 +189,36 @@ Java_com_example_app_NativeExecutor_shutdown(JNIEnv*, jobject) {
 - `Activity.onDestroy()` / Service 销毁路径（业务主动 shutdown）
 - `JNI_OnUnload()`（兜底，但 Android 不保证一定回调）
 
-不要在 RT 线程或 executor worker 内直接调用 shutdown；如果必须从 worker 内停止自身，
+不要在 RT 线程或 kairo worker 内直接调用 shutdown；如果必须从 worker 内停止自身，
 先检查对应执行器的 self-stop 契约。
 
 ---
 
 ## 8. Prefab / AAR（可选发布形态）
 
-若要把 executor 作为 AAR 分发给 AGP 消费者，建议结构：
+若要把 kairo 作为 AAR 分发给 AGP 消费者，建议结构：
 
 ```text
-executor-android-0.5.0.aar
-├── prefab/modules/executor/
+kairo-android-0.6.0.aar
+├── prefab/modules/kairo/
 │   ├── module.json
-│   ├── include/executor/...
+│   ├── include/kairo/...
 │   └── libs/
-│       ├── android.arm64-v8a/libexecutor.so
-│       └── android.x86_64/libexecutor.so
+│       ├── android.arm64-v8a/libkairo.so
+│       └── android.x86_64/libkairo.so
 └── jni/
     ├── arm64-v8a/libc++_shared.so
     └── x86_64/libc++_shared.so
 ```
 
-`prefab/modules/executor/module.json` 示例：
+`prefab/modules/kairo/module.json` 示例：
 
 ```json
 {
   "schema_version": 2,
-  "name": "executor",
+  "name": "kairo",
   "dependencies": [],
-  "export_library_names": ["executor"]
+  "export_library_names": ["kairo"]
 }
 ```
 

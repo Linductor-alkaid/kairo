@@ -7,8 +7,8 @@
 //  (a) 正常可取消提交/取消是否仍可用；
 //  (b) get_cancellation_status() / get_snapshot() 计数表现；
 //  (c) 新提交是否收到 "Cancellation registry capacity exhausted"。
-#include <executor/executor.hpp>
-#include <executor/serial_execution_context.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/serial_execution_context.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -16,7 +16,7 @@
 #include <string>
 #include <thread>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 namespace {

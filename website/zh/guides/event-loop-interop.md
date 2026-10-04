@@ -10,9 +10,9 @@ executor 核心库不依赖 asio 或任何第三方事件循环；本指南描�
 哪些派发是 executor 看不见的、以及让盲区保持安全的纪律。
 
 完整指南见
-[`docs/external_event_loop_interop.md`](https://github.com/Linductor-alkaid/executor/blob/master/docs/external_event_loop_interop.md)。
+[`docs/external_event_loop_interop.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/external_event_loop_interop.md)。
 可编译的伴随示例（用互斥量 + 条件变量复现 strand 语义，不引入任何 SDK 依赖）是
-[`examples/event_loop_interop.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/event_loop_interop.cpp)：
+[`examples/event_loop_interop.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/event_loop_interop.cpp)：
 
 <<< @/../examples/event_loop_interop.cpp{14-40}
 
@@ -50,7 +50,7 @@ executor 核心库不依赖 asio 或任何第三方事件循环；本指南描�
 - 需要协作取消的任务必须走 executor 提交 API（`submit_cancellable` +
   `StopToken`）。executor 的取消不会伸进 asio 的内部等待。
 - 不依赖 strand 所有权的自建 `sleep_until` 循环可以迁移到
-  `submit_delayed_with_handle()` / `submit_periodic_with_handle()`（见
+  `submit_delayed()` / `submit_periodic()`（见
   [取消与定时](/zh/realtime-and-communication/cancellation-and-timers)与
   `docs/MIGRATION.md`）。
 - 回调与销毁必须发生在同一 strand 上的 timer，在外部上下文定时器绑定通过评审

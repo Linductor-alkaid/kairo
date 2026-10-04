@@ -1,8 +1,8 @@
 #include <iostream>
 #include <string>
-#include "executor/monitor/statistics_collector.hpp"
+#include "kairo/monitor/statistics_collector.hpp"
 
-using namespace executor::monitor;
+using namespace kairo::monitor;
 
 #define TEST_ASSERT(condition, message)                                      \
     do {                                                                     \

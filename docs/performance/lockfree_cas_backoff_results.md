@@ -192,4 +192,4 @@ constexpr size_t MAX_BACKOFF = 8;    // 减少最大退避时间
 ### 测试代码
 
 - **基准测试**: [tests/benchmark_lockfree_mpsc.cpp](../../tests/benchmark_lockfree_mpsc.cpp)
-- **实现代码**: [src/executor/util/lockfree_queue.hpp](../../src/executor/util/lockfree_queue.hpp)
+- **实现代码**: [src/executor/util/lockfree_queue.hpp](../../src/kairo/util/lockfree_queue.hpp)

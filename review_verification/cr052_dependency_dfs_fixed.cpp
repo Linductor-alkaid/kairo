@@ -18,11 +18,11 @@
 //                       slowness as fix failure).
 //
 // Build (normal):
-//   g++ -std=c++20 -O1 -g -DEXECUTOR_THREAD_POOL_TEST_HOOKS -I include -I src
+//   g++ -std=c++20 -O1 -g -DKAIRO_THREAD_POOL_TEST_HOOKS -I include -I src
 //     review_verification/cr052_dependency_dfs_fixed.cpp
 //     build/src/libexecutor.a -lpthread -ldl
 //     -o review_verification/cr052_dependency_dfs_fixed
-#include "executor/task/task_dependency_manager.hpp"
+#include "kairo/task/task_dependency_manager.hpp"
 
 #include <chrono>
 #include <cstdio>
@@ -31,7 +31,7 @@
 #include <cstring>
 #include <string>
 
-using executor::TaskDependencyManager;
+using kairo::TaskDependencyManager;
 
 namespace {
 

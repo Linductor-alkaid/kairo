@@ -6,10 +6,10 @@
 // include/executor/task_cancellation.hpp、timer.hpp、types.hpp 的真实成员
 // （通过 requires 表达式在编译期枚举）比对，防止文档漂移。
 
-#include <executor/executor.hpp>
-#include <executor/task_cancellation.hpp>
-#include <executor/timer.hpp>
-#include <executor/types.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/task_cancellation.hpp>
+#include <kairo/timer.hpp>
+#include <kairo/types.hpp>
 
 #include <gtest/gtest.h>
 
@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 
 namespace {
 
@@ -214,10 +214,10 @@ TEST(ApiDocCancellationFields, CancellationApiSignaturesPresent) {
              "submit_cancellable(",
              "submit_cancellable_priority(",
              "submit_cancellable_after(",
-             "submit_delayed_with_handle(",
-             "submit_delayed_cancellable_with_handle(",
-             "submit_periodic_with_handle(",
-             "submit_periodic_cancellable_with_handle(",
+             "submit_delayed(",
+             "submit_delayed_cancellable(",
+             "submit_periodic(",
+             "submit_periodic_cancellable(",
              "CancelledBeforeDispatch",
              "CancellationRequestedAfterDispatch",
              "TaskCancelled(Explicit)",

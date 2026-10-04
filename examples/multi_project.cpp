@@ -13,9 +13,9 @@
 #include <chrono>
 #include <vector>
 #include <atomic>
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 // ========== 场景 1：单例共享模式 ==========
 
@@ -67,7 +67,7 @@ void scenario1_shared_singleton() {
     }
     
     // 等待所有任务完成
-    Executor::instance().wait_for_completion();
+    (void)Executor::instance().wait_for_completion(std::chrono::seconds{300});
     
     std::cout << std::endl;
     std::cout << "Module A completed tasks: " << module_a_tasks.load() << std::endl;
@@ -113,7 +113,7 @@ public:
             });
         }
         
-        executor_.wait_for_completion();
+        (void)executor_.wait_for_completion(std::chrono::seconds{300});
         std::cout << "  [Project A] Completed " << tasks.load() << " tasks" << std::endl;
         
         auto status = executor_.get_async_executor_status();
@@ -151,7 +151,7 @@ public:
             });
         }
         
-        executor_.wait_for_completion();
+        (void)executor_.wait_for_completion(std::chrono::seconds{300});
         std::cout << "  [Project B] Completed " << tasks.load() << " tasks" << std::endl;
         
         auto status = executor_.get_async_executor_status();
@@ -262,8 +262,8 @@ void scenario3_hybrid_mode() {
     }
     
     // 等待所有任务完成
-    global_executor.wait_for_completion();
-    special_executor.wait_for_completion();
+    (void)global_executor.wait_for_completion(std::chrono::seconds{300});
+    (void)special_executor.wait_for_completion(std::chrono::seconds{300});
     
     std::cout << std::endl;
     std::cout << "General tasks completed: " << general_tasks.load() << std::endl;

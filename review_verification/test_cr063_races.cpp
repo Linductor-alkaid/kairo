@@ -12,21 +12,21 @@
 //     batch_mutex_/stats_mutex_/cache-free paths.
 // 1 writer thread flips config fields; 3 reader threads hammer the real read
 // paths. TSAN must report data races on config_.
-#include "executor/gpu/transfer_optimizer.hpp"
-#include "executor/gpu/kernel_launch_optimizer.hpp"
+#include "kairo/gpu/transfer_optimizer.hpp"
+#include "kairo/gpu/kernel_launch_optimizer.hpp"
 
 #include <atomic>
 #include <cstdio>
 #include <thread>
 #include <vector>
 
-using executor::gpu::TransferOptimizer;
-using executor::gpu::KernelLaunchOptimizer;
-using executor::gpu::TransferRequest;
-using executor::gpu::TransferDirection;
-using executor::gpu::PipelineStage;
-using executor::gpu::BatchedKernelRequest;
-using executor::gpu::KernelParamCacheEntry;
+using kairo::gpu::TransferOptimizer;
+using kairo::gpu::KernelLaunchOptimizer;
+using kairo::gpu::TransferRequest;
+using kairo::gpu::TransferDirection;
+using kairo::gpu::PipelineStage;
+using kairo::gpu::BatchedKernelRequest;
+using kairo::gpu::KernelParamCacheEntry;
 
 static std::atomic<bool> g_go{false};
 static std::atomic<int> g_done{0};

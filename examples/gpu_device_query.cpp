@@ -1,4 +1,4 @@
-#include <executor/gpu/device_query.hpp>
+#include <kairo/gpu/device_query.hpp>
 #include <iostream>
 
 int main() {
@@ -6,7 +6,7 @@ int main() {
     std::cout << "========================\n\n";
 
     // 查询所有可用设备
-    auto devices = executor::gpu::enumerate_all_devices();
+    auto devices = kairo::gpu::enumerate_all_devices();
 
     if (devices.empty()) {
         std::cout << "No GPU devices found.\n";
@@ -18,10 +18,10 @@ int main() {
     for (const auto& dev : devices) {
         std::cout << "Device " << dev.device_id << ":\n";
         std::cout << "  Name: " << dev.name << "\n";
-        std::cout << "  Backend: " << (dev.backend == executor::gpu::GpuBackend::CUDA ? "CUDA" : "OpenCL") << "\n";
+        std::cout << "  Backend: " << (dev.backend == kairo::gpu::GpuBackend::CUDA ? "CUDA" : "OpenCL") << "\n";
         std::cout << "  Vendor: " << dev.vendor << "\n";
         std::cout << "  Memory: " << (dev.total_memory_bytes / 1024 / 1024) << " MB\n";
-        if (dev.backend == executor::gpu::GpuBackend::CUDA) {
+        if (dev.backend == kairo::gpu::GpuBackend::CUDA) {
             std::cout << "  Compute Capability: " << dev.compute_capability_major
                       << "." << dev.compute_capability_minor << "\n";
         }
@@ -29,9 +29,9 @@ int main() {
     }
 
     // 获取推荐后端
-    auto recommended = executor::gpu::get_recommended_backend(0);
+    auto recommended = kairo::gpu::get_recommended_backend(0);
     std::cout << "Recommended backend for device 0: "
-              << (recommended == executor::gpu::GpuBackend::CUDA ? "CUDA" : "OpenCL") << "\n";
+              << (recommended == kairo::gpu::GpuBackend::CUDA ? "CUDA" : "OpenCL") << "\n";
 
     return 0;
 }

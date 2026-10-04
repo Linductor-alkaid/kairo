@@ -1,6 +1,6 @@
 ---
 title: Initialization and Shutdown
-description: Configure Executor before first use and stop it deliberately at an application boundary.
+description: Configure Kairo before first use and stop it deliberately at an application boundary.
 ---
 
 # Initialization and Shutdown
@@ -8,12 +8,12 @@ description: Configure Executor before first use and stop it deliberately at an 
 The minimal program can rely on lazy initialization. When you need custom thread counts, queue capacity, or monitoring, fix configuration before the first submission.
 
 ```cpp
-executor::ExecutorConfig config;
+kairo::ExecutorConfig config;
 config.min_threads = 2;
 config.max_threads = 4;
 
-auto& executor = executor::Executor::instance();
-auto initialized = executor.initialize_ex(config);
+auto& executor = kairo::Executor::instance();
+auto initialized = executor.initialize(config);
 if (!initialized) {
     throw std::runtime_error(initialized.message);
 }
@@ -22,7 +22,7 @@ if (!initialized) {
 executor.shutdown(true);
 ```
 
-`initialize_ex()` returns an `ExecutorResult` with an error code and message, which is more useful for diagnosis than the compatible `bool` initializer. `shutdown(true)` waits for accepted asynchronous work; when the library's default wait limit is exceeded, it records a timeout diagnostic and continues with non-waiting shutdown. It is not an infinite-wait guarantee.
+`initialize()` returns an `ExecutorResult` with an error code and message, which is more useful for diagnosis than the compatible `bool` initializer. `shutdown(true)` waits for accepted asynchronous work; when the library's default wait limit is exceeded, it records a timeout diagnostic and continues with non-waiting shutdown. It is not an infinite-wait guarantee.
 
 The singleton has a `shutdown(false)` process-exit fallback, and independent `Executor` instances clean up through destruction. Neither removes the application's responsibility to decide whether accepted work must finish at its business boundary.
 

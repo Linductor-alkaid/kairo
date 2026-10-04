@@ -9,7 +9,7 @@
  * 5. 对比分析
  */
 
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 #include <thread>
 #include <vector>
 #include <atomic>
@@ -20,7 +20,7 @@
 #include <algorithm>
 #include <cmath>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 // 计算百分位数

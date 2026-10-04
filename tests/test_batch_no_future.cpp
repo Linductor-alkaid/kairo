@@ -2,13 +2,13 @@
  * 简单测试：验证 submit_batch_no_future 功能
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <iostream>
 #include <atomic>
 #include <thread>
 #include <chrono>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 int main() {

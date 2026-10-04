@@ -5,7 +5,7 @@ description: Understand the difference between task completion, queue admission,
 
 # Execution Models and Routing Boundaries
 
-Executor provides one Facade so ordinary developers can start with `submit_auto(lambda)`. The backends do not all report the same kind of result, though. Before using a real-time queue or a long-lived worker, decide what the caller actually needs to know.
+Kairo provides one Facade so ordinary developers can start with `submit_auto(lambda)`. The backends do not all report the same kind of result, though. Before using a real-time queue or a long-lived worker, decide what the caller actually needs to know.
 
 ## Completion, admission, and worker startup are different
 
@@ -60,10 +60,10 @@ It records a `RoutingDecision` for `default` with `DefaultPolicy`, then uses the
 
 ```cpp
 auto future = executor.submit_auto(
-    executor::task([frame] { return decode(frame); })
+    kairo::task([frame] { return decode(frame); })
         .name("decode-frame")
-        .priority(executor::TaskPriority::HIGH)
-        .intent(executor::ExecutionIntent::GeneralCpu));
+        .priority(kairo::TaskPriority::HIGH)
+        .intent(kairo::ExecutionIntent::GeneralCpu));
 ```
 
 Changing that intent to `LowLatency`, `RealtimeQueue`, or `BlockingWorker` makes the future ready with an exception. Those protocols need the typed APIs below, rather than guessing from an ordinary callable.
@@ -73,14 +73,14 @@ Changing that intent to `LowLatency`, `RealtimeQueue`, or `BlockingWorker` makes
 First provide independent implementations, then declare the GPU target and acceptable fallback:
 
 ```cpp
-auto work = executor::cpu_gpu_task(
+auto work = kairo::cpu_gpu_task(
     [input] { run_cpu(input); },
     [input](void* stream) { run_gpu(input, stream); })
     .name("segmentation")
     .preferred_executor("cuda0")
     .data_size(input.bytes())
     .compute_intensity(3.5F)
-    .fallback(executor::FallbackPolicy::AllowCpu);
+    .fallback(kairo::FallbackPolicy::AllowCpu);
 
 auto future = executor.submit_auto(std::move(work));
 ```

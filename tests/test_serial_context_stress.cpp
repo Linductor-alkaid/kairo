@@ -6,7 +6,7 @@
 // 断言使用 STRESS_CHECK 而非 assert：Release(-DNDEBUG) 下 assert 会被剥离，
 // ex.initialize() 将不执行、facade 懒初始化为默认配置（超时等参数不生效），
 // 测试会空转通过。STRESS_CHECK 显式求值并打印退出，Release 运行同等地验证。
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -32,12 +32,12 @@ using Clock = std::chrono::steady_clock;
 
 // 单纯提交并消费 kCount 个串行提交，校验 ticket FIFO 与有界时长。
 void run_burst_fifo(unsigned workers, int count, std::chrono::seconds budget) {
-    executor::Executor ex;
-    executor::ExecutorConfig config;
+    kairo::Executor ex;
+    kairo::ExecutorConfig config;
     config.min_threads = workers;
     config.max_threads = workers;
     STRESS_CHECK(ex.initialize(config));
-    executor::SerialExecutionContext context;
+    kairo::SerialExecutionContext context;
 
     std::vector<int> executed;
     std::vector<std::future<void>> futures;
@@ -77,15 +77,15 @@ int main() {
     // 突发中的排队取消：被取消提交的 future 以 TaskCancelled 就绪，
     // 未取消提交仍按 FIFO 完成（ticket 被释放，后续不阻塞）。
     {
-        executor::Executor ex;
-        executor::ExecutorConfig config;
+        kairo::Executor ex;
+        kairo::ExecutorConfig config;
         config.min_threads = 2;
         config.max_threads = 2;
         STRESS_CHECK(ex.initialize(config));
-        executor::SerialExecutionContext context;
+        kairo::SerialExecutionContext context;
 
         constexpr int kCount = 4000;
-        std::vector<executor::TaskSubmission<void>> submissions;
+        std::vector<kairo::TaskSubmission<void>> submissions;
         submissions.reserve(kCount);
         std::atomic<int> executed{0};
         for (int i = 0; i < kCount; ++i) {
@@ -96,7 +96,7 @@ int main() {
         for (int i = kCount / 4; i < kCount / 2; ++i) {
             const auto response = ex.request_task_cancel(submissions[static_cast<size_t>(i)].handle);
             // 突发下任务可能已执行：只统计排队取消赢家，语义两者皆合法。
-            if (response.result == executor::TaskCancellationResult::RequestedBeforeStart) {
+            if (response.result == kairo::TaskCancellationResult::RequestedBeforeStart) {
                 ++cancelled_seen;
             }
         }
@@ -106,7 +106,7 @@ int main() {
             try {
                 submission.future.get();
                 settled = true;
-            } catch (const executor::TaskCancelled&) {
+            } catch (const kairo::TaskCancelled&) {
                 settled = true;
             }
             STRESS_CHECK(settled);
@@ -122,13 +122,13 @@ int main() {
     // 注意超时在 worker 出队时评估：先用两个 sleep 占满 worker，让派发任务
     // 在队列里停留超过 timeout 窗口。
     {
-        executor::Executor ex;
-        executor::ExecutorConfig config;
+        kairo::Executor ex;
+        kairo::ExecutorConfig config;
         config.min_threads = 2;
         config.max_threads = 2;
         config.task_timeout_ms = 50;
         STRESS_CHECK(ex.initialize(config));
-        executor::SerialExecutionContext context;
+        kairo::SerialExecutionContext context;
 
         auto sleeper1 = ex.submit([] { std::this_thread::sleep_for(std::chrono::milliseconds(150)); });
         auto sleeper2 = ex.submit([] { std::this_thread::sleep_for(std::chrono::milliseconds(150)); });
@@ -136,7 +136,7 @@ int main() {
         auto timed_out = ex.submit_on_with_handle(context, [] { STRESS_CHECK(false && "must time out"); });
         bool saw_timeout = false;
         try { (void)timed_out.future.get(); }
-        catch (const executor::TimedOutException&) { saw_timeout = true; }
+        catch (const kairo::TimedOutException&) { saw_timeout = true; }
         STRESS_CHECK(saw_timeout);
         // 超时已释放 ticket：后续提交不被拖死。
         auto after_timeout = ex.submit_on_with_handle(context, [] { return 42; });
@@ -150,12 +150,12 @@ int main() {
     // 突发中并发 context shutdown：所有 future 在有界时间内结算
     //（已发布的回调运行至返回，未发布的以 ExecutorStopping 就绪）。
     {
-        executor::Executor ex;
-        executor::ExecutorConfig config;
+        kairo::Executor ex;
+        kairo::ExecutorConfig config;
         config.min_threads = 2;
         config.max_threads = 2;
         STRESS_CHECK(ex.initialize(config));
-        executor::SerialExecutionContext context;
+        kairo::SerialExecutionContext context;
 
         constexpr int kCount = 4000;
         std::vector<std::future<int>> futures;
@@ -177,7 +177,7 @@ int main() {
         for (auto& future : futures) {
             try {
                 values += future.get() >= 0 ? 1 : 0;
-            } catch (const executor::ExecutorStopping&) {
+            } catch (const kairo::ExecutorStopping&) {
                 ++stopped;
             }
         }
@@ -188,12 +188,12 @@ int main() {
     // executor shutdown（drain）不留下未就绪 future：提交后立即关闭，
     // 派发任务全部被执行，串行回调在上下文排空中完成。
     {
-        executor::Executor ex;
-        executor::ExecutorConfig config;
+        kairo::Executor ex;
+        kairo::ExecutorConfig config;
         config.min_threads = 2;
         config.max_threads = 2;
         STRESS_CHECK(ex.initialize(config));
-        executor::SerialExecutionContext context;
+        kairo::SerialExecutionContext context;
 
         constexpr int kCount = 2000;
         std::vector<std::future<void>> futures;

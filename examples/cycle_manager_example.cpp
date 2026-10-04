@@ -10,9 +10,9 @@
 #include <utility>
 #include <vector>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-class SimpleCycleManager : public executor::ICycleManager {
+class SimpleCycleManager : public kairo::ICycleManager {
 public:
     struct CycleInfo {
         std::string name;
@@ -86,8 +86,8 @@ public:
         }
     }
 
-    executor::CycleStatistics get_statistics(const std::string& name) const override {
-        executor::CycleStatistics stats;
+    kairo::CycleStatistics get_statistics(const std::string& name) const override {
+        kairo::CycleStatistics stats;
         stats.name = name;
         return stats;
     }

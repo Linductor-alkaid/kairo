@@ -11,7 +11,7 @@ description: 核对 Linux、Windows 与 Android 的编译产物、CPU 可用范�
 
 1. **基础正确性**：普通任务、future 异常、通信和有界关闭行为正确。
 2. **平台能力**：目标机器确实提供所需后端、CPU 集合和系统权限。
-3. **运行结果**：Executor 的状态字段证明请求已应用，负载测试证明延迟与 jitter 达标。
+3. **运行结果**：Kairo 的状态字段证明请求已应用，负载测试证明延迟与 jitter 达标。
 
 如果业务只使用普通线程池，第一层通常已经足够；不要为了“更快”默认申请实时权限。只有控制周期或尾延迟目标明确时，才进入后两层。
 
@@ -32,9 +32,9 @@ Linux Release 构建：
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-  -DEXECUTOR_BUILD_TESTS=ON \
-  -DEXECUTOR_BUILD_EXAMPLES=ON \
-  -DEXECUTOR_ENABLE_GPU=OFF
+  -DKAIRO_BUILD_TESTS=ON \
+  -DKAIRO_BUILD_EXAMPLES=ON \
+  -DKAIRO_ENABLE_GPU=OFF
 cmake --build build -j
 ctest --test-dir build -L tutorial --output-on-failure
 ```
@@ -50,9 +50,9 @@ Windows PowerShell Release 构建：
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" `
-  -DEXECUTOR_BUILD_TESTS=ON `
-  -DEXECUTOR_BUILD_EXAMPLES=ON `
-  -DEXECUTOR_ENABLE_GPU=OFF
+  -DKAIRO_BUILD_TESTS=ON `
+  -DKAIRO_BUILD_EXAMPLES=ON `
+  -DKAIRO_ENABLE_GPU=OFF
 cmake --build build --config Release
 ctest --test-dir build -C Release -L tutorial --output-on-failure
 ```
@@ -79,7 +79,7 @@ grep -E 'Cpus_allowed_list|Mems_allowed_list' /proc/self/status
 - `taskset -pc $$` 与 `Cpus_allowed_list` 给出当前进程真正允许使用的 CPU；容器中的 CPU 编号不一定从 0 开始。
 - `ulimit -r` 是当前 shell 可申请的实时优先级上限。请求 `SCHED_FIFO` 但没有足够的 `RLIMIT_RTPRIO` 或 `CAP_SYS_NICE` 时，线程仍可运行，但 `priority_applied=false`。
 - `ulimit -l` 是可锁内存上限，通常以 KiB 显示。显式请求进程级 `mlockall` 时，上限不足或没有 `CAP_IPC_LOCK` 会导致失败；检查 `process_memory_lock_applied` 和 `process_memory_lock_errno`。
-- `Mems_allowed_list` 用于确认容器或 NUMA 策略是否限制了可用内存节点；它不是 Executor 配置字段，但会影响实际抖动和局部性。
+- `Mems_allowed_list` 用于确认容器或 NUMA 策略是否限制了可用内存节点；它不是 Kairo 配置字段，但会影响实际抖动和局部性。
 
 如果程序文件通过 capability 获权，可核对：
 
@@ -115,7 +115,7 @@ Get-Process -Id $PID |
   Select-Object ProcessName, PriorityClass, ProcessorAffinity
 ```
 
-这些命令用于记录环境，不代替 Executor 的线程级状态。Windows 上需要特别注意：
+这些命令用于记录环境，不代替 Kairo 的线程级状态。Windows 上需要特别注意：
 
 - `SetThreadPriority` 是 Windows 调度提示，与 Linux `SCHED_FIFO` 的保证和数值范围不同；不要复用同一套优先级验收阈值。
 - 当前亲和性实现使用一个 64 位 mask。超过 64 个逻辑处理器或涉及 processor groups 的主机，不能假设一个 `cpu_affinity` 列表覆盖全机；必须在目标硬件上验证。
@@ -149,7 +149,7 @@ MPSC soak。解释时注意：
 
 ## 用运行状态确认请求是否生效
 
-平台命令说明“可能具备能力”，Executor 状态才说明这次运行的申请结果。启动实时任务后，输出一次结构化核对记录：
+平台命令说明“可能具备能力”，Kairo 状态才说明这次运行的申请结果。启动实时任务后，输出一次结构化核对记录：
 
 ```cpp
 const auto status = executor.get_realtime_executor_status("control-loop");
@@ -185,7 +185,7 @@ std::cout
 
 ## CPU 亲和性：避免写死错误核心
 
-`RealtimeThreadConfig::cpu_affinity` 为空时，Executor 会在当前线程允许的 CPU 集合内轮询选核；只有至少两个允许 CPU 时才会自动绑定。显式配置会按原值申请，越过容器 cpuset 或平台范围时申请失败。
+`RealtimeThreadConfig::cpu_affinity` 为空时，Kairo 会在当前线程允许的 CPU 集合内轮询选核；只有至少两个允许 CPU 时才会自动绑定。显式配置会按原值申请，越过容器 cpuset 或平台范围时申请失败。
 
 推荐部署流程：
 
@@ -202,7 +202,7 @@ GPU 问题分三层记录，缺一不可：
 
 1. **构建层**：CMake 是否启用 CUDA/OpenCL，对应头文件和库是否存在。
 2. **运行层**：驱动、运行时和设备是否对最终服务账号可见。
-3. **Executor 层**：`register_gpu_executor_ex()` 的 `error_code`/`message`，以及注册后的 `GpuExecutorStatus::last_error_message`。
+3. **Kairo 层**：`register_gpu_executor()` 的 `error_code`/`message`，以及注册后的 `GpuExecutorStatus::last_error_message`。
 
 Linux 常用设备工具和 Windows 厂商工具只能证明驱动视角；最终仍要运行一次真实 kernel，并消费 `submit_gpu()` 返回的 future。无 GPU 路径应单独验证 CPU 回退结果正确。Android 一期为 CPU-only，不把设备 GPU 能力纳入验收。
 

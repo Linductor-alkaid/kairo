@@ -1,8 +1,12 @@
 # Android 适配方案
 
+
+> [!NOTE]
+> 历史设计快照：Android 移植一期已交付。构建选项现为 `KAIRO_*` 系列。
+
 > 状态：**一期已交付**（CPU-only 交叉编译 CI、`executor::StopToken` 兼容层、
 > best-effort 调度语义、打包与集成文档均已合入；实施记录见
-> [`docs/todolists/android_port_plan.md`](../todolists/android_port_plan.md)）。
+> [`docs/todolists/android_port_plan.md`](../archive/todolists/android_port_plan.md)）。
 > 未完成：arm64 真机 smoke test 与 big.LITTLE 验证（见 CHANGELOG"Android 适配一期"
 > 的验证边界）。本文最初为评审期设计稿，§1 的三个阻塞点已在一期解决，保留为决策记录。
 > 本文只描述 executor 核心库如何适配 Android；具体 App、JNI 业务、协议或硬件接入不属于本项目。

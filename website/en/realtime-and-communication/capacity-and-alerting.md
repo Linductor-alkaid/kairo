@@ -29,8 +29,8 @@ struct CommWindow {
     double depth_ratio = 0.0;
 };
 
-CommWindow calculate_window(const executor::comm::CommStats& before,
-                            const executor::comm::CommStats& after,
+CommWindow calculate_window(const kairo::comm::CommStats& before,
+                            const kairo::comm::CommStats& after,
                             std::chrono::duration<double> elapsed) {
     const double seconds = elapsed.count();
     const auto delta = [](uint64_t old_value, uint64_t new_value) {
@@ -55,7 +55,7 @@ Production code also handles `seconds <= 0`, component recreation, and counter w
 Beyond communication and realtime components, ordinary `submit()` / `submit_batch()` submissions have **no** total bound by default: `queue_capacity` only sizes per-worker local queues, and tasks fall back to the global scheduler queue when a local queue is full — overload shows up as unbounded backlog. Configure `max_in_flight_tasks` explicitly when structured overload rejection is required:
 
 ```cpp
-executor::ExecutorConfig config;
+kairo::ExecutorConfig config;
 config.max_in_flight_tasks = 256;   // total accepted-but-unsettled submissions
 ```
 

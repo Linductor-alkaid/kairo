@@ -1,5 +1,5 @@
-#include "executor/thread_pool/lockfree_worker_queue.hpp"
-#include "executor/task/task.hpp"
+#include "kairo/thread_pool/lockfree_worker_queue.hpp"
+#include "kairo/task/task.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -8,7 +8,7 @@
 #include <thread>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 
 static bool test_steal_fifo_order() {
     constexpr size_t TASKS = 10;

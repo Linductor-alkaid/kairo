@@ -7,7 +7,7 @@ description: 用 Facade 的延迟和软周期任务处理设备重试与后台�
 
 ## 学习目标
 
-用 `submit_delayed()` 安排一次设备重试，用 `submit_periodic()` 运行健康检查，并通过状态查询与 `cancel_task()` 结束周期工作。
+用 `submit_delayed()` 安排一次设备重试，用 `submit_periodic()` 运行健康检查，并通过状态查询与 `TimerHandle::cancel()` 结束周期工作。
 
 ## 场景问题
 
@@ -19,7 +19,7 @@ description: 用 Facade 的延迟和软周期任务处理设备重试与后台�
 
 <<< @/../examples/tutorial/03_delayed_periodic.cpp{1-36}
 
-完整源码：[`examples/tutorial/03_delayed_periodic.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/tutorial/03_delayed_periodic.cpp)。
+完整源码：[`examples/tutorial/03_delayed_periodic.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/03_delayed_periodic.cpp)。
 
 ```bash
 ./build/examples/tutorial/tutorial_03_delayed_periodic
@@ -37,10 +37,10 @@ periodic status=running, cancelled=yes
 
 ## 状态与取消
 
-- `submit_periodic()` 返回任务 ID；保存它，才能调用 `cancel_task()`。
-- `get_periodic_task_status(id)` 返回单个仍在注册的任务状态；取消后会得到空结果。
+- `submit_periodic()` 返回 `TimerHandle`；保存它，才能调用 `cancel()` 阻止后续 tick。
+- `get_periodic_task_status(handle.id())` 返回单个已注册周期任务的状态；取消后 `is_running` 变为 `false`，记录保留用于诊断。
 - `get_all_periodic_task_status()` 适合监控页或关闭前检查所有仍注册的周期任务。
-- 延迟任务返回 `future`，因此其返回值、执行异常和拒绝提交仍由 `get()` 观察。
+- 延迟任务返回 `TimerSubmission`（`handle` + `future`），因此其返回值、执行异常和拒绝提交仍由 `.future.get()` 观察。
 
 ## 周期任务如何接收业务输入
 
@@ -71,7 +71,7 @@ callback 必须可复制，移动独占的 `unique_ptr` lambda 通常不能直�
 
 ## 失败如何观察
 
-周期回调的异常不会由调用 `submit_periodic()` 的位置返回；运行中的任务应检查周期状态，并在长期服务中配置失败状态或回调。`cancel_task()` 返回 `false` 表示 ID 已不存在、已取消或不是当前实例的周期任务，不能把它当作已经安全停止的证明。
+周期回调的异常不会由调用 `submit_periodic()` 的位置返回；运行中的任务应检查周期状态，并在长期服务中配置失败状态或回调。`handle.cancel()` 返回的 `TimerOperationResult`（`CancelledBeforeDispatch` / `CancellationRequestedAfterDispatch` / `AlreadyCancelled` 等）不能被当作已经安全停止的证明：已排队或在途的回调仍可能完成。
 
 取消成功只会移除后续周期调度；已经提交到线程池或正在运行的 callback 仍可能完成。需要销毁 callback 捕获的对象时，取消后还要有界等待普通任务排空。
 
@@ -82,7 +82,7 @@ callback 必须可复制，移动独占的 `unique_ptr` lambda 通常不能直�
 3. 让 callback 连续失败，检查 `failed_count`、`consecutive_failure_count` 和 `last_error_message`，并定义达到阈值后的停止或降级。
 4. 在 delayed task 到期前开始 shutdown，确认 future 得到“timer stopped before delayed task execution”的可观察拒绝，而不是永久等待。
 
-推荐退出顺序是：停止创建新的延迟/周期工作，取消所有保存的 task ID，等待已经提交的 callback，最后关闭 Executor。若 callback 内有网络或设备 I/O，它们必须有自己的超时。
+推荐退出顺序是：停止创建新的延迟/周期工作，取消所有保存的 task ID，等待已经提交的 callback，最后关闭 Kairo。若 callback 内有网络或设备 I/O，它们必须有自己的超时。
 
 ## 需求变化时如何演进
 

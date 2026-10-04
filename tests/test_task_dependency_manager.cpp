@@ -3,9 +3,9 @@
 #include <string>
 #include <vector>
 
-#include <executor/task/task_dependency_manager.hpp>
+#include <kairo/task/task_dependency_manager.hpp>
 
-using executor::TaskDependencyManager;
+using kairo::TaskDependencyManager;
 
 #define ASSERT_TRUE(cond, msg) do { if (!(cond)) { std::cerr << "FAIL: " << msg << " at " << __FILE__ << ":" << __LINE__ << std::endl; return 1; } } while(0)
 

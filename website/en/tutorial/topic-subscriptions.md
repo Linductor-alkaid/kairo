@@ -7,7 +7,7 @@ description: Give robot planning and preview archiving independent camera-frame 
 
 The robot pipeline now has one camera and two downstream jobs. The navigation planner must inspect every frame that enters its bounded queue, in order. A preview archive is deliberately slower: it only needs the newest pending frame for an operator preview. It must not delay planning or make the camera producer wait.
 
-This is a different problem from the earlier task tutorials. It is a continuous data edge, not a finite calculation with a `future`. The runnable program for this chapter is [`examples/topic_subscriptions.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/topic_subscriptions.cpp).
+This is a different problem from the earlier task tutorials. It is a continuous data edge, not a finite calculation with a `future`. The runnable program for this chapter is [`examples/topic_subscriptions.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/topic_subscriptions.cpp).
 
 ## Start from the delivery contract
 
@@ -77,8 +77,8 @@ Run it with:
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
-  -DEXECUTOR_BUILD_EXAMPLES=ON \
-  -DEXECUTOR_ENABLE_GPU=OFF
+  -DKAIRO_BUILD_EXAMPLES=ON \
+  -DKAIRO_ENABLE_GPU=OFF
 cmake --build build --target topic_subscriptions
 ./build/examples/topic_subscriptions
 ```

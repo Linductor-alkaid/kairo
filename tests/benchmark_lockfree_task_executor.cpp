@@ -1,4 +1,4 @@
-#include <executor/lockfree_task_executor.hpp>
+#include <kairo/lockfree_task_executor.hpp>
 #include <iostream>
 #include <iomanip>
 #include <chrono>
@@ -14,14 +14,14 @@
 // 注意必须嵌套：gcc 下 __has_feature 不是宏，`#if` 表达式里出现
 // __has_feature(...) 是语法错误，&& 短路救不了解析阶段。
 #if defined(__SANITIZE_THREAD__)
-#define EXECUTOR_BENCH_UNDER_SANITIZER 1
+#define KAIRO_BENCH_UNDER_SANITIZER 1
 #elif defined(__has_feature)
 #if __has_feature(thread_sanitizer) || __has_feature(address_sanitizer)
-#define EXECUTOR_BENCH_UNDER_SANITIZER 1
+#define KAIRO_BENCH_UNDER_SANITIZER 1
 #endif
 #endif
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 struct BenchResult {
@@ -165,7 +165,7 @@ static bool latency_single_task() {
     std::cout << "  P99     : " << p99 << " µs  (limit: " << P99_LIMIT_US << " µs)\n";
 
     if (p99 >= P99_LIMIT_US) {
-#ifdef EXECUTOR_BENCH_UNDER_SANITIZER
+#ifdef KAIRO_BENCH_UNDER_SANITIZER
         std::cerr << "[latency_single_task] SKIP: P99 " << p99
                   << " µs >= " << P99_LIMIT_US
                   << " µs, but latency assertions are exempt under sanitizers\n";

@@ -9,12 +9,12 @@
 #include <string>
 
 // 包含 ThreadPoolExecutor 的头文件
-#include <executor/config.hpp>
-#include <executor/types.hpp>
-#include <executor/interfaces.hpp>
-#include "executor/thread_pool_executor.hpp"
+#include <kairo/config.hpp>
+#include <kairo/types.hpp>
+#include <kairo/interfaces.hpp>
+#include "kairo/thread_pool_executor.hpp"
 
-using namespace executor;
+using namespace kairo;
 
 // 测试辅助宏
 #define TEST_ASSERT(condition, message) \

@@ -10,7 +10,7 @@
 //      tracks producer/consumer progress in aggregate.
 
 #include <gtest/gtest.h>
-#include "executor/util/lockfree_queue.hpp"
+#include "kairo/util/lockfree_queue.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -22,8 +22,8 @@
 #include <thread>
 #include <vector>
 
-using executor::util::LockFreeQueue;
-using executor::util::LockFreeQueueStats;
+using kairo::util::LockFreeQueue;
+using kairo::util::LockFreeQueueStats;
 
 #if defined(__GNUC__) || defined(__clang__)
 extern "C" void __gcov_dump_one(void) __attribute__((weak));
@@ -95,7 +95,7 @@ TEST(LockFreeQueueSizeTest, SingleThreadedSizeMatchesPushesAndPops) {
 //    number due to size_t underflow). This is the property that
 //    breaks on ARM/POWER with relaxed loads.
 TEST(LockFreeQueueSizeTest, SizeNeverExceedsCapacityUnderContention) {
-#if defined(EXECUTOR_ENABLE_COVERAGE)
+#if defined(KAIRO_ENABLE_COVERAGE)
     GTEST_SKIP() << "coverage instrumentation makes this contention regression flaky";
 #elif defined(__GNUC__) || defined(__clang__)
     if (__gcov_dump_one != nullptr) {

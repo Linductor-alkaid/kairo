@@ -7,13 +7,13 @@
 #include <string>
 #include <thread>
 
-#include <executor/config.hpp>
-#include <executor/executor.hpp>
-#include <executor/monitor/task_monitor.hpp>
-#include <executor/thread_pool/thread_pool.hpp>
-#include <executor/types.hpp>
+#include <kairo/config.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/monitor/task_monitor.hpp>
+#include <kairo/thread_pool/thread_pool.hpp>
+#include <kairo/types.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message)                                      \
     do {                                                                     \
@@ -173,7 +173,7 @@ bool test_executor_timeout_satisfies_future_and_failure_status() {
     TEST_ASSERT(future_throws_timed_out(timed_out),
                 "timed-out Executor future should throw TimedOutException");
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
 
     TEST_ASSERT(!timed_out_task_ran.load(std::memory_order_acquire),
                 "timed-out facade task function should not run");

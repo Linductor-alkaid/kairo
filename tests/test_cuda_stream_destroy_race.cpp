@@ -7,13 +7,13 @@
 #include <thread>
 #include <vector>
 
-#include "executor/gpu/cuda_executor.hpp"
+#include "kairo/gpu/cuda_executor.hpp"
 
-using namespace executor;
-using namespace executor::gpu;
+using namespace kairo;
+using namespace kairo::gpu;
 
 TEST(CudaStreamDestroyRace, ConcurrentDestroyRecreateReturnsInvalidStream) {
-#ifndef EXECUTOR_ENABLE_CUDA
+#ifndef KAIRO_ENABLE_CUDA
     GTEST_SKIP() << "CUDA support not enabled";
 #else
     GpuExecutorConfig config;

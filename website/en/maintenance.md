@@ -1,6 +1,6 @@
 ---
 title: Content Maintenance
-description: Fact sources, review cadence, feedback route, and content-maturity criteria for the Executor Guide.
+description: Fact sources, review cadence, feedback route, and content-maturity criteria for the Kairo Guide.
 sidebar: false
 aside: false
 ---
@@ -39,9 +39,9 @@ This guide is complete when users can finish work and handle failure, not merely
 
 | Area | Pages | Primary fact source | Recheck when |
 | --- | --- | --- | --- |
-| Quick Start and ordinary work | Home, `zh/quick-start/`, `zh/tutorial/` | `include/executor/executor.hpp`, tutorials `01`–`06` | Facade, future, waiting, or lifecycle changes |
+| Quick Start and ordinary work | Home, `zh/quick-start/`, `zh/tutorial/` | `include/kairo/executor.hpp`, tutorials `01`–`06` | Facade, future, waiting, or lifecycle changes |
 | Reliability | `zh/reliability/` | Failure/status types, relevant tests, tutorial `06` | Event type, counter, or monitoring semantics change |
-| Real-time and communication | `zh/realtime-and-communication/` | Realtime and blocking-I/O Facades, `include/executor/comm/`, tutorials `07`–`08`, `12` | Period, worker lifecycle, backpressure, drop, or platform behavior changes |
+| Real-time and communication | `zh/realtime-and-communication/` | Realtime and blocking-I/O Facades, `include/kairo/comm/`, tutorials `07`–`08`, `12` | Period, worker lifecycle, backpressure, drop, or platform behavior changes |
 | GPU | `zh/gpu/` | Public GPU API, tutorial `09`, hardware report | Backend, fallback, device, or performance conclusion changes |
 | Advanced and reference | `zh/advanced/`, `zh/reference/` | Public headers, `docs/API.md`, design, tests | Stability boundary, execution path, migration policy changes |
 | Site delivery | Theme, navigation, 404, deployment | `website/`, docs workflow, site checker | Route, base URL, dependency, or Pages flow changes |
@@ -53,7 +53,7 @@ This guide is complete when users can finish work and handle failure, not merely
 - Do not overpromise priority, timeout, realtime behavior, or performance.
 - Make a new entry reachable from its sidebar, parent page, and site search.
 - Run the site build/link check; run relevant CTest when examples change.
-- Update version scope and use the [release documentation checklist](https://github.com/Linductor-alkaid/executor/blob/master/docs/RELEASE_CHECKLIST.md) when applicable.
+- Update version scope and use the [release documentation checklist](https://github.com/Linductor-alkaid/kairo/blob/master/docs/RELEASE_CHECKLIST.md) when applicable.
 
 ## Content maturity
 
@@ -64,5 +64,5 @@ The site has full topic coverage and a buildable framework, but page presence do
     <strong>Found something unclear, unreproducible, or outdated?</strong>
     <p>Include the page URL, version, minimal reproduction, actual behavior, and expected behavior. For an integration scenario, also include task scale, thread model, and stop sequence.</p>
   </div>
-  <a href="https://github.com/Linductor-alkaid/executor/issues/new/choose">Report a documentation issue</a>
+  <a href="https://github.com/Linductor-alkaid/kairo/issues/new/choose">Report a documentation issue</a>
 </div>

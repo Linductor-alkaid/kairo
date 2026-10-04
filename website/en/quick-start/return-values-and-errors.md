@@ -31,7 +31,7 @@ try {
 }
 ```
 
-Do not confuse a task exception with an initialization error. `initialize_ex()` reports setup failures through `ExecutorResult::ok`, `error_code`, and `message`; task failures are observed through a future, failure callback, or failure status.
+Do not confuse a task exception with an initialization error. `initialize()` reports setup failures through `ExecutorResult::ok`, `error_code`, and `message`; task failures are observed through a future, failure callback, or failure status.
 
 `DispatchResult::accepted` and `WorkerHandle` are not futures: the first reports bounded queue admission, while the second reports worker lifecycle. Read [Execution Models and Routing Boundaries](/en/guides/execution-models-and-routing) before treating either as completion.
 
@@ -41,4 +41,4 @@ A deliberately fire-and-forget task may omit its future when failures are handle
 
 ## Next step
 
-Read [initialization and shutdown](/en/quick-start/lifecycle) to learn when to call `initialize_ex()` and `shutdown(true)`.
+Read [initialization and shutdown](/en/quick-start/lifecycle) to learn when to call `initialize()` and `shutdown(true)`.

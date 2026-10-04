@@ -1,6 +1,6 @@
 # Ubuntu/Debian deb 打包指南
 
-本文档说明如何在 Ubuntu/Debian 系统上将 executor 库打包成 deb 包，方便系统级安装和管理。
+本文档说明如何在 Ubuntu/Debian 系统上将 kairo 库打包成 deb 包，方便系统级安装和管理。
 
 ---
 
@@ -35,15 +35,15 @@ devel 容器）中执行：
 
 ```bash
 # 在带 CUDA Toolkit 的环境下
-cmake -B build -DEXECUTOR_ENABLE_CUDA=ON
-sudo ./scripts/build_and_package_deb.sh --version 0.5.0 --maintainer "Your Name <your.email@example.com>"
+cmake -B build -DKAIRO_ENABLE_CUDA=ON
+sudo ./scripts/build_and_package_deb.sh --version 0.6.0 --maintainer "Your Name <your.email@example.com>"
 ```
 
 ### 自定义构建选项
 
 ```bash
 ./scripts/build_and_package_deb.sh \
-    --version "0.5.0" \
+    --version "0.6.0" \
     --build-type "Release" \
     --maintainer "Your Name <your.email@example.com>" \
     --deb-package-type "all"
@@ -53,7 +53,7 @@ sudo ./scripts/build_and_package_deb.sh --version 0.5.0 --maintainer "Your Name 
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--version` | `0.5.0` | 版本号，用于打包命名 |
+| `--version` | `0.6.0` | 版本号，用于打包命名 |
 | `--build-type` | `Release` | 构建类型（Release/Debug） |
 | `--build-static` | `true` | 是否构建静态库 |
 | `--build-shared` | `true` | 是否构建动态库 |
@@ -81,13 +81,13 @@ sudo ./scripts/build_and_package_deb.sh --version 0.5.0 --maintainer "Your Name 
 
 ```bash
 # 打包所有类型（开发包 + 运行时包）
-./scripts/package_deb.sh --version "0.5.0" --maintainer "Your Name <email@example.com>"
+./scripts/package_deb.sh --version "0.6.0" --maintainer "Your Name <email@example.com>"
 
 # 仅打包开发包
-./scripts/package_deb.sh --version "0.5.0" --package-type dev --maintainer "Your Name <email@example.com>"
+./scripts/package_deb.sh --version "0.6.0" --package-type dev --maintainer "Your Name <email@example.com>"
 
 # 仅打包运行时包
-./scripts/package_deb.sh --version "0.5.0" --package-type runtime --maintainer "Your Name <email@example.com>"
+./scripts/package_deb.sh --version "0.6.0" --package-type runtime --maintainer "Your Name <email@example.com>"
 ```
 
 ---
@@ -98,30 +98,30 @@ sudo ./scripts/build_and_package_deb.sh --version 0.5.0 --maintainer "Your Name 
 
 根据打包类型，脚本会生成不同的 deb 包：
 
-#### 1. libexecutor-dev（开发包）
+#### 1. libkairo-dev（开发包）
 
 **默认模式（`--deb-package-type all`）：**
 - ✅ **推荐使用**：开发包包含所有内容（静态库、动态库、头文件、CMake 配置）
 - 只需安装一个包即可使用
 - 包含：
-  - 静态库文件（`libexecutor.a`）
-  - 动态库文件（`libexecutor.so*`）
-  - 头文件（`/usr/include/executor/`）
-  - CMake 配置文件（`/usr/lib/cmake/executor/`）
+  - 静态库文件（`libkairo.a`）
+  - 动态库文件（`libkairo.so*`）
+  - 头文件（`/usr/include/kairo/`）
+  - CMake 配置文件（`/usr/lib/cmake/kairo/`）
   - 文档文件（README.md, LICENSE, CHANGELOG.md）
 
 **分离模式（`--deb-package-type dev`）：**
 - 仅包含开发文件（静态库、头文件、CMake 配置）
-- 需要同时安装 `libexecutor` 运行时包（会自动安装）
+- 需要同时安装 `libkairo` 运行时包（会自动安装）
 
-#### 2. libexecutor（运行时包）
+#### 2. libkairo（运行时包）
 
 包含：
-- 动态库文件（`libexecutor.so*`）
+- 动态库文件（`libkairo.so*`）
 - 文档文件
 
 **使用场景：**
-- 仅需要运行使用 executor 库的应用程序（不需要开发）
+- 仅需要运行使用 kairo 库的应用程序（不需要开发）
 - 在分离模式下，开发包会自动依赖此包
 
 ### 推荐使用方式
@@ -129,13 +129,13 @@ sudo ./scripts/build_and_package_deb.sh --version 0.5.0 --maintainer "Your Name 
 **对于开发者（推荐）：**
 ```bash
 # 使用默认 all 模式，只需安装一个包
-sudo dpkg -i dist/libexecutor-dev_0.5.0_amd64.deb
+sudo dpkg -i dist/libkairo-dev_0.6.0_amd64.deb
 ```
 
 **对于仅运行应用程序的用户：**
 ```bash
 # 只需安装运行时包
-sudo dpkg -i dist/libexecutor_0.5.0_amd64.deb
+sudo dpkg -i dist/libkairo_0.6.0_amd64.deb
 ```
 
 ---
@@ -147,33 +147,33 @@ sudo dpkg -i dist/libexecutor_0.5.0_amd64.deb
 **推荐方式（默认 all 模式，只需安装一个包）：**
 ```bash
 # 安装开发包（包含所有内容：静态库、动态库、头文件、CMake 配置）
-sudo dpkg -i dist/libexecutor-dev_0.5.0_amd64.deb
+sudo dpkg -i dist/libkairo-dev_0.6.0_amd64.deb
 
 # 如果依赖缺失，修复依赖
 sudo apt-get install -f
 
 # 或者使用 apt 安装（如果已添加到仓库）
-sudo apt install ./dist/libexecutor-dev_0.5.0_amd64.deb
+sudo apt install ./dist/libkairo-dev_0.6.0_amd64.deb
 ```
 
 **说明：**
-- 默认 `all` 模式下，`libexecutor-dev` 包包含所有内容，**只需安装这一个包即可**
+- 默认 `all` 模式下，`libkairo-dev` 包包含所有内容，**只需安装这一个包即可**
 - 如果使用分离模式（`--deb-package-type dev`），安装开发包时会自动安装运行时包作为依赖
-- 如果只需要运行应用程序（不需要开发），可以只安装 `libexecutor` 运行时包
+- 如果只需要运行应用程序（不需要开发），可以只安装 `libkairo` 运行时包
 
 ### 验证安装
 
 ```bash
 # 检查库文件
-ls /usr/lib/libexecutor*
-ls /usr/include/executor/
+ls /usr/lib/libkairo*
+ls /usr/include/kairo/
 
 # 检查 CMake 配置
-ls /usr/lib/cmake/executor/
+ls /usr/lib/cmake/kairo/
 
 # 查看包信息
-dpkg -L libexecutor-dev
-dpkg -L libexecutor
+dpkg -L libkairo-dev
+dpkg -L libkairo
 ```
 
 ### 在其他项目中使用
@@ -184,10 +184,10 @@ dpkg -L libexecutor
 cmake_minimum_required(VERSION 3.16)
 project(my_project)
 
-find_package(executor REQUIRED)
+find_package(kairo REQUIRED)
 
 add_executable(my_app main.cpp)
-target_link_libraries(my_app PRIVATE executor::executor)
+target_link_libraries(my_app PRIVATE kairo::kairo)
 ```
 
 编译时不需要指定路径：
@@ -203,10 +203,10 @@ cmake --build build
 
 ```bash
 # 卸载开发包
-sudo apt remove libexecutor-dev
+sudo apt remove libkairo-dev
 
 # 卸载运行时包（如果不再需要）
-sudo apt remove libexecutor
+sudo apt remove libkairo
 ```
 
 ---
@@ -238,7 +238,7 @@ A:
 - **dev**：仅生成开发包（静态库+头文件+CMake配置），需要同时安装运行时包（会自动作为依赖安装）
 - **runtime**：仅生成运行时包（动态库），用于仅需要运行应用程序的场景
 
-**对于大多数用户，推荐使用 `all` 模式，只需安装 `libexecutor-dev` 一个包即可。**
+**对于大多数用户，推荐使用 `all` 模式，只需安装 `libkairo-dev` 一个包即可。**
 
 ### Q: 打包失败，提示找不到 dpkg-deb？
 
@@ -262,11 +262,11 @@ A: 检查库文件是否正确安装：
 
 ```bash
 # 检查库文件
-ls -la /usr/lib/libexecutor*
+ls -la /usr/lib/libkairo*
 
 # 检查动态库链接
 ldconfig
-ldconfig -p | grep executor
+ldconfig -p | grep kairo
 ```
 
 ### Q: 如何创建适用于不同架构的 deb 包？
@@ -281,13 +281,13 @@ A: 使用 `dpkg-deb` 命令：
 
 ```bash
 # 查看包信息
-dpkg-deb -I dist/libexecutor-dev_0.5.0_amd64.deb
+dpkg-deb -I dist/libkairo-dev_0.6.0_amd64.deb
 
 # 查看包内容
-dpkg-deb -c dist/libexecutor-dev_0.5.0_amd64.deb
+dpkg-deb -c dist/libkairo-dev_0.6.0_amd64.deb
 
 # 提取包内容（不解压）
-dpkg-deb -x dist/libexecutor-dev_0.5.0_amd64.deb /tmp/extracted
+dpkg-deb -x dist/libkairo-dev_0.6.0_amd64.deb /tmp/extracted
 ```
 
 ### Q: 如何创建本地 apt 仓库？
@@ -318,10 +318,10 @@ reprepro -b repo includedeb focal dist/*.deb
 
 在发布 deb 包前，请确认：
 
-- [ ] 版本号正确：`CMakeLists.txt`、README 与打包命令均为 `0.5.0`
+- [ ] 版本号正确：`CMakeLists.txt`、README 与打包命令均为 `0.6.0`
 - [ ] 维护者信息正确
 - [ ] 静态库和动态库都已成功构建
-- [ ] v0.5.0 发布包在带 CUDA Toolkit 的环境下完成完整构建（`EXECUTOR_ENABLE_CUDA=ON`）
+- [ ] v0.5.0 发布包在带 CUDA Toolkit 的环境下完成完整构建（`KAIRO_ENABLE_CUDA=ON`）
 - [ ] 无 CUDA 用户机器验证运行时降级路径：CPU 功能可用，CUDA 后端不可用时不崩溃
 - [ ] 所有头文件都已包含在开发包中
 - [ ] CMake 配置文件已正确生成
@@ -346,18 +346,18 @@ reprepro -b repo includedeb focal dist/*.deb
 
 ### 在无 CUDA 环境下
 
-如果用户机器没有 CUDA Toolkit，可以关闭 CUDA 构建；executor 的 CPU 功能和 OpenCL 可选路径不受影响。使用 v0.5.0 CUDA 完整包时，CUDA 后端也会在运行时检测不可用并自动降级。
+如果用户机器没有 CUDA Toolkit，可以关闭 CUDA 构建；kairo 的 CPU 功能和 OpenCL 可选路径不受影响。使用 v0.5.0 CUDA 完整包时，CUDA 后端也会在运行时检测不可用并自动降级。
 
 ```bash
 # 用户机器没有 CUDA Toolkit: 运行时自动降级
-cmake -B build -DEXECUTOR_ENABLE_CUDA=OFF
+cmake -B build -DKAIRO_ENABLE_CUDA=OFF
 ```
 
 ### 自定义包描述
 
 ```bash
 ./scripts/package_deb.sh \
-    --version "0.5.0" \
+    --version "0.6.0" \
     --maintainer "Your Name <email@example.com>" \
     --description "Custom description for the package"
 ```
@@ -368,7 +368,7 @@ cmake -B build -DEXECUTOR_ENABLE_CUDA=OFF
 
 ```bash
 ./scripts/package_deb.sh \
-    --version "0.5.0" \
+    --version "0.6.0" \
     --build-dir build_linux \
     --maintainer "Your Name <email@example.com>"
 ```
@@ -377,8 +377,8 @@ cmake -B build -DEXECUTOR_ENABLE_CUDA=OFF
 
 ```bash
 # 先打包开发包
-./scripts/package_deb.sh --package-type dev --version "0.5.0"
+./scripts/package_deb.sh --package-type dev --version "0.6.0"
 
 # 再打包运行时包
-./scripts/package_deb.sh --package-type runtime --version "0.5.0"
+./scripts/package_deb.sh --package-type runtime --version "0.6.0"
 ```

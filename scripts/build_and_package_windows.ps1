@@ -20,7 +20,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 Write-Host "========================================" -ForegroundColor Magenta
-Write-Host "Executor Windows Build and Package" -ForegroundColor Magenta
+Write-Host "Kairo Windows Build and Package" -ForegroundColor Magenta
 Write-Host "========================================" -ForegroundColor Magenta
 Write-Host ""
 

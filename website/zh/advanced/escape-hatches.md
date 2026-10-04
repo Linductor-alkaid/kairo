@@ -1,6 +1,6 @@
 ---
 title: 何时使用高级接口
-description: 在资源隔离、执行器扩展或 GPU 资源控制确有需要时，谨慎离开 Executor Facade。
+description: 在资源隔离、执行器扩展或 GPU 资源控制确有需要时，谨慎离开 Kairo Facade。
 ---
 
 # 何时使用高级接口
@@ -21,7 +21,7 @@ description: 在资源隔离、执行器扩展或 GPU 资源控制确有需要�
 
 ## 实例隔离
 
-`Executor::instance()` 使用进程共享的 manager，适合一个应用的默认执行资源。直接构造 `executor::Executor executor;` 会创建独立 `ExecutorManager`，因此线程池、实时/GPU 注册表和关闭时机不与单例共享。库对象析构会按 RAII 清理其 manager；仍建议业务在停止产生任务后显式调用 `shutdown()`，以决定是否等待已提交任务。
+`Executor::instance()` 使用进程共享的 manager，适合一个应用的默认执行资源。直接构造 `kairo::Kairo executor;` 会创建独立 `ExecutorManager`，因此线程池、实时/GPU 注册表和关闭时机不与单例共享。库对象析构会按 RAII 清理其 manager；仍建议业务在停止产生任务后显式调用 `shutdown()`，以决定是否等待已提交任务。
 
 不要跨实例传递 `TaskHandle`、实时/GPU executor 指针或依赖关系。它们附着于创建它们的 manager；跨实例共享会失去正确的生命周期与并发语义。
 
@@ -35,7 +35,7 @@ Facade 已经把常见的拒绝、failure event 和状态聚合在一起。直�
 
 ## 稳定性边界
 
-`include/executor/` 中的 Facade、配置、接口和 manager 声明是公开 API。`src/` 中的 `ThreadPool`、调度器、队列和对象池是实现细节：可用于理解当前行为或排障，但不能作为集成依赖或兼容承诺。
+`include/kairo/` 中的 Facade、配置、接口和 manager 声明是公开 API。`src/` 中的 `ThreadPool`、调度器、队列和对象池是实现细节：可用于理解当前行为或排障，但不能作为集成依赖或兼容承诺。
 
 ## 下一步阅读
 

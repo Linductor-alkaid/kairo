@@ -17,4 +17,4 @@ Start with the [complete robot pipeline](/en/tutorial/complete-robot-pipeline), 
 6. [Capacity and alerts](/en/realtime-and-communication/capacity-and-alerting): turn cumulative statistics into window rates, margins, alert levels, and actions.
 7. [Cancellation and timers](/en/realtime-and-communication/cancellation-and-timers): cooperative task cancellation with `StopToken` and cancellable, reschedulable timer handles — and what cancellation never promises.
 
-The complete API is in [`docs/API.md`](https://github.com/Linductor-alkaid/executor/blob/master/docs/API.md). The integrated runnable example is [`examples/comm_robot_pipeline.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/comm_robot_pipeline.cpp).
+The complete API is in [`docs/API.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md). The integrated runnable example is [`examples/comm_robot_pipeline.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/comm_robot_pipeline.cpp).

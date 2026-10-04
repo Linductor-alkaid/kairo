@@ -33,10 +33,10 @@
 #include <thread>
 #include <vector>
 
-#include "executor/thread_pool/thread_pool.hpp"
-#include <executor/config.hpp>
+#include "kairo/thread_pool/thread_pool.hpp"
+#include <kairo/config.hpp>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 #define TEST_ASSERT(condition, message)                                       \

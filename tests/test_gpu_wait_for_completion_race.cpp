@@ -10,7 +10,7 @@
 // with concurrent submitters and a concurrent waiter and asserts the
 // post-conditions the fix must guarantee: after a final drain no kernel is
 // in flight (active_kernels_==0) and every submission is accounted for
-// (completed + failed == N*M). It is a no-op when EXECUTOR_ENABLE_CUDA is off
+// (completed + failed == N*M). It is a no-op when KAIRO_ENABLE_CUDA is off
 // so it builds everywhere, and skips at runtime when no CUDA runtime/device
 // is available (start() fails).
 
@@ -21,13 +21,13 @@
 #include <thread>
 #include <vector>
 
-#include <executor/config.hpp>
-#include <executor/types.hpp>
-#include <executor/interfaces.hpp>
-#include "executor/gpu/cuda_executor.hpp"
+#include <kairo/config.hpp>
+#include <kairo/types.hpp>
+#include <kairo/interfaces.hpp>
+#include "kairo/gpu/cuda_executor.hpp"
 
-using namespace executor;
-using namespace executor::gpu;
+using namespace kairo;
+using namespace kairo::gpu;
 
 #define TEST_ASSERT(condition, message)                                       \
     do {                                                                      \
@@ -43,7 +43,7 @@ bool test_wait_for_completion_race();
 bool test_wait_for_completion_race() {
     std::cout << "Testing CudaExecutor wait_for_completion TOCTOU race..." << std::endl;
 
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     const int N = 8;    // submitter threads
     const int M = 200;  // submissions per thread
 

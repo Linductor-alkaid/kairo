@@ -6,7 +6,7 @@
 - [ ] `README.md`、`README_zh.md`、`docs/API.md` 与网站版本标识已核对；开发快照能力不会标为既有稳定版能力。
 - [ ] 打包脚本（`scripts/package_*.sh` / `scripts/package_windows.ps1` 及对应 build_and_package 编排）的版本默认值与本版本一致。
 - [ ] `v*` tag 推送后 release workflow（`.github/workflows/release.yml`）三个 job 全绿：deb-amd64（CUDA devel 容器）、windows-static-x64、release。
-- [ ] GitHub Release 资产齐全：`executor-<版本>-linux-x86_64.tar.gz`、`libexecutor_<版本>_amd64.deb`、`libexecutor-dev_<版本>_amd64.deb`、`executor-<版本>-windows-x64.zip`；`dpkg-deb -I` 抽查 control 字段（版本、维护者、架构）。
+- [ ] GitHub Release 资产齐全：`kairo-<版本>-linux-x86_64.tar.gz`、`libkairo_<版本>_amd64.deb`、`libkairo-dev_<版本>_amd64.deb`、`kairo-<版本>-windows-x64.zip`；`dpkg-deb -I` 抽查 control 字段（版本、维护者、架构）。
 - [ ] Release 发布说明由 `CHANGELOG.md` 对应版本小节自动截取生成，人工复核排版与链接。
 - [ ] 网站中英文 `version-and-migration` 已新增本版本小节，`index`/`maintenance`/`decisions`/`api` 的版本标识已同步。
 - [ ] 新增或变更的公开 Facade 已通过网站 [API 覆盖索引](../website/zh/reference/api.md) 找到教程、专题、选型或参考入口。
@@ -14,6 +14,15 @@
 - [ ] 已执行 `npm ci --prefix website`、`npm run docs:check --prefix website` 和 `npm run docs:build --prefix website`。
 - [ ] 已确认仓库 **Settings → Pages** 的部署来源为 **GitHub Actions**，并检查文档 workflow 使用 Node.js 24。
 - [ ] 已检查 GitHub Pages 预览：首页、快速开始、API 参考和 404 页面可访问。
+- [ ] TSAN 本地运行注意：较新内核的 ASLR 熵（`vm.mmap_rnd_bits`）与
+  GCC TSAN 运行时不兼容时会报 `unexpected memory mapping`（exit 66）；
+  用 `setarch $(uname -m) -R ./test_xxx` 进程级关闭 ASLR 重跑即可，
+  CI 侧如遇同样报错按同法处理。
+- [ ] **0.6.0 一次性步骤——GitHub 仓库改名（executor → kairo）**：仓库
+  Settings → General → Rename；改名后旧 URL 由 GitHub 301 重定向，但需
+  同步更新：本地各 clone 的 remote URL、Codecov/Pages 绑定、badge URL
+  （README 已预写 `Linductor-alkaid/kairo`）、docs.yml 的 Pages 部署
+  （base 路径 `/kairo/`）、以及 website 自定义域名/URL 引用。
 - [ ] 已审阅用户反馈、404 和失效链接；需要修复的内容已建立 issue。
 - [ ] Android CI（NDK r26c / r28b，arm64-v8a / x86_64，static / shared）最近一次为 success。
 - [ ] Android 官方模拟器已运行 `scripts/run_android_tests.sh` 全部 standalone 测试并 PASS。

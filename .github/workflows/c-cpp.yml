@@ -75,18 +75,18 @@ jobs:
       run: |
         cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-          -DEXECUTOR_BUILD_TESTS=ON \
-          -DEXECUTOR_BUILD_EXAMPLES=ON \
-          -DEXECUTOR_ENABLE_COVERAGE=OFF
+          -DKAIRO_BUILD_TESTS=ON \
+          -DKAIRO_BUILD_EXAMPLES=ON \
+          -DKAIRO_ENABLE_COVERAGE=OFF
 
     - name: 配置 CMake (Windows)
       if: runner.os == 'Windows'
       run: |
         cmake -B build `
-          -DEXECUTOR_BUILD_TESTS=ON `
-          -DEXECUTOR_BUILD_EXAMPLES=ON `
-          -DEXECUTOR_ENABLE_COVERAGE=OFF `
-          -DEXECUTOR_FETCH_GTEST=ON
+          -DKAIRO_BUILD_TESTS=ON `
+          -DKAIRO_BUILD_EXAMPLES=ON `
+          -DKAIRO_ENABLE_COVERAGE=OFF `
+          -DKAIRO_FETCH_GTEST=ON
 
     - name: 编译
       run: cmake --build build --config ${{ matrix.build_type }} -j
@@ -114,10 +114,10 @@ jobs:
       if: matrix.build_type == 'Release'
       uses: actions/upload-artifact@v4
       with:
-        name: executor-${{ matrix.os }}-${{ matrix.compiler.name }}-${{ matrix.compiler.version }}
+        name: kairo-${{ matrix.os }}-${{ matrix.compiler.name }}-${{ matrix.compiler.version }}
         path: |
           build/lib*
-          build/tests/executor_*_test
+          build/tests/test_*
         retention-days: 7
 
   lockfree-queue:
@@ -148,11 +148,11 @@ jobs:
         cmake -B build-lockfree -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_CXX_COMPILER=g++-11 \
-          -DEXECUTOR_BUILD_TESTS=ON \
-          -DEXECUTOR_BUILD_EXAMPLES=OFF \
-          -DEXECUTOR_ENABLE_GPU=OFF \
-          -DEXECUTOR_ENABLE_COVERAGE=OFF \
-          -DEXECUTOR_LOCKFREE_QUEUE=ON
+          -DKAIRO_BUILD_TESTS=ON \
+          -DKAIRO_BUILD_EXAMPLES=OFF \
+          -DKAIRO_ENABLE_GPU=OFF \
+          -DKAIRO_ENABLE_COVERAGE=OFF \
+          -DKAIRO_LOCKFREE_QUEUE=ON
 
     - name: 编译
       run: cmake --build build-lockfree --config Release -j
@@ -185,11 +185,11 @@ jobs:
         cmake -B build-tsan -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_CXX_COMPILER=g++-11 \
-          -DEXECUTOR_BUILD_TESTS=ON \
-          -DEXECUTOR_BUILD_EXAMPLES=OFF \
-          -DEXECUTOR_ENABLE_GPU=OFF \
-          -DEXECUTOR_ENABLE_COVERAGE=OFF \
-          -DEXECUTOR_ENABLE_TSAN=ON
+          -DKAIRO_BUILD_TESTS=ON \
+          -DKAIRO_BUILD_EXAMPLES=OFF \
+          -DKAIRO_ENABLE_GPU=OFF \
+          -DKAIRO_ENABLE_COVERAGE=OFF \
+          -DKAIRO_ENABLE_TSAN=ON
 
     - name: 编译 TSAN 并发测试
       run: |
@@ -245,11 +245,11 @@ jobs:
         cmake -B build-realtime-allocation -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_CXX_COMPILER=g++-11 \
-          -DEXECUTOR_BUILD_TESTS=ON \
-          -DEXECUTOR_BUILD_EXAMPLES=OFF \
-          -DEXECUTOR_ENABLE_GPU=OFF \
-          -DEXECUTOR_ENABLE_COVERAGE=OFF \
-          -DEXECUTOR_ENABLE_REALTIME_ALLOCATION_GUARD=ON
+          -DKAIRO_BUILD_TESTS=ON \
+          -DKAIRO_BUILD_EXAMPLES=OFF \
+          -DKAIRO_ENABLE_GPU=OFF \
+          -DKAIRO_ENABLE_COVERAGE=OFF \
+          -DKAIRO_ENABLE_REALTIME_ALLOCATION_GUARD=ON
 
     - name: 编译实时分配测试
       run: |
@@ -320,11 +320,11 @@ jobs:
         cmake -B build-gpu-headers -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_CXX_COMPILER=g++-11 \
-          -DEXECUTOR_ENABLE_GPU=ON \
-          -DEXECUTOR_ENABLE_CUDA=ON \
-          -DEXECUTOR_ENABLE_OPENCL=ON \
-          -DEXECUTOR_BUILD_TESTS=ON \
-          -DEXECUTOR_BUILD_EXAMPLES=OFF \
+          -DKAIRO_ENABLE_GPU=ON \
+          -DKAIRO_ENABLE_CUDA=ON \
+          -DKAIRO_ENABLE_OPENCL=ON \
+          -DKAIRO_BUILD_TESTS=ON \
+          -DKAIRO_BUILD_EXAMPLES=OFF \
           -DCUDA_FOUND=TRUE \
           -DCUDA_VERSION=0.0 \
           -DCUDA_INCLUDE_DIRS="$CUDA_STUB_INCLUDE"
@@ -368,8 +368,8 @@ jobs:
         cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_CXX_COMPILER=g++-11 \
-          -DEXECUTOR_BUILD_TESTS=ON \
-          -DEXECUTOR_ENABLE_COVERAGE=ON
+          -DKAIRO_BUILD_TESTS=ON \
+          -DKAIRO_ENABLE_COVERAGE=ON
 
     - name: 编译
       run: cmake --build build -j
@@ -381,7 +381,7 @@ jobs:
         # 会触发 OOM-killer。test_realtime_hardening 尊重这个 env 跳过 mlock 调用。
         # 覆盖率插桩会显著放大 benchmark/stress 用例耗时；覆盖率任务只收集
         # 功能测试覆盖率，性能基准由非 coverage benchmark 运行负责。
-        EXECUTOR_TEST_NO_MLOCKALL: 1
+        KAIRO_TEST_NO_MLOCKALL: 1
       run: ctest --output-on-failure -E '^(benchmark_|test_(performance|stress)$)'
 
     - name: 生成覆盖率报告
@@ -396,4 +396,4 @@ jobs:
       with:
         files: ./build/coverage.info
         flags: unittests
-        name: codecov-executor
+        name: codecov-kairo

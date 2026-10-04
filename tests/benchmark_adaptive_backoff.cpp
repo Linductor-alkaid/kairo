@@ -2,7 +2,7 @@
  * 自适应退避策略基准测试
  */
 
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -10,7 +10,7 @@
 #include <chrono>
 
 using namespace std::chrono;
-using namespace executor;
+using namespace kairo;
 
 struct TestResult {
     int num_producers;

@@ -9,18 +9,18 @@
 #include <unordered_set>
 
 // 包含 thread_pool 模块的头文件
-#include <executor/config.hpp>
-#include <executor/types.hpp>
-#include "executor/thread_pool_executor.hpp"
-#include "executor/task/task.hpp"
-#include "executor/thread_pool/priority_scheduler.hpp"
-#include "executor/thread_pool/thread_pool.hpp"
+#include <kairo/config.hpp>
+#include <kairo/types.hpp>
+#include "kairo/thread_pool_executor.hpp"
+#include "kairo/task/task.hpp"
+#include "kairo/thread_pool/priority_scheduler.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
 
 #ifdef __ANDROID__
-#include "executor/util/thread_utils.hpp"
+#include "kairo/util/thread_utils.hpp"
 #endif
 
-using namespace executor;
+using namespace kairo;
 
 // 测试辅助宏
 #define TEST_ASSERT(condition, message) \
@@ -1030,7 +1030,7 @@ bool test_default_cpu_affinity_is_auto_allocated() {
     ExecutorConfig config;
     TEST_ASSERT(config.cpu_affinity.empty(), "Default cpu_affinity should be empty (auto sentinel)");
 
-    const std::vector<int> auto_affinity = executor::util::get_current_thread_affinity();
+    const std::vector<int> auto_affinity = kairo::util::get_current_thread_affinity();
     std::cout << "  Android allowed-cpuset affinity size = " << auto_affinity.size() << std::endl;
     // cgroup cpuset 因设备而异，甚至可能为空；不校验具体 0..hw-1 内容。
     for (int cpu : auto_affinity) {

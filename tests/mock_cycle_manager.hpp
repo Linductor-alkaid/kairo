@@ -1,7 +1,7 @@
 #pragma once
 
-#include <executor/interfaces.hpp>
-#include <executor/types.hpp>
+#include <kairo/interfaces.hpp>
+#include <kairo/types.hpp>
 #include <chrono>
 #include <atomic>
 #include <functional>
@@ -11,7 +11,7 @@
 #include <thread>
 #include <unordered_map>
 
-namespace executor {
+namespace kairo {
 namespace test {
 
 /**
@@ -22,7 +22,7 @@ namespace test {
  * from another thread to signal exit. Does not hold mutex during the loop
  * to avoid deadlock with stop_cycle().
  */
-class MockCycleManager : public executor::ICycleManager {
+class MockCycleManager : public kairo::ICycleManager {
 public:
     struct CycleInfo {
         std::string name;
@@ -118,4 +118,4 @@ private:
 };
 
 }  // namespace test
-}  // namespace executor
+}  // namespace kairo

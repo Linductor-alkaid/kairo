@@ -45,7 +45,7 @@ Keep the returned futures. Empty work and submission after shutdown produce obse
 1. Start a blocking LOW task, then submit CRITICAL work: the latter cannot preempt work already running.
 2. Throw from the control task: its future and failure status observe it independently of analysis success.
 3. Fill a small queue with critical work: observe rejection, queue depth, and ordinary-task wait time.
-4. During shutdown, stop producers, consume held futures, then drain Executor within a budget.
+4. During shutdown, stop producers, consume held futures, then drain Kairo within a budget.
 
 If a command must take effect within a fixed time, measure queue latency and define timeout/degradation behavior. Critical priority alone is not an acceptance criterion. For fixed periods or jitter budgets, use the dedicated real-time path rather than pool priority.
 

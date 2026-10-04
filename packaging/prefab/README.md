@@ -1,17 +1,17 @@
 # Prefab packaging template
 
-This directory is a template for publishing executor through Android Prefab/AAR.
+This directory is a template for publishing kairo through Android Prefab/AAR.
 
 Expected AAR layout:
 
 ```text
-executor-android-<version>.aar
-└── prefab/modules/executor/
+kairo-android-<version>.aar
+└── prefab/modules/kairo/
     ├── module.json
-    ├── include/executor/...
+    ├── include/kairo/...
     └── libs/
-        ├── android.arm64-v8a/libexecutor.so
-        └── android.x86_64/libexecutor.so
+        ├── android.arm64-v8a/libkairo.so
+        └── android.x86_64/libkairo.so
 ```
 
 Copy this `module.json` unchanged. Do not package tests or examples into the AAR. If the

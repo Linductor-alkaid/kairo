@@ -5,13 +5,13 @@
 #include <memory>
 #include <mutex>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 namespace {
 
-class MockBlockingWorker final : public executor::IBlockingIoWorker {
+class MockBlockingWorker final : public kairo::IBlockingIoWorker {
 public:
-    void run(executor::StopToken stop_token) override {
+    void run(kairo::StopToken stop_token) override {
         std::unique_lock<std::mutex> lock(mutex_);
         started_.store(true, std::memory_order_release);
         condition_.notify_all();
@@ -51,13 +51,13 @@ private:
 } // namespace
 
 int main() {
-    executor::Executor executor;
-    executor::BlockingIoConfig config;
+    kairo::Executor executor;
+    kairo::BlockingIoConfig config;
     config.thread_name = "tutorial_io";
 
     auto worker = std::make_unique<MockBlockingWorker>();
     MockBlockingWorker* worker_view = worker.get();
-    executor::BlockingWorkerSpec spec{
+    kairo::BlockingWorkerSpec spec{
         "tutorial_io", config, std::move(worker)};
     auto handle = executor.start_worker(std::move(spec));
     if (!handle.started() || !worker_view->wait_until_started()) {
@@ -73,7 +73,7 @@ int main() {
 
     const bool passed = running.is_running && worker_stopped &&
                         !stopped.is_running &&
-                        stopped.stop_reason == executor::BlockingIoStopReason::Requested &&
+                        stopped.stop_reason == kairo::BlockingIoStopReason::Requested &&
                         stopped.wakeup_count == 1;
     std::cout << "blocking worker started=" << (running.is_running ? "yes" : "no")
               << ", stopped=" << (worker_stopped ? "yes" : "no")

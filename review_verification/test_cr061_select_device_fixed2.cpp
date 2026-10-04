@@ -9,14 +9,14 @@
 //     the old buggy seed (bare 100) would beat dev1's 140 and pick dev0.
 //   - case 2 extends to three devices with begin() = highest bare load.
 // Ground truth in every case: argmin(load + task).
-#include "executor/gpu/task_scheduler_optimizer.hpp"
+#include "kairo/gpu/task_scheduler_optimizer.hpp"
 
 #include <cstdio>
 #include <vector>
 
-using executor::gpu::TaskSchedulerOptimizer;
-using executor::gpu::DeviceLoad;
-using executor::gpu::GpuTaskNode;
+using kairo::gpu::TaskSchedulerOptimizer;
+using kairo::gpu::DeviceLoad;
+using kairo::gpu::GpuTaskNode;
 
 namespace {
 

@@ -7,7 +7,7 @@ set -e  # 遇到错误立即退出
 # 默认参数
 # CR-085: 版本默认值从根 CMakeLists.txt 的 project(VERSION) 提取（单一来源）；
 # 环境变量 VERSION / --version 参数仍可覆盖。
-_DEFAULT_VERSION="$(sed -n 's/^project(executor[[:space:]][^)]*VERSION \([0-9][0-9.]*\).*/\1/p' \
+_DEFAULT_VERSION="$(sed -n 's/^project(kairo[[:space:]][^)]*VERSION \([0-9][0-9.]*\).*/\1/p' \
     "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/CMakeLists.txt" | head -n1)"
 VERSION="${VERSION:-${_DEFAULT_VERSION:-0.0.0}}"
 unset _DEFAULT_VERSION
@@ -48,7 +48,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "========================================"
-echo "Executor Linux Package Script"
+echo "Kairo Linux Package Script"
 echo "========================================"
 echo "Version: $VERSION"
 echo "Build Dir: $BUILD_DIR"
@@ -77,7 +77,7 @@ case "$ARCH" in
 esac
 
 # 创建输出目录
-PACKAGE_NAME="executor-${VERSION}-linux-${ARCH_NAME}"
+PACKAGE_NAME="kairo-${VERSION}-linux-${ARCH_NAME}"
 PACKAGE_DIR="$OUTPUT_DIR/$PACKAGE_NAME"
 PACKAGE_DIR_STATIC="$PACKAGE_DIR/static"
 PACKAGE_DIR_SHARED="$PACKAGE_DIR/shared"
@@ -102,9 +102,9 @@ if [ "$INCLUDE_STATIC" = "true" ]; then
         cp -r "$STATIC_INSTALL_DIR"/* "$PACKAGE_DIR_STATIC/"
         
         # 验证关键文件
-        LIB_FILE=$(find "$PACKAGE_DIR_STATIC" -name "libexecutor.a" -o -name "executor.a" | head -n 1)
+        LIB_FILE=$(find "$PACKAGE_DIR_STATIC" -name "libkairo.a" -o -name "kairo.a" | head -n 1)
         if [ -z "$LIB_FILE" ]; then
-            echo "Warning: libexecutor.a not found"
+            echo "Warning: libkairo.a not found"
         else
             echo "  Found: $LIB_FILE"
         fi
@@ -121,9 +121,9 @@ if [ "$INCLUDE_SHARED" = "true" ]; then
         cp -r "$SHARED_INSTALL_DIR"/* "$PACKAGE_DIR_SHARED/"
         
         # 验证关键文件
-        SO_FILE=$(find "$PACKAGE_DIR_SHARED" -name "libexecutor.so*" | head -n 1)
+        SO_FILE=$(find "$PACKAGE_DIR_SHARED" -name "libkairo.so*" | head -n 1)
         if [ -z "$SO_FILE" ]; then
-            echo "Warning: libexecutor.so not found"
+            echo "Warning: libkairo.so not found"
         else
             echo "  Found: $SO_FILE"
         fi
@@ -148,7 +148,7 @@ done
 # 创建使用指南
 USAGE_GUIDE="$PACKAGE_DIR/USAGE.md"
 cat > "$USAGE_GUIDE" << EOF
-# Executor Linux Distribution Package Usage Guide
+# Kairo Linux Distribution Package Usage Guide
 
 ## Version Information
 - Version: $VERSION
@@ -158,48 +158,48 @@ cat > "$USAGE_GUIDE" << EOF
 ## Directory Structure
 
 ### Static Library (static/)
-- \`lib/libexecutor.a\` - Static library file
-- \`include/executor/\` - Header files directory
-- \`lib/cmake/executor/\` - CMake configuration files (for find_package)
+- \`lib/libkairo.a\` - Static library file
+- \`include/kairo/\` - Header files directory
+- \`lib/cmake/kairo/\` - CMake configuration files (for find_package)
 
 ### Shared Library (shared/)
-- \`lib/libexecutor.so\` - Shared library file (required at runtime)
-- \`include/executor/\` - Header files directory
-- \`lib/cmake/executor/\` - CMake configuration files (for find_package)
+- \`lib/libkairo.so\` - Shared library file (required at runtime)
+- \`include/kairo/\` - Header files directory
+- \`lib/cmake/kairo/\` - CMake configuration files (for find_package)
 
 ## Usage
 
 ### Using Static Library
 
 \`\`\`cmake
-find_package(executor REQUIRED)
-target_link_libraries(your_target PRIVATE executor::executor)
+find_package(kairo REQUIRED)
+target_link_libraries(your_target PRIVATE kairo::kairo)
 \`\`\`
 
 Make sure to set the path when configuring CMake:
 \`\`\`bash
-cmake -DCMAKE_PREFIX_PATH=path/to/executor-$VERSION-linux-$ARCH_NAME/static
+cmake -DCMAKE_PREFIX_PATH=path/to/kairo-$VERSION-linux-$ARCH_NAME/static
 \`\`\`
 
 ### Using Shared Library
 
 \`\`\`cmake
-find_package(executor REQUIRED)
-target_link_libraries(your_target PRIVATE executor::executor)
+find_package(kairo REQUIRED)
+target_link_libraries(your_target PRIVATE kairo::kairo)
 \`\`\`
 
 Make sure to set the path when configuring CMake:
 \`\`\`bash
-cmake -DCMAKE_PREFIX_PATH=path/to/executor-$VERSION-linux-$ARCH_NAME/shared
+cmake -DCMAKE_PREFIX_PATH=path/to/kairo-$VERSION-linux-$ARCH_NAME/shared
 \`\`\`
 
-**Note**: When using shared library, ensure \`libexecutor.so\` is available at runtime:
-- Copy \`libexecutor.so\` to a directory in LD_LIBRARY_PATH
+**Note**: When using shared library, ensure \`libkairo.so\` is available at runtime:
+- Copy \`libkairo.so\` to a directory in LD_LIBRARY_PATH
 - Or install the library to system directories (e.g., /usr/local/lib)
-- Or set LD_LIBRARY_PATH to include the directory containing \`libexecutor.so\`
+- Or set LD_LIBRARY_PATH to include the directory containing \`libkairo.so\`
 
 \`\`\`bash
-export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/path/to/executor-$VERSION-linux-$ARCH_NAME/shared/lib
+export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/path/to/kairo-$VERSION-linux-$ARCH_NAME/shared/lib
 \`\`\`
 
 ## System Requirements

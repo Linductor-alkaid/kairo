@@ -3,7 +3,7 @@
 #include <thread>
 #include <vector>
 
-#include "executor/util/lockfree_queue.hpp"
+#include "kairo/util/lockfree_queue.hpp"
 
 #define TEST_ASSERT(condition, message)                                      \
     do {                                                                     \
@@ -16,7 +16,7 @@
 
 namespace {
 
-using executor::util::LockFreeQueue;
+using kairo::util::LockFreeQueue;
 
 struct ReservationHook {
     std::atomic<bool> entered{false};

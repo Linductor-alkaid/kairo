@@ -5,9 +5,9 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message)                                      \
     do {                                                                     \
@@ -36,7 +36,7 @@ static bool test_monitoring_enabled_submit_and_query() {
         futures.push_back(exec.submit([i]() { (void)i; }));
     }
     for (auto& f : futures) f.get();
-    exec.wait_for_completion();
+    (void)exec.wait_for_completion(std::chrono::seconds{300});
 
     TaskStatistics s = exec.get_task_statistics("default");
     TEST_ASSERT(s.total_count >= static_cast<int64_t>(n),
@@ -64,7 +64,7 @@ static bool test_monitoring_disabled_no_count() {
 
     exec.enable_monitoring(true);
     exec.submit([]() {}).get();
-    exec.wait_for_completion();
+    (void)exec.wait_for_completion(std::chrono::seconds{300});
     TaskStatistics before = exec.get_task_statistics("default");
     int64_t count_before = before.total_count;
     TEST_ASSERT(count_before >= 1, "at least one task when enabled");
@@ -75,7 +75,7 @@ static bool test_monitoring_disabled_no_count() {
         fs.push_back(exec.submit([]() {}));
     }
     for (auto& f : fs) f.get();
-    exec.wait_for_completion();
+    (void)exec.wait_for_completion(std::chrono::seconds{300});
     TaskStatistics after = exec.get_task_statistics("default");
     TEST_ASSERT(after.total_count == count_before,
                 "total_count unchanged when monitoring disabled");
@@ -102,14 +102,14 @@ static bool test_config_enable_monitoring_initial() {
         }
         for (auto& f : fs) f.get();
     }
-    exec.wait_for_completion();
+    (void)exec.wait_for_completion(std::chrono::seconds{300});
     TaskStatistics s = exec.get_task_statistics("default");
     TEST_ASSERT(s.total_count == 0,
                 "no counts when config enable_monitoring=false");
 
     exec.enable_monitoring(true);
     exec.submit([]() {}).get();
-    exec.wait_for_completion();
+    (void)exec.wait_for_completion(std::chrono::seconds{300});
     s = exec.get_task_statistics("default");
     TEST_ASSERT(s.total_count >= 1, "counts after enable_monitoring(true)");
 

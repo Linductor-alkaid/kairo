@@ -5,13 +5,13 @@
 // default capacity (1024) vs small capacity (8) vs 0. The per-op delta
 // isolates the O(capacity) trim cost. Also report per-10k-block latency trend
 // inside each run to show whether cost is bounded or growing.
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <chrono>
 #include <cstdio>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 
 namespace {
 

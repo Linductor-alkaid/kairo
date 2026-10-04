@@ -38,7 +38,7 @@ jobs:
           enablement: true
       - name: Build tutorial examples
         run: |
-          cmake -S . -B build-docs -DEXECUTOR_BUILD_TESTS=ON -DEXECUTOR_BUILD_EXAMPLES=ON -DEXECUTOR_ENABLE_GPU=OFF
+          cmake -S . -B build-docs -DKAIRO_BUILD_TESTS=ON -DKAIRO_BUILD_EXAMPLES=ON -DKAIRO_ENABLE_GPU=OFF
           cmake --build build-docs --target tutorial_examples
       - name: Run tutorial smoke tests
         run: ctest --test-dir build-docs -L tutorial --output-on-failure

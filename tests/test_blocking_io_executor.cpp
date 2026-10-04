@@ -9,14 +9,14 @@
 #include <system_error>
 #include <thread>
 
-#include <executor/blocking_io.hpp>
-#include <executor/executor.hpp>
+#include <kairo/blocking_io.hpp>
+#include <kairo/executor.hpp>
 
 #define private public
-#include "executor/blocking_io_executor.hpp"
+#include "kairo/blocking_io_executor.hpp"
 #undef private
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message)                                      \
     do {                                                                     \
@@ -170,20 +170,20 @@ bool test_registration_validation_and_worker_failure() {
     BlockingIoConfig invalid;
     invalid.thread_name = "";
     auto invalid_failed = std::make_shared<std::latch>(1);
-    auto invalid_result = executor.register_blocking_io_worker_ex(
+    auto invalid_result = executor.register_blocking_io_worker(
         "invalid", invalid, std::make_unique<ThrowingWorker>(invalid_failed));
     TEST_ASSERT(!invalid_result.ok && invalid_result.error_code == ExecutorErrorCode::InvalidConfig,
                 "empty thread name should fail validation");
     TEST_ASSERT(executor.get_failure_status().submit_rejected_count == 1,
                 "registration validation failure should be visible through facade diagnostics");
-    const auto missing_result = executor.start_blocking_io_worker_ex("missing_io");
+    const auto missing_result = executor.start_blocking_io_worker("missing_io");
     TEST_ASSERT(!missing_result.ok && missing_result.error_code == ExecutorErrorCode::NotFound,
                 "starting an unknown I/O worker should report NotFound");
     TEST_ASSERT(executor.get_blocking_io_worker_status("missing_io").name == "missing_io",
                 "missing I/O worker status should retain the requested name");
 
     auto failed = std::make_shared<std::latch>(1);
-    auto result = executor.register_blocking_io_worker_ex(
+    auto result = executor.register_blocking_io_worker(
         "throwing", valid_config(), std::make_unique<ThrowingWorker>(failed));
     TEST_ASSERT(result.ok, "throwing worker should register");
     TEST_ASSERT(executor.start_blocking_io_worker("throwing"),
@@ -218,7 +218,7 @@ bool test_cross_executor_name_conflicts() {
     realtime_config.cycle_period_ns = 1'000'000;
     realtime_config.cycle_callback = [] {};
     const auto realtime_result =
-        executor.register_realtime_task_ex("shared_name", realtime_config);
+        executor.register_realtime_task("shared_name", realtime_config);
     TEST_ASSERT(!realtime_result.ok &&
                     realtime_result.error_code == ExecutorErrorCode::DuplicateName,
                 "realtime registration must reject an I/O worker name");
@@ -260,7 +260,7 @@ bool test_start_failure_and_timeout_rollback() {
     auto state = std::make_shared<WorkerState>();
     BlockingIoExecutor creation_failure(
         "creation_failure", valid_config(), std::make_unique<BlockingWorker>(state));
-    creation_failure.thread_factory_ = [](std::function<void(StopToken)>) -> executor::detail::JThread {
+    creation_failure.thread_factory_ = [](std::function<void(StopToken)>) -> kairo::detail::JThread {
         throw std::system_error(
             std::make_error_code(std::errc::resource_unavailable_try_again),
             "test thread creation failure");
@@ -276,7 +276,7 @@ bool test_start_failure_and_timeout_rollback() {
     BlockingIoExecutor timeout_executor(
         "startup_timeout", timeout_config, std::make_unique<BlockingWorker>(timeout_state));
     timeout_executor.thread_factory_ = [](std::function<void(StopToken)>) {
-        return executor::detail::JThread([](StopToken stop_token) {
+        return kairo::detail::JThread([](StopToken stop_token) {
             while (!stop_token.stop_requested()) {
                 std::this_thread::yield();
             }
@@ -391,7 +391,7 @@ bool test_mixed_executor_shutdown() {
     TEST_ASSERT(executor.start_blocking_io_worker("mixed_io"),
                 "I/O worker start should succeed");
     state->entered.wait();
-    TEST_ASSERT(!executor.submit_periodic(1, [] {}).empty(),
+    TEST_ASSERT(executor.submit_periodic(1, [] {}).valid(),
                 "periodic task should start the timer and async executor");
 
     executor.shutdown(false);

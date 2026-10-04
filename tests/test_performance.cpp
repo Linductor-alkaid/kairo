@@ -8,9 +8,9 @@
 #include <algorithm>
 
 // 包含 Executor 的头文件
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 // 测试辅助宏
 #define TEST_ASSERT(condition, message) \
@@ -119,7 +119,7 @@ bool test_priority_performance() {
     }
     
     // 等待所有任务完成
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     
     auto end_time = std::chrono::steady_clock::now();
     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(

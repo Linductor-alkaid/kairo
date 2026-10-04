@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "executor/util/timer_period_guard.hpp"
+#include "kairo/util/timer_period_guard.hpp"
 
 #ifdef _WIN32
 namespace {
@@ -38,11 +38,11 @@ void reset_counters() {
 TEST(TimerPeriodGuard, BalancesSuccessfulBeginAndEnd) {
 #ifdef _WIN32
     reset_counters();
-    executor::util::set_timer_period_functions_for_test(&fake_time_begin_period,
+    kairo::util::set_timer_period_functions_for_test(&fake_time_begin_period,
                                                         &fake_time_end_period);
 
     {
-        executor::util::TimerPeriodGuard guard(1);
+        kairo::util::TimerPeriodGuard guard(1);
         EXPECT_EQ(g_begin_calls, 1);
         EXPECT_EQ(g_end_calls, 0);
         EXPECT_EQ(g_timer_reference_count, 1);
@@ -51,9 +51,9 @@ TEST(TimerPeriodGuard, BalancesSuccessfulBeginAndEnd) {
     EXPECT_EQ(g_begin_calls, 1);
     EXPECT_EQ(g_end_calls, 1);
     EXPECT_EQ(g_timer_reference_count, 0);
-    executor::util::reset_timer_period_functions_for_test();
+    kairo::util::reset_timer_period_functions_for_test();
 #else
-    executor::util::TimerPeriodGuard guard(1);
+    kairo::util::TimerPeriodGuard guard(1);
     SUCCEED();
 #endif
 }
@@ -61,11 +61,11 @@ TEST(TimerPeriodGuard, BalancesSuccessfulBeginAndEnd) {
 TEST(TimerPeriodGuard, DoesNotEndWhenBeginFails) {
 #ifdef _WIN32
     reset_counters();
-    executor::util::set_timer_period_functions_for_test(&fake_time_begin_period_failure,
+    kairo::util::set_timer_period_functions_for_test(&fake_time_begin_period_failure,
                                                         &fake_time_end_period);
 
     {
-        executor::util::TimerPeriodGuard guard(1);
+        kairo::util::TimerPeriodGuard guard(1);
         EXPECT_EQ(g_begin_calls, 1);
         EXPECT_EQ(g_end_calls, 0);
         EXPECT_EQ(g_timer_reference_count, 0);
@@ -74,9 +74,9 @@ TEST(TimerPeriodGuard, DoesNotEndWhenBeginFails) {
     EXPECT_EQ(g_begin_calls, 1);
     EXPECT_EQ(g_end_calls, 0);
     EXPECT_EQ(g_timer_reference_count, 0);
-    executor::util::reset_timer_period_functions_for_test();
+    kairo::util::reset_timer_period_functions_for_test();
 #else
-    executor::util::TimerPeriodGuard guard(1);
+    kairo::util::TimerPeriodGuard guard(1);
     SUCCEED();
 #endif
 }

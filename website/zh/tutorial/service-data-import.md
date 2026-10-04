@@ -5,7 +5,7 @@ description: 用依赖、批量任务、逐项 future、失败回调和有界排
 
 # 服务端数据导入案例
 
-Executor 的任务模型不只适用于机器人。本页用一个常见的服务端请求验证同一套思路：导入一批 CSV 订单前，服务需要并行加载 schema 和打开目标表；准备完成后并行校验四行数据，其中一行非法；请求返回成功数和拒绝数，服务关闭前还要确认没有遗留工作。
+Kairo 的任务模型不只适用于机器人。本页用一个常见的服务端请求验证同一套思路：导入一批 CSV 订单前，服务需要并行加载 schema 和打开目标表；准备完成后并行校验四行数据，其中一行非法；请求返回成功数和拒绝数，服务关闭前还要确认没有遗留工作。
 
 这个示例不连接真实数据库，避免外部依赖影响 smoke test。它演示的是并发与失败协议；真实写入还必须补充事务、幂等键和连接池容量。
 
@@ -33,13 +33,13 @@ flowchart TD
 
 <<< @/../examples/tutorial/10_service_data_import.cpp{1-77}
 
-完整源码：[`examples/tutorial/10_service_data_import.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/tutorial/10_service_data_import.cpp)。
+完整源码：[`examples/tutorial/10_service_data_import.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/10_service_data_import.cpp)。
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
-  -DEXECUTOR_BUILD_TESTS=ON \
-  -DEXECUTOR_BUILD_EXAMPLES=ON \
-  -DEXECUTOR_ENABLE_GPU=OFF
+  -DKAIRO_BUILD_TESTS=ON \
+  -DKAIRO_BUILD_EXAMPLES=ON \
+  -DKAIRO_ENABLE_GPU=OFF
 cmake --build build --target tutorial_10_service_data_import
 ./build/examples/tutorial/tutorial_10_service_data_import
 ```
@@ -64,7 +64,7 @@ auto prerequisites = executor.when_all({schema.handle, destination.handle});
 auto prepared = executor.submit_after(prerequisites, mark_prepared);
 ```
 
-`TaskHandle` 只表达完成关系，实际的 `schema-v1` 和 `orders` 仍从各自 future 取回。调用方同时拥有 handles 和 futures，直到 `prepared.get()` 结束；不要把它们跨 Executor 实例或跨请求生命周期保存。
+`TaskHandle` 只表达完成关系，实际的 `schema-v1` 和 `orders` 仍从各自 future 取回。调用方同时拥有 handles 和 futures，直到 `prepared.get()` 结束；不要把它们跨 Kairo 实例或跨请求生命周期保存。
 
 如果 schema 失败，dependent 不应运行，其 future 会传播前置失败。服务应在请求边界把它转换成明确的 4xx/5xx 或重试结果，而不是继续提交数据行。
 
@@ -98,7 +98,7 @@ for (auto& future : futures) {
 }
 ```
 
-不能在第一个异常处直接退出循环，否则其余 futures 的结果和异常无人消费。需要“全有或全无”时，应在任务阶段只做解析与校验，全部成功后再由数据库事务统一提交；Executor batch 本身不提供 rollback。
+不能在第一个异常处直接退出循环，否则其余 futures 的结果和异常无人消费。需要“全有或全无”时，应在任务阶段只做解析与校验，全部成功后再由数据库事务统一提交；Kairo batch 本身不提供 rollback。
 
 ## 第三步：区分请求结果与服务观测
 
@@ -123,7 +123,7 @@ callback 应保持短小、非阻塞。生产中不要在 worker 失败路径同
 4. 根据数据库连接池限制并发写入，而不是按 CPU 数无限放大 worker。
 5. 记录排队时间、批次年龄、拒绝数和端到端吞吐。
 
-当任务主要等待数据库时，提高线程数可能把瓶颈转移为连接池争抢和数据库过载。容量预算必须覆盖 Executor 队列、输入 buffer、连接池和下游写入能力整条链路。
+当任务主要等待数据库时，提高线程数可能把瓶颈转移为连接池争抢和数据库过载。容量预算必须覆盖 Kairo 队列、输入 buffer、连接池和下游写入能力整条链路。
 
 ## 真实写入需要额外协议
 
@@ -137,7 +137,7 @@ callback 应保持短小、非阻塞。生产中不要在 worker 失败路径同
 
 ### 取消
 
-`wait_for_completion_ex()` 超时不会强制终止正在执行的数据库调用。为连接和语句设置超时，让长批次检查业务 deadline；请求取消后还要决定已经提交的副作用是否保留。
+`wait_for_completion()` 超时不会强制终止正在执行的数据库调用。为连接和语句设置超时，让长批次检查业务 deadline；请求取消后还要决定已经提交的副作用是否保留。
 
 ### 结果保留
 
@@ -159,7 +159,7 @@ HTTP 请求可能在后台工作完成前断开。需要异步导入时，为任
 
 ### 服务开始 draining
 
-在接受批次前检查服务状态。进入 draining 后拒绝新导入，等待已接受批次并记录 `pending_tasks`；不要先 shutdown Executor，再让 HTTP handler 继续提交。
+在接受批次前检查服务状态。进入 draining 后拒绝新导入，等待已接受批次并记录 `pending_tasks`；不要先 shutdown Kairo，再让 HTTP handler 继续提交。
 
 ## 退出顺序
 
@@ -168,13 +168,13 @@ flowchart TD
     A[负载均衡器停止发送新流量] --> B[HTTP 层进入 draining<br/>拒绝新导入]
     B --> C[停止 CSV reader / job producer]
     C --> D[等待当前请求消费 futures]
-    D --> E[wait_for_completion_ex<br/>排空预算]
+    D --> E[wait_for_completion<br/>排空预算]
     E --> F[记录 pending、失败计数<br/>和未完成 job IDs]
-    F --> G[shutdown Executor]
+    F --> G[shutdown Kairo]
     G --> H[销毁连接池、结果存储和日志设施]
 ```
 
-如果使用独立 Executor 管理导入子系统，重启时应重建整个子系统；已 shutdown 的实例不能重新初始化。
+如果使用独立 Kairo 管理导入子系统，重启时应重建整个子系统；已 shutdown 的实例不能重新初始化。
 
 ## 需求变化时如何演进
 

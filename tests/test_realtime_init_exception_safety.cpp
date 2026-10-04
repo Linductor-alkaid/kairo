@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-#include "executor/util/timer_period_guard.hpp"
+#include "kairo/util/timer_period_guard.hpp"
 
 #ifdef _WIN32
 namespace {
@@ -31,12 +31,12 @@ TEST(RealtimeInitExceptionSafety, TimerPeriodEndsDuringInitStackUnwind) {
     g_timer_reference_count = 0;
     g_begin_calls = 0;
     g_end_calls = 0;
-    executor::util::set_timer_period_functions_for_test(&fake_time_begin_period,
+    kairo::util::set_timer_period_functions_for_test(&fake_time_begin_period,
                                                         &fake_time_end_period);
 
     EXPECT_THROW(
         [] {
-            executor::util::TimerPeriodGuard guard(1);
+            kairo::util::TimerPeriodGuard guard(1);
             throw std::runtime_error("simulated realtime init failure");
         }(),
         std::runtime_error);
@@ -44,11 +44,11 @@ TEST(RealtimeInitExceptionSafety, TimerPeriodEndsDuringInitStackUnwind) {
     EXPECT_EQ(g_begin_calls, 1);
     EXPECT_EQ(g_end_calls, 1);
     EXPECT_EQ(g_timer_reference_count, 0);
-    executor::util::reset_timer_period_functions_for_test();
+    kairo::util::reset_timer_period_functions_for_test();
 #else
     EXPECT_THROW(
         [] {
-            executor::util::TimerPeriodGuard guard(1);
+            kairo::util::TimerPeriodGuard guard(1);
             throw std::runtime_error("simulated realtime init failure");
         }(),
         std::runtime_error);

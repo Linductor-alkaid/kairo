@@ -1,6 +1,6 @@
 ---
 title: 并发架构反模式
-description: 从排队变长、关闭卡住、悬空引用和失败静默等症状，定位 Executor 接入中的常见架构错误。
+description: 从排队变长、关闭卡住、悬空引用和失败静默等症状，定位 Kairo 接入中的常见架构错误。
 ---
 
 # 并发架构反模式
@@ -39,7 +39,7 @@ executor.submit_auto([&] {
 
 ### 修正
 
-- 需要 Executor 管理 stop/wake/join 生命周期的长期阻塞循环，使用[阻塞 I/O worker](/zh/realtime-and-communication/blocking-io-workers)；读取后只提交短计算。
+- 需要 Kairo 管理 stop/wake/join 生命周期的长期阻塞循环，使用[阻塞 I/O worker](/zh/realtime-and-communication/blocking-io-workers)；读取后只提交短计算。
 - 软周期维护使用 `submit_periodic()`，保存并取消 task ID。
 - 有 jitter 预算的循环使用实时任务 Facade。
 - 所有阻塞 I/O 设置超时或可唤醒停止机制。
@@ -137,12 +137,12 @@ return Accepted;
 
 - 请求结果需要确认时持有 future，并在业务预算内取值。
 - 真正 fire-and-forget 的任务设置 failure callback/status 与业务关联 ID。
-- 对关键副作用使用持久化 outbox、重试队列或幂等协议；Executor 不是交付保证系统。
+- 对关键副作用使用持久化 outbox、重试队列或幂等协议；Kairo 不是交付保证系统。
 - `submit_batch_no_future()` 仅用于已设计服务级完成与失败观察的批次。
 
 ### 验证信号
 
-故意让任务抛异常或队列拒绝时，业务指标、告警和日志都能关联到输入；不能只看到 Executor 总失败数。
+故意让任务抛异常或队列拒绝时，业务指标、告警和日志都能关联到输入；不能只看到 Kairo 总失败数。
 
 ## 6. 用大队列掩盖持续过载
 
@@ -166,7 +166,7 @@ return Accepted;
 
 持续过载测试中，内存和延迟有上界；拒绝、覆盖或降级行为与业务协议一致且可观察。
 
-## 7. 混用 Executor 实例和资源
+## 7. 混用 Kairo 实例和资源
 
 ### 典型误用
 
@@ -180,21 +180,21 @@ return Accepted;
 
 ### 修正
 
-- 在接口中显式传入同一个 Executor 引用，不让模块自行选择单例或独立实例。
-- 句柄只在本次任务图和原 Executor 生命周期内流转。
+- 在接口中显式传入同一个 Kairo 引用，不让模块自行选择单例或独立实例。
+- 句柄只在本次任务图和原 Kairo 生命周期内流转。
 - 直接指针仅在高级局部代码中短期使用，并受 manager 生命周期保护。
 - 共享单例只有应用 owner 能 shutdown。
 
 ### 验证信号
 
-组件测试使用独立 Executor 时不会意外访问全局实例；关闭一个隔离实例不影响其他实例。
+组件测试使用独立 Kairo 时不会意外访问全局实例；关闭一个隔离实例不影响其他实例。
 
 ## 8. 关闭顺序反了
 
 ### 典型顺序
 
 ```text
-销毁业务对象 → shutdown Executor → 停止定时器和设备回调
+销毁业务对象 → shutdown Kairo → 停止定时器和设备回调
 ```
 
 ### 为什么出问题
@@ -209,11 +209,11 @@ return Accepted;
 → 取消软周期任务
 → 停实时上游，再停实时任务
 → 有界排空普通任务
-→ shutdown Executor
+→ shutdown Kairo
 → 销毁任务依赖对象与日志设施
 ```
 
-关闭后的 Executor 不能重新初始化。组件需要重启时重建独立运行时及其业务状态。
+关闭后的 Kairo 不能重新初始化。组件需要重启时重建独立运行时及其业务状态。
 
 ### 验证信号
 
@@ -227,7 +227,7 @@ return Accepted;
 
 ### 为什么出问题
 
-当前软超时检查的是任务开始前的排队时间；任务开始运行后不会被外部强制中断。`wait_for_completion_ex()` 超时也只说明尚未全部完成。
+当前软超时检查的是任务开始前的排队时间；任务开始运行后不会被外部强制中断。`wait_for_completion()` 超时也只说明尚未全部完成。
 
 ### 修正
 

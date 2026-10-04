@@ -21,10 +21,10 @@
 ```bash
 # 启用覆盖率，建议使用 Debug 构建
 cmake -B build -S . \
-  -DEXECUTOR_ENABLE_COVERAGE=ON \
+  -DKAIRO_ENABLE_COVERAGE=ON \
   -DCMAKE_BUILD_TYPE=Debug
 
-# 编译（会为 executor 库和测试加上 --coverage）
+# 编译（会为 kairo 库和测试加上 --coverage）
 cmake --build build
 ```
 
@@ -60,7 +60,7 @@ lcov --remove coverage.info \
 
 # 生成 HTML 报告
 genhtml coverage_filtered.info --output-directory coverage_html \
-  --title "Executor Code Coverage" --show-details --legend
+  --title "Kairo Code Coverage" --show-details --legend
 ```
 
 ### 4. 查看覆盖率
@@ -92,7 +92,7 @@ lcov --summary coverage_filtered.info
 | 问题 | 处理 |
 |------|------|
 | `lcov` / `genhtml` 未找到 | 安装 lcov：`sudo apt-get install lcov`（或对应系统命令）。 |
-| 覆盖率始终为 0 | 确认配置时使用了 `-DEXECUTOR_ENABLE_COVERAGE=ON` 且已重新 `cmake --build build`；运行过 `ctest`。 |
+| 覆盖率始终为 0 | 确认配置时使用了 `-DKAIRO_ENABLE_COVERAGE=ON` 且已重新 `cmake --build build`；运行过 `ctest`。 |
 | 报告中包含大量 `/usr/*` 等无关文件 | 使用 `lcov --remove` 排除后再 `genhtml`，参见上述命令。 |
 | Windows / MSVC | 当前仅支持 GCC/Clang；Windows 下可考虑 WSL 或 MinGW，或后续接入 OpenCppCoverage 等方案。 |
 

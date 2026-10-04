@@ -7,11 +7,11 @@
 #include <chrono>
 
 // 包含util模块的头文件
-#include "executor/util/lockfree_queue.hpp"
-#include "executor/util/exception_handler.hpp"
-#include "executor/util/thread_utils.hpp"
+#include "kairo/util/lockfree_queue.hpp"
+#include "kairo/util/exception_handler.hpp"
+#include "kairo/util/thread_utils.hpp"
 
-using namespace executor::util;
+using namespace kairo::util;
 
 // 测试辅助宏
 #define TEST_ASSERT(condition, message) \

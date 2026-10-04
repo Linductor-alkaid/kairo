@@ -3,16 +3,16 @@
 #include <iostream>
 #include <thread>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 using namespace std::chrono_literals;
 
 int main() {
-    executor::Executor executor;
+    kairo::Executor executor;
     std::atomic<int> cycles{0};
     std::atomic<int> commands{0};
 
-    executor::RealtimeThreadConfig config;
+    kairo::RealtimeThreadConfig config;
     config.thread_name = "tutorial_rt";
     config.cycle_period_ns = 5'000'000;
     config.thread_priority = 0;
@@ -20,9 +20,9 @@ int main() {
     config.timer_slack_ns = 0;
     config.cycle_callback = [&] { ++cycles; };
 
-    const auto registered = executor.register_realtime_task_ex("tutorial_rt", config);
-    const auto started = registered ? executor.start_realtime_task_ex("tutorial_rt")
-                                  : executor::ExecutorResult{};
+    const auto registered = executor.register_realtime_task("tutorial_rt", config);
+    const auto started = registered ? executor.start_realtime_task("tutorial_rt")
+                                  : kairo::ExecutorResult{};
     if (!registered || !started) {
         std::cerr << "realtime start failed\n";
         return 1;

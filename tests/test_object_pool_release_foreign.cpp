@@ -13,14 +13,14 @@ struct PoolValue {
 };
 
 TEST(ObjectPoolReleaseGuard, ForeignPointerThrowsLogicError) {
-    executor::util::ObjectPool<PoolValue> pool(1);
+    kairo::util::ObjectPool<PoolValue> pool(1);
     PoolValue foreign;
 
     EXPECT_THROW(pool.release(&foreign), std::logic_error);
 }
 
 TEST(ObjectPoolReleaseGuard, MaximumAddressThrowsLogicError) {
-    executor::util::ObjectPool<PoolValue> pool(1);
+    kairo::util::ObjectPool<PoolValue> pool(1);
     auto* pointer = reinterpret_cast<PoolValue*>(
         std::numeric_limits<std::uintptr_t>::max());
 
@@ -28,7 +28,7 @@ TEST(ObjectPoolReleaseGuard, MaximumAddressThrowsLogicError) {
 }
 
 TEST(ObjectPoolReleaseGuard, UnalignedPointerThrowsLogicError) {
-    executor::util::ObjectPool<PoolValue> pool(1);
+    kairo::util::ObjectPool<PoolValue> pool(1);
     PoolValue* value = pool.acquire();
     ASSERT_NE(value, nullptr);
     const auto unaligned_address = reinterpret_cast<std::uintptr_t>(value) + 1;
@@ -39,7 +39,7 @@ TEST(ObjectPoolReleaseGuard, UnalignedPointerThrowsLogicError) {
 }
 
 TEST(ObjectPoolReleaseGuard, PointerImmediatelyAfterStorageThrowsLogicError) {
-    executor::util::ObjectPool<PoolValue> pool(2);
+    kairo::util::ObjectPool<PoolValue> pool(2);
     PoolValue* first = pool.acquire();
     PoolValue* second = pool.acquire();
     ASSERT_NE(first, nullptr);
@@ -56,7 +56,7 @@ TEST(ObjectPoolReleaseGuard, PointerImmediatelyAfterStorageThrowsLogicError) {
 }
 
 TEST(ObjectPoolReleaseGuard, InBoundsPointerCanBeReleased) {
-    executor::util::ObjectPool<PoolValue> pool(1);
+    kairo::util::ObjectPool<PoolValue> pool(1);
     PoolValue* value = pool.acquire();
     ASSERT_NE(value, nullptr);
 

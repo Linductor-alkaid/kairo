@@ -15,10 +15,10 @@ description: 在启用 CUDA 或 OpenCL 的设备上注册 GPU 执行器、提交
 
 ```bash
 # CUDA（NVIDIA）
-cmake -B build -DEXECUTOR_BUILD_EXAMPLES=ON -DEXECUTOR_ENABLE_GPU=ON -DEXECUTOR_ENABLE_CUDA=ON
+cmake -B build -DKAIRO_BUILD_EXAMPLES=ON -DKAIRO_ENABLE_GPU=ON -DKAIRO_ENABLE_CUDA=ON
 
 # OpenCL（Intel / AMD / NVIDIA）
-cmake -B build -DEXECUTOR_BUILD_EXAMPLES=ON -DEXECUTOR_ENABLE_GPU=ON -DEXECUTOR_ENABLE_OPENCL=ON
+cmake -B build -DKAIRO_BUILD_EXAMPLES=ON -DKAIRO_ENABLE_GPU=ON -DKAIRO_ENABLE_OPENCL=ON
 cmake --build build
 ./build/examples/gpu_device_query
 ```
@@ -28,17 +28,17 @@ cmake --build build
 ## 注册、提交与观察
 
 ```cpp
-executor::gpu::GpuExecutorConfig config;
+kairo::gpu::GpuExecutorConfig config;
 config.name = "cuda0";
-config.backend = executor::gpu::GpuBackend::CUDA;
+config.backend = kairo::gpu::GpuBackend::CUDA;
 config.device_id = 0;
 
-const auto registered = executor.register_gpu_executor_ex("cuda0", config);
+const auto registered = executor.register_gpu_executor("cuda0", config);
 if (!registered) {
     return run_on_cpu();
 }
 
-executor::gpu::GpuTaskConfig task;
+kairo::gpu::GpuTaskConfig task;
 auto completed = executor.submit_gpu("cuda0", [](void* stream) {
     launch_kernel(stream);
 }, task);
@@ -73,7 +73,7 @@ completed.get();
 
 ## 性能与复现
 
-不要把“GPU 已注册”推导为“工作负载更快”。任何结论至少记录 GPU 型号、驱动、后端、数据规模、kernel、构建类型、测量方式和 CPU 对照。多设备、内存和 stream 专题示例见 [`examples/gpu_basic.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/gpu_basic.cpp)、[`examples/gpu_multi_device.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/gpu_multi_device.cpp) 与 [`examples/gpu_opencl.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/gpu_opencl.cpp)。
+不要把“GPU 已注册”推导为“工作负载更快”。任何结论至少记录 GPU 型号、驱动、后端、数据规模、kernel、构建类型、测量方式和 CPU 对照。多设备、内存和 stream 专题示例见 [`examples/gpu_basic.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/gpu_basic.cpp)、[`examples/gpu_multi_device.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/gpu_multi_device.cpp) 与 [`examples/gpu_opencl.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/gpu_opencl.cpp)。
 
 ## 下一步阅读
 

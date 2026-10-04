@@ -6,8 +6,8 @@
  * number of retained failure/statistics entries affect the result.
  */
 
-#include <executor/executor.hpp>
-#include <executor/monitor/executor_snapshot_formatter.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/monitor/executor_snapshot_formatter.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -42,8 +42,8 @@ double average_ns(std::chrono::nanoseconds total, size_t iterations) {
 
 int main(int argc, char* argv[]) {
     const size_t iterations = parse_iterations(argc, argv);
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = 1;
     config.max_threads = 1;
     if (!executor.initialize(config)) {
@@ -53,11 +53,11 @@ int main(int argc, char* argv[]) {
 
     // Warm up lazy standard-library buffers and the executor status path.
     const auto warm_snapshot = executor.get_snapshot();
-    (void)executor::monitor::format_executor_snapshot_with_metrics(warm_snapshot);
+    (void)kairo::monitor::format_executor_snapshot_with_metrics(warm_snapshot);
 
     std::chrono::nanoseconds collection_wall_time{0};
     std::chrono::nanoseconds collection_reported_time{0};
-    executor::ExecutorSnapshot snapshot;
+    kairo::ExecutorSnapshot snapshot;
     for (size_t index = 0; index < iterations; ++index) {
         const auto start = std::chrono::steady_clock::now();
         snapshot = executor.get_snapshot();
@@ -73,7 +73,7 @@ int main(int argc, char* argv[]) {
     size_t formatted_bytes = 0;
     for (size_t index = 0; index < iterations; ++index) {
         const auto start = std::chrono::steady_clock::now();
-        auto export_result = executor::monitor::format_executor_snapshot_with_metrics(snapshot);
+        auto export_result = kairo::monitor::format_executor_snapshot_with_metrics(snapshot);
         formatting_wall_time += std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - start);
         formatting_reported_time += export_result.metrics.formatting_duration;

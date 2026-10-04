@@ -5,14 +5,14 @@
 //      the dependent is reported ready.
 //  (b) completed_tasks_ grows without bound: mark_completed() inserts into it
 //      and no public API ever erases from it. Measured via process VmRSS.
-#include "executor/gpu/task_scheduler_optimizer.hpp"
+#include "kairo/gpu/task_scheduler_optimizer.hpp"
 
 #include <cstdio>
 #include <cstring>
 #include <string>
 
-using executor::gpu::TaskSchedulerOptimizer;
-using executor::gpu::GpuTaskNode;
+using kairo::gpu::TaskSchedulerOptimizer;
+using kairo::gpu::GpuTaskNode;
 
 namespace {
 

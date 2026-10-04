@@ -14,7 +14,7 @@
 //   cr052_dependency_dfs overflow-default N  - build chain of N on the main
 //                                              thread (8MB stack); expect
 //                                              SIGSEGV if N deep enough
-#include "executor/task/task_dependency_manager.hpp"
+#include "kairo/task/task_dependency_manager.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -25,7 +25,7 @@
 #include <thread>
 #include <atomic>
 
-using executor::TaskDependencyManager;
+using kairo::TaskDependencyManager;
 
 namespace {
 

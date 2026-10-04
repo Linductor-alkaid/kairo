@@ -12,14 +12,14 @@
 #include <system_error>
 
 // 包含 RealtimeThreadExecutor 的头文件
-#include <executor/config.hpp>
-#include <executor/types.hpp>
-#include <executor/interfaces.hpp>
+#include <kairo/config.hpp>
+#include <kairo/types.hpp>
+#include <kairo/interfaces.hpp>
 #define private public
-#include "executor/realtime_thread_executor.hpp"
+#include "kairo/realtime_thread_executor.hpp"
 #undef private
 
-using namespace executor;
+using namespace kairo;
 
 static_assert(std::atomic<int64_t>::is_always_lock_free,
               "RealtimeThreadExecutor statistics require lock-free int64_t atomics");
@@ -401,7 +401,7 @@ bool test_realtime_stop_drains_queue() {
     // Queue tasks while the RT thread is sleeping until the next period, then stop
     // before another process_tasks() pass can execute them.
     for (int i = 0; i < num_tasks; ++i) {
-        TEST_ASSERT(executor.push_task_ex([&task_count]() {
+        TEST_ASSERT(executor.push_task([&task_count]() {
                         task_count.fetch_add(1, std::memory_order_relaxed);
                     }),
                     "Initial task push should succeed");
@@ -417,8 +417,8 @@ bool test_realtime_stop_drains_queue() {
 
     // stop() 后不再接受新任务; 失败同样计入 dropped_task_count.
     for (int i = 0; i < num_tasks; ++i) {
-        TEST_ASSERT(!executor.push_task_ex([]() {}),
-                    "push_task_ex should reject tasks after stop");
+        TEST_ASSERT(!executor.push_task([]() {}),
+                    "push_task should reject tasks after stop");
     }
 
     status = executor.get_status();
@@ -462,7 +462,7 @@ bool test_realtime_concurrent_stop_does_not_double_release() {
                 "Executor should complete its first cycle before queuing tasks");
 
     for (int i = 0; i < num_tasks; ++i) {
-        TEST_ASSERT(executor.push_task_ex([&task_count]() {
+        TEST_ASSERT(executor.push_task([&task_count]() {
                         task_count.fetch_add(1, std::memory_order_relaxed);
                     }),
                     "Initial task push should succeed");
@@ -513,7 +513,7 @@ bool test_realtime_push_after_stop_returns_false_and_counts_drop() {
     TEST_ASSERT(executor.start(), "Executor should start successfully");
 
     for (int i = 0; i < 8; ++i) {
-        TEST_ASSERT(executor.push_task_ex([&task_count]() {
+        TEST_ASSERT(executor.push_task([&task_count]() {
                         task_count.fetch_add(1, std::memory_order_relaxed);
                     }),
                     "Push while running should succeed");
@@ -530,13 +530,13 @@ bool test_realtime_push_after_stop_returns_false_and_counts_drop() {
     const auto before = executor.get_status();
     TEST_ASSERT(!before.is_running, "Executor should not be running after stop");
 
-    TEST_ASSERT(!executor.push_task_ex([]() {}),
-                "push_task_ex should return false after stop");
+    TEST_ASSERT(!executor.push_task([]() {}),
+                "push_task should return false after stop");
     executor.push_task([]() {});
 
     const auto after = executor.get_status();
     TEST_ASSERT(after.dropped_task_count == before.dropped_task_count + 2,
-                "push_task_ex and push_task should count post-stop rejects as drops");
+                "push_task and push_task should count post-stop rejects as drops");
 
     std::cout << "  PushAfterStopReturnsFalseAndCountsDrop: PASSED (dropped "
               << after.dropped_task_count << " tasks)" << std::endl;
@@ -576,7 +576,7 @@ bool test_realtime_concurrent_stop_push_no_accepted_orphans() {
             }
 
             while (!stop_returned.load(std::memory_order_acquire)) {
-                const bool accepted = executor.push_task_ex([&executed_count]() {
+                const auto accepted = executor.push_task([&executed_count]() {
                     executed_count.fetch_add(1, std::memory_order_relaxed);
                 });
                 if (accepted) {
@@ -588,7 +588,7 @@ bool test_realtime_concurrent_stop_push_no_accepted_orphans() {
             }
 
             for (int j = 0; j < attempts_after_stop; ++j) {
-                const bool accepted = executor.push_task_ex([&executed_count]() {
+                const auto accepted = executor.push_task([&executed_count]() {
                     executed_count.fetch_add(1, std::memory_order_relaxed);
                 });
                 if (accepted) {
@@ -670,7 +670,7 @@ bool test_realtime_stop_admission_gate_waits_for_registered_producer() {
 
     std::atomic<bool> push_accepted{true};
     std::thread producer([&] {
-        push_accepted.store(executor.push_task_ex([] {}),
+        push_accepted.store(executor.push_task([] {}).ok,
                             std::memory_order_release);
     });
     while (!registered.load(std::memory_order_acquire)) {
@@ -688,7 +688,7 @@ bool test_realtime_stop_admission_gate_waits_for_registered_producer() {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     TEST_ASSERT(!stop_returned.load(std::memory_order_acquire),
                 "stop_and_join returned while a registered producer was "
-                "still inside push_task_ex");
+                "still inside push_task");
 
     release.store(true, std::memory_order_release);
     producer.join();
@@ -702,7 +702,7 @@ bool test_realtime_stop_admission_gate_waits_for_registered_producer() {
                 "submission after stop began should be rejected");
 
     const auto before = executor.get_status();
-    TEST_ASSERT(!executor.push_task_ex([] {}),
+    TEST_ASSERT(!executor.push_task([] {}),
                 "late producer after stop_and_join should be rejected");
     const auto after = executor.get_status();
     TEST_ASSERT(after.dropped_task_count == before.dropped_task_count + 1,

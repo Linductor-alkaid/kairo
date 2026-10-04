@@ -12,7 +12,7 @@
 //   main thread re-acquires that node; Guard's destructor must then run on
 //   the MAIN (producer) thread, not the worker thread.
 
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -23,7 +23,7 @@
 #include <thread>
 #include <unistd.h>
 
-using executor::LockFreeTaskExecutor;
+using kairo::LockFreeTaskExecutor;
 
 namespace {
 

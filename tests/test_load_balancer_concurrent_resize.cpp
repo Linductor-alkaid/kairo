@@ -5,9 +5,9 @@
 
 #include <gtest/gtest.h>
 
-#include "executor/thread_pool/load_balancer.hpp"
+#include "kairo/thread_pool/load_balancer.hpp"
 
-namespace executor {
+namespace kairo {
 namespace {
 
 TEST(LoadBalancerConcurrentResizeTest, RoundRobinAndUpdateLoadRaceResize) {
@@ -51,4 +51,4 @@ TEST(LoadBalancerConcurrentResizeTest, RoundRobinAndUpdateLoadRaceResize) {
 }
 
 } // namespace
-} // namespace executor
+} // namespace kairo

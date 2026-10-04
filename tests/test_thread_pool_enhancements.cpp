@@ -8,16 +8,16 @@
 #include <algorithm>
 
 // 包含新组件的头文件
-#include "executor/thread_pool/load_balancer.hpp"
-#include "executor/thread_pool/task_dispatcher.hpp"
-#include "executor/thread_pool/worker_local_queue.hpp"
-#include "executor/thread_pool/priority_scheduler.hpp"
-#include "executor/thread_pool/thread_pool.hpp"
-#include "executor/task/task.hpp"
-#include <executor/config.hpp>
-#include <executor/types.hpp>
+#include "kairo/thread_pool/load_balancer.hpp"
+#include "kairo/thread_pool/task_dispatcher.hpp"
+#include "kairo/thread_pool/worker_local_queue.hpp"
+#include "kairo/thread_pool/priority_scheduler.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
+#include "kairo/task/task.hpp"
+#include <kairo/config.hpp>
+#include <kairo/types.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 // 测试辅助宏
 #define TEST_ASSERT(condition, message) \

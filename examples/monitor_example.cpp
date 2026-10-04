@@ -1,12 +1,12 @@
 #include <chrono>
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <future>
 #include <iomanip>
 #include <iostream>
 #include <thread>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 
 static void print_task_statistics(const std::string& label,
                                   const TaskStatistics& s) {
@@ -59,7 +59,7 @@ int main() {
     }
 
     for (auto& f : futures) f.get();
-    exec.wait_for_completion();
+    (void)exec.wait_for_completion(std::chrono::seconds{300});
 
     std::cout << "任务已执行完毕，查询监控数据：\n\n";
 

@@ -6,7 +6,7 @@
 //  - 单组机器（<= 64 CPU）保持既有编号语义；
 //  - get_current_thread_affinity() 按 group * 64 + 序号 还原编号；
 //  - RealtimeThreadExecutor 显式 affinity 的应用状态如实上报。
-#include "executor/util/thread_utils.hpp"
+#include "kairo/util/thread_utils.hpp"
 
 #include <gtest/gtest.h>
 
@@ -25,14 +25,14 @@ TEST(ThreadUtilsProcessorGroup, DisabledOnNonWindows) {
 #include <utility>
 #include <vector>
 
-#include "executor/config.hpp"
-#include "executor/realtime_thread_executor.hpp"
+#include "kairo/config.hpp"
+#include "kairo/realtime_thread_executor.hpp"
 
-using executor::util::ProcessorGroupAffinity;
-using executor::util::ProcessorGroupApi;
-using executor::util::get_current_thread_affinity;
-using executor::util::set_cpu_affinity;
-using executor::util::set_processor_group_api_for_test;
+using kairo::util::ProcessorGroupAffinity;
+using kairo::util::ProcessorGroupApi;
+using kairo::util::get_current_thread_affinity;
+using kairo::util::set_cpu_affinity;
+using kairo::util::set_processor_group_api_for_test;
 
 namespace {
 
@@ -178,14 +178,14 @@ TEST(ThreadUtilsProcessorGroup, GetAffinityReportsGroupBasedIds) {
 TEST(ThreadUtilsProcessorGroup, RealtimeExplicitAffinityStatusReported) {
     ApiRestoreGuard guard(nullptr);  // 确保使用真实 Win32 API
 
-    executor::RealtimeThreadConfig config;
+    kairo::RealtimeThreadConfig config;
     config.thread_name = "p008_affinity";
     config.cycle_period_ns = 20'000'000;
     config.timer_slack_ns = 0;
     config.cycle_callback = [] {};
     config.cpu_affinity = {0};
 
-    executor::RealtimeThreadExecutor executor("p008_rt", config);
+    kairo::RealtimeThreadExecutor executor("p008_rt", config);
     ASSERT_TRUE(executor.start());
 
     bool applied = false;

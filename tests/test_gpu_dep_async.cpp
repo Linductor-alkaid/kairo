@@ -24,14 +24,14 @@
 #include <windows.h>
 #endif
 
-#include <executor/config.hpp>
-#include <executor/interfaces.hpp>
-#include <executor/types.hpp>
-#include "executor/gpu/cuda_executor.hpp"
+#include <kairo/config.hpp>
+#include <kairo/interfaces.hpp>
+#include <kairo/types.hpp>
+#include "kairo/gpu/cuda_executor.hpp"
 
 using namespace std::chrono;
-using namespace executor;
-using namespace executor::gpu;
+using namespace kairo;
+using namespace kairo::gpu;
 
 namespace {
 
@@ -188,7 +188,7 @@ bool test_concurrent_stop_and_dependency_registration_leaves_no_joinable_waiter(
 bool test_gpu_dependency_does_not_starve_worker() {
     std::cout << "P-005: submit_kernel_after must not block GPU worker"
               << std::endl;
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig cfg;
     cfg.name = "p005_dep_async";
     cfg.device_id = 0;
@@ -338,7 +338,7 @@ bool test_gpu_dependency_does_not_starve_worker() {
 bool test_gpu_dep_async_destroy_race() {
     std::cout << "P-002: destroy executor while dep-waiter is blocked"
               << std::endl;
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
     GpuExecutorConfig cfg;
     cfg.name = "p002_destroy_race";
     cfg.device_id = 0;

@@ -10,7 +10,7 @@ Facade 为长期工作新增两项能力：**任务协作取消**（`submit_canc
 两者都是"请求"，不是"中断"。
 
 可运行的完整演示见
-[`examples/tutorial/13_cancellation_and_timers.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/tutorial/13_cancellation_and_timers.cpp)：
+[`examples/tutorial/13_cancellation_and_timers.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/13_cancellation_and_timers.cpp)：
 
 <<< @/../examples/tutorial/13_cancellation_and_timers.cpp{1-17}
 
@@ -28,7 +28,7 @@ Facade 为长期工作新增两项能力：**任务协作取消**（`submit_canc
 
 ## 协作取消语义
 
-- `submit_cancellable(f)` 把 `executor::StopToken` 注入为 callable 的**首参数**；
+- `submit_cancellable(f)` 把 `kairo::StopToken` 注入为 callable 的**首参数**；
   任务在工作步之间轮询 `token.stop_requested()`。
 - 排队取消赢得唯一的仲裁点：任务不执行，future 以 `TaskCancelled(Explicit)`
   就绪，依赖它的任务收到 `TaskCancelled(DependencyCancelled)`，且**不记录
@@ -41,7 +41,7 @@ Facade 为长期工作新增两项能力：**任务协作取消**（`submit_canc
 
 ## 定时句柄
 
-`submit_delayed_with_handle()` 与 `submit_periodic_with_handle()`（以及注入
+`submit_delayed()` 与 `submit_periodic()`（以及注入
 `StopToken` 的 `*_cancellable_*` 变体）返回可复制的 `TimerHandle`：
 
 - 到期前 `cancel()`：返回 `CancelledBeforeDispatch`，任务不执行，future 收到
@@ -56,7 +56,7 @@ Facade 为长期工作新增两项能力：**任务协作取消**（`submit_canc
 
 ## 串行上下文派发
 
-需要将 FIFO 串行工作纳入 Executor admission 时，可使用
+需要将 FIFO 串行工作纳入 Kairo admission 时，可使用
 `SerialExecutionContext` 与 `submit_on(context, fn)`。派发与结算分离：池 worker
 只做有界非阻塞的 ticket 发布，业务 future 由串行线程直接结算，因此小型多
 worker 池在突发提交下仍按 ticket FIFO 有界时间内前进，不会互相饥饿；排队取消、

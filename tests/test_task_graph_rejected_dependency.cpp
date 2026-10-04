@@ -1,4 +1,4 @@
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <gtest/gtest.h>
 
@@ -14,8 +14,8 @@ using namespace std::chrono_literals;
 
 namespace {
 
-executor::ExecutorConfig config() {
-    executor::ExecutorConfig cfg;
+kairo::ExecutorConfig config() {
+    kairo::ExecutorConfig cfg;
     cfg.min_threads = 2;
     cfg.max_threads = 2;
     cfg.queue_capacity = 64;
@@ -43,7 +43,7 @@ struct ThrowingCopyTask {
 // submit_after / when_all 在 worker 线程上无限等待，可耗尽线程池并挂死
 // shutdown。修复后所有拒绝路径都会把句柄置为 Failed 并唤醒依赖方。
 TEST(RejectedTaskGraphTest, EmptyTaskRejectionFailsDependentsInsteadOfBlocking) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(config()));
 
     // 注意：经 submit_with_handle 包装后，空 std::function 不会被 submit 层
@@ -71,10 +71,10 @@ TEST(RejectedTaskGraphTest, EmptyTaskRejectionFailsDependentsInsteadOfBlocking) 
 }
 
 TEST(RejectedTaskGraphTest, ThrowingCopySubmissionKeepsGraphTerminalAndPoolHealthy) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(config()));
 
-    executor::TaskHandle rejected_handle;
+    kairo::TaskHandle rejected_handle;
     ASSERT_ANY_THROW({
         auto submission = executor.submit_with_handle(ThrowingCopyTask{});
         rejected_handle = submission.handle;

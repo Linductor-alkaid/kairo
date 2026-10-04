@@ -5,7 +5,7 @@
 //   1. submit_cancellable：executor 注入 StopToken，任务轮询协作退出；
 //   2. request_task_cancel：排队取消（任务不开跑）与运行中协作请求；
 //   3. TaskCancelled 异常与 CancellationStatus 独立计数（不是 failure）；
-//   4. submit_delayed_with_handle / TimerHandle：cancel 与 reschedule；
+//   4. submit_delayed / TimerHandle：cancel 与 reschedule；
 //   5. ScopedTimerHandle：RAII 析构即取消。
 //
 // 语义边界：
@@ -20,9 +20,9 @@
 #include <string>
 #include <thread>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 namespace {
@@ -105,7 +105,7 @@ void demonstrate_timer_handle(Executor& executor) {
     std::cout << "\n[4] TimerHandle: reschedule + cancel before expiry\n";
 
     std::atomic<int> fired{0};
-    auto submission = executor.submit_delayed_with_handle(
+    auto submission = executor.submit_delayed(
         500, [&fired]() noexcept { fired.fetch_add(1, std::memory_order_relaxed); });
 
     std::cout << "  reschedule_after(30) -> "
@@ -118,7 +118,7 @@ void demonstrate_timer_handle(Executor& executor) {
               << " execution_count=" << (status ? status->execution_count : 0u)
               << "\n";
 
-    auto doomed = executor.submit_delayed_with_handle(60'000, []() noexcept { return 1; });
+    auto doomed = executor.submit_delayed(60'000, []() noexcept { return 1; });
     std::cout << "  cancel pending timer -> "
               << to_string(doomed.handle.cancel()) << "\n";
     try {
@@ -135,7 +135,7 @@ void demonstrate_scoped_timer(Executor& executor) {
     std::atomic<bool> ran{false};
     std::future<int> future;
     {
-        auto submission = executor.submit_delayed_with_handle(60'000,
+        auto submission = executor.submit_delayed(60'000,
             [&ran]() noexcept {
                 ran.store(true, std::memory_order_release);
                 return 1;

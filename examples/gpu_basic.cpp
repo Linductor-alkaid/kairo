@@ -2,7 +2,7 @@
  * @file gpu_basic.cpp
  * @brief GPU 执行器基础示例：演示执行器注册、任务提交、内存管理与多 GPU 使用
  *
- * 需使用 EXECUTOR_ENABLE_GPU=ON 且 EXECUTOR_ENABLE_CUDA=ON 构建。
+ * 需使用 KAIRO_ENABLE_GPU=ON 且 KAIRO_ENABLE_CUDA=ON 构建。
  * 实际 kernel 启动由用户在 submit_gpu 的 lambda 内编写。
  * 多 GPU：自动注册所有可用设备（cuda0, cuda1, ...），示例 4 演示向多块 GPU 并行提交任务。
  */
@@ -10,11 +10,11 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-using namespace executor;
+using namespace kairo;
 
-#ifdef EXECUTOR_ENABLE_GPU
+#ifdef KAIRO_ENABLE_GPU
 
 int main() {
     std::cout << "========================================" << std::endl;
@@ -271,8 +271,8 @@ int main() {
 #else
 
 int main() {
-    std::cout << "GPU support not enabled. Build with EXECUTOR_ENABLE_GPU=ON and "
-                 "EXECUTOR_ENABLE_CUDA=ON." << std::endl;
+    std::cout << "GPU support not enabled. Build with KAIRO_ENABLE_GPU=ON and "
+                 "KAIRO_ENABLE_CUDA=ON." << std::endl;
     return 0;
 }
 

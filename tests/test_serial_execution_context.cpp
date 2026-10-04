@@ -1,4 +1,4 @@
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <atomic>
 #include <cassert>
@@ -9,13 +9,13 @@
 #include <vector>
 
 int main() {
-    executor::Executor ex;
-    executor::ExecutorConfig config;
+    kairo::Executor ex;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
     assert(ex.initialize(config));
 
-    executor::SerialExecutionContext context;
+    kairo::SerialExecutionContext context;
     std::mutex mutex;
     std::vector<int> order;
     auto first = ex.submit_on(context, [&] { std::lock_guard<std::mutex> lock(mutex); order.push_back(1); });
@@ -47,8 +47,8 @@ int main() {
 
     // A queued facade cancellation must release its context ticket so a
     // later submission cannot remain behind a cancelled wrapper.
-    executor::Executor blocked_executor;
-    executor::ExecutorConfig blocked_config;
+    kairo::Executor blocked_executor;
+    kairo::ExecutorConfig blocked_config;
     blocked_config.min_threads = 1;
     blocked_config.max_threads = 1;
     assert(blocked_executor.initialize(blocked_config));
@@ -62,16 +62,16 @@ int main() {
     });
     blocker_started_future.wait();
 
-    executor::SerialExecutionContext cancellation_context;
+    kairo::SerialExecutionContext cancellation_context;
     std::atomic<int> ran_after_cancel{0};
     auto cancelled = blocked_executor.submit_on_with_handle(
         cancellation_context, [&] { ran_after_cancel.fetch_add(100); });
     auto after_cancel = blocked_executor.submit_on_with_handle(
         cancellation_context, [&] { ran_after_cancel.fetch_add(1); });
     auto cancel_response = blocked_executor.request_task_cancel(cancelled.handle);
-    assert(cancel_response.result == executor::TaskCancellationResult::RequestedBeforeStart);
+    assert(cancel_response.result == kairo::TaskCancellationResult::RequestedBeforeStart);
     bool saw_cancel = false;
-    try { (void)cancelled.future.get(); } catch (const executor::TaskCancelled&) { saw_cancel = true; }
+    try { (void)cancelled.future.get(); } catch (const kairo::TaskCancelled&) { saw_cancel = true; }
     assert(saw_cancel);
     release_blocker.set_value();
     blocker.get();
@@ -90,7 +90,7 @@ int main() {
         shutdown_blocker_release_future.wait();
     });
     shutdown_blocker_started_future.wait();
-    executor::SerialExecutionContext shutdown_context;
+    kairo::SerialExecutionContext shutdown_context;
     auto pending_shutdown = blocked_executor.submit_on_with_handle(
         shutdown_context, [] { assert(false && "shutdown context task must not run"); });
     shutdown_context.shutdown();
@@ -98,14 +98,14 @@ int main() {
     shutdown_blocker.get();
     bool saw_context_shutdown = false;
     try { (void)pending_shutdown.future.get(); }
-    catch (const executor::ExecutorStopping&) { saw_context_shutdown = true; }
+    catch (const kairo::ExecutorStopping&) { saw_context_shutdown = true; }
     assert(saw_context_shutdown);
     blocked_executor.shutdown();
 
     context.shutdown();
     auto rejected = ex.submit_on(context, [] { return 7; });
     bool saw_stopped = false;
-    try { (void)rejected.get(); } catch (const executor::ExecutorStopping&) { saw_stopped = true; }
+    try { (void)rejected.get(); } catch (const kairo::ExecutorStopping&) { saw_stopped = true; }
     assert(saw_stopped);
     ex.shutdown();
     return 0;

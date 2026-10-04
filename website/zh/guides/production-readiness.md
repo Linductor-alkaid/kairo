@@ -1,24 +1,24 @@
 ---
 title: 生产接入检查清单
-description: 在长期运行服务中明确 Executor 的所有权、失败观察、容量、等待和关闭策略。
+description: 在长期运行服务中明确 Kairo 的所有权、失败观察、容量、等待和关闭策略。
 ---
 
 # 生产接入检查清单
 
-教程跑通只证明编译、链接和基本语义正确。真正接入服务前，还要把 Executor 放进应用的生命周期、容量和故障模型中。本页按接入顺序给出一套最小评审清单。
+教程跑通只证明编译、链接和基本语义正确。真正接入服务前，还要把 Kairo 放进应用的生命周期、容量和故障模型中。本页按接入顺序给出一套最小评审清单。
 
 如果项目仍在使用 detached thread、`std::async` 或自建任务队列，先阅读[从现有线程代码迁移](/zh/guides/migrating-existing-threads)；检查已完成的设计时，可用[并发架构反模式](/zh/guides/concurrency-antipatterns)从症状反查。
 
 ## 1. 确定运行时 owner
 
-默认单例适合进程内共享线程池；独立 `Executor` 实例适合测试隔离、插件隔离或不同组件需要独立关闭的场景。不要在每次请求中创建 Executor，也不要让多个模块都认为自己可以关闭共享单例。
+默认单例适合进程内共享线程池；独立 `Executor` 实例适合测试隔离、插件隔离或不同组件需要独立关闭的场景。不要在每次请求中创建 Kairo，也不要让多个模块都认为自己可以关闭共享单例。
 
 在设计文档中明确：
 
-- 谁在第一次提交前调用 `initialize_ex()`；
+- 谁在第一次提交前调用 `initialize()`；
 - 谁可以更新 failure callback 和监控配置；
 - 谁在停止接收新请求后发起等待与 `shutdown()`；
-- 哪些组件只借用 Executor，绝不拥有其生命周期。
+- 哪些组件只借用 Kairo，绝不拥有其生命周期。
 
 ## 2. 用真实负载设定容量
 
@@ -56,7 +56,7 @@ callback 应只做短小、非阻塞的事件转交。复杂格式化、网络�
 
 ## 5. 所有等待都必须有预算
 
-请求线程不要无界等待未知工作。使用 future 自身的等待能力控制单项结果；服务排空使用 `wait_for_completion_ex(timeout)`，超时时读取 `CompletionStatus` 的 active、queued 和 pending 数量。
+请求线程不要无界等待未知工作。使用 future 自身的等待能力控制单项结果；服务排空使用 `wait_for_completion(timeout)`，超时时读取 `CompletionStatus` 的 active、queued 和 pending 数量。
 
 等待超时后的动作应提前决定：
 
@@ -98,7 +98,7 @@ callback 应只做短小、非阻塞的事件转交。复杂格式化、网络�
 ## 最小评审结论模板
 
 ```text
-Executor owner:
+Kairo owner:
 初始化配置与依据:
 任务类型与提交接口:
 future / task ID owner:

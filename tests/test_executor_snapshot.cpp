@@ -7,13 +7,13 @@
 #include <thread>
 #include <vector>
 
-#include <executor/executor.hpp>
-#include <executor/executor_manager.hpp>
-#include <executor/interfaces.hpp>
-#include <executor/monitor/executor_monitor.hpp>
-#include <executor/monitor/executor_snapshot_formatter.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/executor_manager.hpp>
+#include <kairo/interfaces.hpp>
+#include <kairo/monitor/executor_monitor.hpp>
+#include <kairo/monitor/executor_snapshot_formatter.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message)                                      \
     do {                                                                     \
@@ -199,7 +199,7 @@ bool test_snapshot_diagnostic_callback_on_timeout_and_start_failure() {
     });
     started.get_future().wait();
 
-    const auto wait_result = executor.wait_for_completion_ex(std::chrono::milliseconds{1});
+    const auto wait_result = executor.wait_for_completion(std::chrono::milliseconds{1});
     TEST_ASSERT(wait_result.timed_out, "blocked task must produce a wait timeout");
     TEST_ASSERT(wait_result.diagnostic_snapshot.has_value(),
                 "wait timeout must retain a full lifecycle snapshot");
@@ -217,7 +217,7 @@ bool test_snapshot_diagnostic_callback_on_timeout_and_start_failure() {
 
     executor.set_snapshot_diagnostic_callback(
         [](const ExecutorSnapshot&) { throw std::runtime_error("diagnostic callback failure"); });
-    const auto second_wait_result = executor.wait_for_completion_ex(std::chrono::milliseconds{1});
+    const auto second_wait_result = executor.wait_for_completion(std::chrono::milliseconds{1});
     TEST_ASSERT(second_wait_result.timed_out,
                 "diagnostic callback failure must not change timeout result");
     TEST_ASSERT(second_wait_result.diagnostic_snapshot.has_value(),
@@ -278,7 +278,7 @@ bool test_snapshot_reports_async_work_and_shutdown() {
 
     release.set_value();
     task.get();
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     executor.shutdown();
 
     const auto stopped = executor.get_snapshot();

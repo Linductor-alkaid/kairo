@@ -9,7 +9,7 @@
 //
 // 预期：singleton_widow 下 worker 醒来触达已析构的 facade 堆成员
 // （cancellation_registry_ / task_dependencies_ 等）→ ASAN heap-use-after-free。
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -18,7 +18,7 @@
 #include <string>
 #include <thread>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 namespace {

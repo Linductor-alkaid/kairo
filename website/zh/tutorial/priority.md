@@ -19,7 +19,7 @@ description: 使用 submit_priority 让少量控制工作在普通分析之前�
 
 <<< @/../examples/tutorial/02_priority.cpp{4,7-19,21-24}
 
-完整源码：[`examples/tutorial/02_priority.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/tutorial/02_priority.cpp)。
+完整源码：[`examples/tutorial/02_priority.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/02_priority.cpp)。
 
 ```bash
 ./build/examples/tutorial/tutorial_02_priority
@@ -67,7 +67,7 @@ auto applied = executor.submit_priority(
 1. 先提交一个会阻塞 worker 的 LOW 任务，再提交 CRITICAL 任务；确认后者不能抢占已经运行的工作。
 2. 让控制任务抛异常；确认它只在自己的 future 和失败状态中出现，不会被分析任务的成功掩盖。
 3. 用小队列持续提交最高级任务；观察拒绝、queued 数和普通任务等待时间。
-4. 关闭时先停止控制与分析生产者，再消费仍持有的 futures，最后有界排空 Executor。
+4. 关闭时先停止控制与分析生产者，再消费仍持有的 futures，最后有界排空 Kairo。
 
 若业务要求“控制命令在 5 ms 内生效”，需要测量排队时延并设计超时/降级；把等级改成 CRITICAL 不是验收标准。
 

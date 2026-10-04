@@ -11,7 +11,7 @@ struct PoolValue {
 };
 
 TEST(ObjectPoolReleaseGuard, DoubleReleaseThrowsLogicError) {
-    executor::util::ObjectPool<PoolValue> pool(1);
+    kairo::util::ObjectPool<PoolValue> pool(1);
     PoolValue* value = pool.acquire();
     ASSERT_NE(value, nullptr);
 

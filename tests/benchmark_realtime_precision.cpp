@@ -6,8 +6,8 @@
  * Output: human-readable or JSON (--json).
  */
 
-#include <executor/executor.hpp>
-#include <executor/config.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/config.hpp>
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
@@ -85,7 +85,7 @@ bool parse_bool_env(const char* s) {
 }
 
 void apply_env(Config& c) {
-    const char* t = std::getenv("EXECUTOR_BENCHMARK_JSON");
+    const char* t = std::getenv("KAIRO_BENCHMARK_JSON");
     if (t && parse_bool_env(t)) c.json_output = true;
 }
 
@@ -131,8 +131,8 @@ JitterStats compute_jitter_stats(std::vector<double>& samples_us) {
 
 void run_realtime_precision(const Config& cfg, bool json_only) {
     const EnvironmentInfo env = environment_info();
-    executor::Executor ex;
-    executor::ExecutorConfig ec;
+    kairo::Executor ex;
+    kairo::ExecutorConfig ec;
     ec.min_threads = 2;
     ec.max_threads = 4;
     if (!ex.initialize(ec)) {
@@ -153,7 +153,7 @@ void run_realtime_precision(const Config& cfg, bool json_only) {
         size_t k = 0;
         std::string task_name = "rt_" + std::to_string(P_ms) + "ms";
 
-        executor::RealtimeThreadConfig rt_config;
+        kairo::RealtimeThreadConfig rt_config;
         rt_config.thread_name = task_name;
         rt_config.cycle_period_ns = period_ns;
         rt_config.cycle_callback = [&]() {

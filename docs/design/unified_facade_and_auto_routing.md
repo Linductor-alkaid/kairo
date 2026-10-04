@@ -1,5 +1,9 @@
 # 统一 Facade 与自动路由设计
 
+
+> [!NOTE]
+> 历史设计快照（0.3.1 统一 facade 与意图路由）。§8.2 中"legacy CPU/GPU overload 移除"已由 0.6.0 兑现；0.6.0 的调度演进见 scheduling_runtime.md。
+
 ## 1. 背景
 
 `Executor` 已经是项目的主要 facade，但其统一程度仍以“创建、注册和停止执行器”为主。用户在提交工作时仍需要理解多套入口：

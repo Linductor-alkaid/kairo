@@ -5,7 +5,7 @@
  * 对比返回 future 和不返回 future 的性能差异
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <chrono>
 #include <iostream>
 #include <iomanip>
@@ -13,7 +13,7 @@
 #include <thread>
 #include <atomic>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 struct BenchmarkResult {
@@ -55,7 +55,7 @@ BenchmarkResult benchmark_loop_submit(int num_threads, int tasks_per_thread) {
     auto end_time = steady_clock::now();
     double duration_ms = duration_cast<milliseconds>(end_time - start_time).count();
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     executor.shutdown(false);
 
     int total_tasks = num_threads * tasks_per_thread;
@@ -99,7 +99,7 @@ BenchmarkResult benchmark_batch_with_future(int num_threads, int tasks_per_threa
     auto end_time = steady_clock::now();
     double duration_ms = duration_cast<milliseconds>(end_time - start_time).count();
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     executor.shutdown(false);
 
     int total_tasks = num_threads * tasks_per_thread;
@@ -144,7 +144,7 @@ BenchmarkResult benchmark_batch_no_future(int num_threads, int tasks_per_thread,
     auto end_time = steady_clock::now();
     double duration_ms = duration_cast<milliseconds>(end_time - start_time).count();
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     executor.shutdown(false);
 
     int total_tasks = num_threads * tasks_per_thread;

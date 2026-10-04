@@ -1,4 +1,4 @@
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <gtest/gtest.h>
 
@@ -14,8 +14,8 @@ using namespace std::chrono_literals;
 TEST(ExecutorInstanceDestructorTest, DrainsOwnedPoolBeforeDestroyingState) {
     std::atomic<bool> plain_completed{false};
     {
-        executor::Executor executor;
-        executor::ExecutorConfig cfg;
+        kairo::Executor executor;
+        kairo::ExecutorConfig cfg;
         cfg.min_threads = 2;
         cfg.max_threads = 2;
         ASSERT_TRUE(executor.initialize(cfg));
@@ -38,8 +38,8 @@ TEST(ExecutorInstanceDestructorTest, DrainsOwnedPoolBeforeDestroyingState) {
 TEST(ExecutorInstanceDestructorTest, DestructorAfterExplicitShutdownIsHarmless) {
     std::atomic<bool> ran{false};
     {
-        executor::Executor executor;
-        executor::ExecutorConfig cfg;
+        kairo::Executor executor;
+        kairo::ExecutorConfig cfg;
         cfg.min_threads = 1;
         cfg.max_threads = 1;
         ASSERT_TRUE(executor.initialize(cfg));

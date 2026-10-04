@@ -11,13 +11,13 @@ Use `Executor::instance()` to submit work returning `42`, then retrieve the resu
 
 ## Recommended approach
 
-Use `submit_auto(lambda)`. For ordinary finite work, `Auto` safely selects the default asynchronous executor. It returns a `std::future`: `get()` returns the value after success and rethrows a task exception on the calling thread. The first submission lazily initializes Executor with its default configuration.
+Use `submit_auto(lambda)`. For ordinary finite work, `Auto` safely selects the default asynchronous executor. It returns a `std::future`: `get()` returns the value after success and rethrows a task exception on the calling thread. The first submission lazily initializes Kairo with its default configuration.
 
 This does not choose the fastest registered executor: an ordinary lambda never moves to GPU, lock-free, or realtime. For the exact intent-and-name matching rules of `submit_auto`, `dispatch_auto`, and `start_worker`, read [how automatic routing matches a target](/en/guides/execution-models-and-routing).
 
 <<< @/../examples/tutorial/01_first_task.cpp{4,7-16,18-24,26}
 
-Full source: [`examples/tutorial/01_first_task.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/tutorial/01_first_task.cpp).
+Full source: [`examples/tutorial/01_first_task.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/01_first_task.cpp).
 
 ```bash
 ./build/examples/tutorial/tutorial_01_first_task
@@ -35,7 +35,7 @@ task failed: expected tutorial failure
 - `future.get()` is both a result operation and an exception-observation boundary.
 - `get_last_routing_decision()` explains why the default Facade selected its path; it is not a completion result.
 - Default configuration is appropriate for this minimal example.
-- Configure thread counts, queue capacity, or monitoring with `initialize_ex()` before the first submission.
+- Configure thread counts, queue capacity, or monitoring with `initialize()` before the first submission.
 - The example ends with `shutdown()`. Applications must choose their shutdown semantics at a real component boundary.
 
 ## Common mistakes

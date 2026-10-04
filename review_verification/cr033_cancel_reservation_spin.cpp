@@ -12,7 +12,7 @@
 //    瞬间提前退出，耗时 ≈ C1 耗时）。
 //  - 对照组：单消费者单独取消同一场景，得到基线预算时长 D_base。
 
-#include "executor/util/lockfree_queue.hpp"
+#include "kairo/util/lockfree_queue.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -20,7 +20,7 @@
 #include <iostream>
 #include <thread>
 
-using executor::util::LockFreeQueue;
+using kairo::util::LockFreeQueue;
 
 namespace {
 

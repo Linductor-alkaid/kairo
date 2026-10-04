@@ -22,7 +22,7 @@ flowchart TD
     H -->|SystemState| J[monitor thread]
 ```
 
-Completion dependencies use Executor tasks and `TaskHandle`; continuous frame, configuration, command, and status flow uses `executor::comm`. Neither model substitutes for the other.
+Completion dependencies use Kairo tasks and `TaskHandle`; continuous frame, configuration, command, and status flow uses `kairo::comm`. Neither model substitutes for the other.
 
 ## Define data ownership first
 
@@ -61,13 +61,13 @@ Consume `bootstrap.get()`. If a prerequisite fails, close the gate/channels and 
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
-  -DEXECUTOR_BUILD_EXAMPLES=ON \
-  -DEXECUTOR_ENABLE_GPU=OFF
+  -DKAIRO_BUILD_EXAMPLES=ON \
+  -DKAIRO_ENABLE_GPU=OFF
 cmake --build build --target comm_robot_pipeline
 ./build/examples/comm_robot_pipeline
 ```
 
-Full source: [`examples/comm_robot_pipeline.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/comm_robot_pipeline.cpp).
+Full source: [`examples/comm_robot_pipeline.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/comm_robot_pipeline.cpp).
 
 Thread output and timing vary. Verify that bootstrap reports both prerequisites, the planner receives all eight frames, accepted commands are eventually processed, and joined threads exit normally. The slow recorder may report its own `Overwritten` events without changing planner delivery. An initial `StaleRead` before the first state snapshot is expected; it is not corruption.
 
@@ -81,6 +81,6 @@ The compact example also omits full startup-failure handling, sustained subscrib
 
 Slow one Topic subscriber with capacity `1`; fail `load_map`; lower control consumption while increasing command production; pause the monitor; and publish while unsubscribing. Each experiment must produce an intentional rejection/overwrite/backoff/statistic instead of a silent hang or access to destroyed subscription state.
 
-Recommended order: stop external start/config requests; stop the sensor owner; close `sensor_frames`; let planner and recorder drain; stop and drain commands; stop real-time work; let monitor read the final snapshot; close gates/channels to wake waiters; bounded-wait ordinary tasks; shutdown Executor; then destroy communication objects and business state.
+Recommended order: stop external start/config requests; stop the sensor owner; close `sensor_frames`; let planner and recorder drain; stop and drain commands; stop real-time work; let monitor read the final snapshot; close gates/channels to wake waiters; bounded-wait ordinary tasks; shutdown Kairo; then destroy communication objects and business state.
 
 An architecture review should identify each one-time task, long-running role, real-time need, data-loss/overwrite policy, component owner, failure observation path, overload boundary, and the shutdown lifetime of every captured object. For specialist constraints, continue with [Real-Time and Communication](/en/realtime-and-communication/) only after the required result model is explicit.

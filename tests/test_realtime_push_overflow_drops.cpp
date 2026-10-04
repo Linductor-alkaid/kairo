@@ -18,12 +18,12 @@
 #include <string>
 #include <functional>
 
-#include <executor/config.hpp>
-#include <executor/types.hpp>
-#include <executor/interfaces.hpp>
-#include "executor/realtime_thread_executor.hpp"
+#include <kairo/config.hpp>
+#include <kairo/types.hpp>
+#include <kairo/interfaces.hpp>
+#include "kairo/realtime_thread_executor.hpp"
 
-using namespace executor;
+using namespace kairo;
 
 // 极长的周期(1 秒), 给 overflow 测试足够时间窗
 static constexpr int64_t kPeriodNs = 1'000'000'000;  // 1s
@@ -92,7 +92,7 @@ bool test_realtime_push_overflow_drops() {
     // 队列很快被打满 (kCapacity), 后续 push 必然失败.
     std::atomic<int> push_success_via_ex{0};
     for (int i = 0; i < kTotalPushes; ++i) {
-        if (executor.push_task_ex([]() { /* noop */ })) {
+        if (executor.push_task([]() { /* noop */ })) {
             push_success_via_ex.fetch_add(1, std::memory_order_relaxed);
         }
     }
@@ -197,7 +197,7 @@ bool test_realtime_push_overflow_via_void_push() {
               << " failed_pushes=" << status.failed_pushes << "\n";
 
     // void push_task 路径必须也累计 dropped_task_count
-    // (它内部委托 push_task_ex, 共享同一计数器).
+    // (它内部委托 push_task, 共享同一计数器).
     TEST_ASSERT(status.dropped_task_count > 0,
                 "void push_task must also increment dropped_task_count on overflow");
 
@@ -298,7 +298,7 @@ bool test_realtime_push_overflow_drops_budget() {
     constexpr int kBulkPushes = 2000;
     int pushed_ok = 0;
     for (int i = 0; i < kBulkPushes; ++i) {
-        if (executor.push_task_ex([]() { /* noop */ })) {
+        if (executor.push_task([]() { /* noop */ })) {
             ++pushed_ok;
         }
     }

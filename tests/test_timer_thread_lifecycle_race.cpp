@@ -39,10 +39,10 @@
 #include <thread>
 #include <vector>
 
-#include <executor/config.hpp>
-#include <executor/executor.hpp>
+#include <kairo/config.hpp>
+#include <kairo/executor.hpp>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 #define TEST_ASSERT(condition, message)                                       \
@@ -111,7 +111,7 @@ static bool test_blocking_factory_vs_shutdown() {
     bool got_exception = false;
     int value = -1;
     try {
-        value = delayed_future.get();
+        value = delayed_future.future.get();
     } catch (const std::exception&) {
         got_exception = true;
     } catch (...) {
@@ -160,12 +160,13 @@ static bool test_factory_failure_rollback_reusable() {
     executor.set_timer_thread_factory_for_test(nullptr);
 
     std::atomic<int> executions{0};
-    const std::string task_id = executor.submit_periodic(
+    auto periodic_handle = executor.submit_periodic(
         20, [&executions]() noexcept { executions.fetch_add(1); });
-    TEST_ASSERT(!task_id.empty(), "periodic submit after rollback");
+    TEST_ASSERT(periodic_handle.valid(), "periodic submit after rollback");
 
     std::this_thread::sleep_for(150ms);
-    TEST_ASSERT(executor.cancel_task(task_id), "cancel periodic task");
+    TEST_ASSERT(periodic_handle.cancel() != kairo::TimerOperationResult::NotFound,
+                "cancel periodic task");
     const int count = executions.load();
     std::cout << "  periodic executions after rollback=" << count << std::endl;
     TEST_ASSERT(count >= 2,
@@ -204,7 +205,7 @@ static bool test_concurrent_submit_vs_shutdown_stress() {
                     5, [](int v) { return v; }, id * 1000 + i);
                 // 只等待已拿到的 future:执行或类型化拒绝都算完成。
                 try {
-                    (void)fut.get();
+                    (void)fut.future.get();
                 } catch (...) {
                 }
                 completed_futures.fetch_add(1, std::memory_order_relaxed);

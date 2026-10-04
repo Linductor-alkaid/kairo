@@ -16,7 +16,7 @@
 // wait_for_completion blocks up to kDefaultWaitForCompletionTimeout (300s)
 // because the stranded task keeps total != completed. To keep this test
 // bounded we intentionally leak the pools and terminate via std::_Exit().
-#include "executor/thread_pool/thread_pool.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -26,11 +26,11 @@
 #include <system_error>
 #include <utility>
 
-#if !defined(EXECUTOR_THREAD_POOL_TEST_HOOKS)
-#error "compile with -DEXECUTOR_THREAD_POOL_TEST_HOOKS (prebuilt lib has hooks)"
+#if !defined(KAIRO_THREAD_POOL_TEST_HOOKS)
+#error "compile with -DKAIRO_THREAD_POOL_TEST_HOOKS (prebuilt lib has hooks)"
 #endif
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 namespace {

@@ -16,16 +16,16 @@
 
 #include <gtest/gtest.h>
 
-#include "executor/thread_pool/worker_local_queue.hpp"
-#include "executor/types.hpp"
+#include "kairo/thread_pool/worker_local_queue.hpp"
+#include "kairo/types.hpp"
 
 #include <atomic>
 #include <chrono>
 #include <thread>
 #include <vector>
 
-using executor::Task;
-using executor::WorkerLocalQueue;
+using kairo::Task;
+using kairo::WorkerLocalQueue;
 
 namespace {
 
@@ -36,7 +36,7 @@ namespace {
 void push_increment(WorkerLocalQueue& q, std::atomic<uint64_t>* counter) {
     Task t;
     t.task_id = "inc";
-    t.priority = executor::TaskPriority::NORMAL;
+    t.priority = kairo::TaskPriority::NORMAL;
     t.function = [counter]() { counter->fetch_add(1, std::memory_order_relaxed); };
     t.submit_time_ns = 0;
     t.timeout_ms = 0;
@@ -56,7 +56,7 @@ TEST(WorkerLocalQueueTest, PushPopStealRoundTrip) {
 
     Task t;
     t.task_id = "t0";
-    t.priority = executor::TaskPriority::NORMAL;
+    t.priority = kairo::TaskPriority::NORMAL;
     t.function = []() {};
     ASSERT_TRUE(q.push(t));
 

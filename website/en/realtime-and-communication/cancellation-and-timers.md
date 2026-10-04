@@ -7,7 +7,7 @@ description: Cooperative task cancellation with StopToken and cancellable, resch
 
 Two capabilities were added to the Facade for long-running work: **cooperative task cancellation** (`submit_cancellable` + `request_task_cancel`) and **timer handles** (`TimerHandle` / `ScopedTimerHandle`). Both are requests, never interruptions.
 
-The runnable walkthrough is [`examples/tutorial/13_cancellation_and_timers.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/tutorial/13_cancellation_and_timers.cpp):
+The runnable walkthrough is [`examples/tutorial/13_cancellation_and_timers.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/13_cancellation_and_timers.cpp):
 
 <<< @/../examples/tutorial/13_cancellation_and_timers.cpp{1-17}
 
@@ -25,14 +25,14 @@ Rule of thumb: the timeout is a pool policy, the deadline is a label, and cancel
 
 ## Cooperative cancellation semantics
 
-- `submit_cancellable(f)` injects an `executor::StopToken` as the **first argument** of your callable. The task polls `token.stop_requested()` between work steps.
+- `submit_cancellable(f)` injects an `kairo::StopToken` as the **first argument** of your callable. The task polls `token.stop_requested()` between work steps.
 - Queued cancellation wins a single arbitration point: the task does not execute, the future is satisfied with `TaskCancelled(Explicit)`, dependents see `TaskCancelled(DependencyCancelled)`, and **no failure event is recorded** — cancellation is a lifecycle event, counted separately in `get_cancellation_status()`.
 - Cancellation of a running task only sets the token. A task that returns normally afterwards keeps its result; a task that throws `TaskCancelled` after observing the request is classified as cancelled. Throwing `TaskCancelled` *without* a request is still counted as a task failure, so the exception type cannot bypass failure statistics.
 - Repeated or stale handles are idempotent: `AlreadyRequested` while running, `AlreadyCompleted` after a terminal state, `NotFound` for unknown handles. None of these write failures.
 
 ## Timer handles
 
-`submit_delayed_with_handle()` and `submit_periodic_with_handle()` (plus `*_cancellable_*` variants that inject a `StopToken`) return a copyable `TimerHandle`:
+`submit_delayed()` and `submit_periodic()` (plus `*_cancellable_*` variants that inject a `StopToken`) return a copyable `TimerHandle`:
 
 - `cancel()` before expiry: `CancelledBeforeDispatch`, the task never runs, the future receives `TaskCancelled(Explicit)`.
 - `cancel()` after dispatch: `CancellationRequestedAfterDispatch` — the cancellation continues into the queued or running task instead of pretending it was never dispatched.
@@ -43,7 +43,7 @@ Rule of thumb: the timeout is a pool policy, the deadline is a label, and cancel
 ## Serialized context dispatch
 
 Use `SerialExecutionContext` with `submit_on(context, fn)` when FIFO work should remain
-visible to Executor admission and monitoring. Dispatch and settlement are split: pool
+visible to Kairo admission and monitoring. Dispatch and settlement are split: pool
 workers only perform a bounded, non-blocking ticket publish, and the business future is
 settled directly on the serial thread — so small multi-worker pools keep making bounded
 progress in ticket FIFO order under bursts instead of starving each other. Queued

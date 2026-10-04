@@ -1,22 +1,22 @@
-# Executor
+# Kairo
 
 <p align="center">
-  <img src="docs/executor.svg" width="160" alt="Executor 标志">
+  <img src="docs/kairo.png" width="160" alt="Kairo 标志">
 </p>
 
-[![CI](https://github.com/Linductor-alkaid/executor/actions/workflows/c-cpp.yml/badge.svg)](https://github.com/Linductor-alkaid/executor/actions/workflows/c-cpp.yml) [![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus)](https://isocpp.org/) [![CMake](https://img.shields.io/badge/CMake-3.16%2B-064F8C?logo=cmake)](https://cmake.org/) [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20%7C%20Android-1793D1)](https://github.com)
+[![CI](https://github.com/Linductor-alkaid/kairo/actions/workflows/c-cpp.yml/badge.svg)](https://github.com/Linductor-alkaid/kairo/actions/workflows/c-cpp.yml) [![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus)](https://isocpp.org/) [![CMake](https://img.shields.io/badge/CMake-3.16%2B-064F8C?logo=cmake)](https://cmake.org/) [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20%7C%20Android-1793D1)](https://github.com)
 
 > English: [README.md](README.md)
 
-📖 **在线使用手册：[linductor-alkaid.github.io/executor](https://linductor-alkaid.github.io/executor/)**
+📖 **在线使用手册：[linductor-alkaid.github.io/kairo](https://linductor-alkaid.github.io/kairo/)**
 
-**Executor 是一个面向 C++20 应用的进程内并发执行基础设施库。**
+**Kairo 是一个面向 C++20 应用的进程内并发执行基础设施库。**
 
 它通过统一 Facade 管理普通异步任务、低延迟队列、周期实时线程、长期 Blocking I/O 和可选 GPU 工作，并提供有界通信、任务编排、背压与生命周期诊断。
 
 大多数用户只需要从 `submit_auto()` 开始；只有遇到明确的周期、容量、I/O 或数据传递约束时，才需要进入专用路径。
 
-## 为什么使用 Executor
+## 为什么使用 Kairo
 
 - **一个入口，多种执行模型**：线程池、无锁低延迟、专用实时线程、Blocking I/O 和 GPU 由同一个 `Executor` 管理。
 - **保留真实结果语义**：普通任务返回 `future`，有界投递报告是否接收，长期 worker 返回生命周期 handle，不把不同模型伪装成同一种接口。
@@ -41,11 +41,11 @@ ctest --test-dir build --output-on-failure
 ### 提交第一个任务
 
 ```cpp
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <iostream>
 
 int main() {
-    auto& ex = executor::Executor::instance();
+    auto& ex = kairo::Executor::instance();
     auto result = ex.submit_auto([] { return 42; });
 
     std::cout << result.get() << '\n';
@@ -53,7 +53,7 @@ int main() {
 }
 ```
 
-`submit_auto(lambda)` 默认使用普通异步执行器。`future::get()` 返回结果，并在任务失败时重新抛出异常。需要自定义线程数、容量或监控配置时，再显式调用 `initialize_ex()`。
+`submit_auto(lambda)` 默认使用普通异步执行器。`future::get()` 返回结果，并在任务失败时重新抛出异常。需要自定义线程数、容量或监控配置时，再显式调用 `initialize()`。
 
 完整的构建、链接和异常处理过程见[第一个任务](website/zh/quick-start/first-task.md)。
 
@@ -68,7 +68,7 @@ int main() {
 | 已验证的低延迟或周期实时路径 | `dispatch_auto(...)` | 有界队列是否接收，不代表完成 |
 | 长期、可中断的 I/O 循环 | `start_worker(...)` | 启动结果与 `WorkerHandle` 生命周期 |
 | 独立的 CPU/GPU 实现 | `submit_auto(cpu_gpu_task(...))` | 已选路径的完成或异常 |
-| 长期运行线程之间传递数据 | `executor::comm` | FIFO、最新值、快照、阶段或订阅语义 |
+| 长期运行线程之间传递数据 | `kairo::comm` | FIFO、最新值、快照、阶段或订阅语义 |
 
 `Auto` 不会为了追求性能而静默选择无锁或实时后端。详细选型见[如何选择提交接口](website/zh/guides/choosing-submit-api.md)。
 
@@ -76,7 +76,7 @@ int main() {
 
 ## 跨线程通信
 
-`executor::comm` 按数据语义提供进程内通信组件：
+`kairo::comm` 按数据语义提供进程内通信组件：
 
 | 需求 | 组件 |
 | --- | --- |
@@ -91,7 +91,7 @@ int main() {
 
 ## 能力边界
 
-Executor 有意保持以下边界：
+Kairo 有意保持以下边界：
 
 - 它不是协程运行时，也不提供 coroutine scheduler。
 - 它不是分布式消息系统或数据流框架；Topic 只负责进程内扇出，不提供网络传输、持久化、重放或确认。
@@ -111,13 +111,13 @@ cmake --install build --prefix /usr/local
 在消费者项目中：
 
 ```cmake
-find_package(executor REQUIRED)
+find_package(kairo REQUIRED)
 
 add_executable(myapp main.cpp)
-target_link_libraries(myapp PRIVATE executor::executor)
+target_link_libraries(myapp PRIVATE kairo::executor)
 ```
 
-也可以通过 `add_subdirectory(path/to/executor)` 直接集成。静态库、动态库、构建选项和发布包说明见 [BUILD.md](docs/BUILD.md)。
+也可以通过 `add_subdirectory(path/to/kairo)` 直接集成。静态库、动态库、构建选项和发布包说明见 [BUILD.md](docs/BUILD.md)。
 
 ## 继续阅读
 
@@ -131,10 +131,10 @@ target_link_libraries(myapp PRIVATE executor::executor)
 | 从旧版本升级 | [迁移指南](docs/MIGRATION.md) |
 | 查看版本变化 | [CHANGELOG](CHANGELOG.md) |
 
-更多可运行代码见 [examples](examples/) 和 [tutorial](examples/tutorial/)。使用 AI 辅助接入时，可让 agent 先读取 [Executor integration skill](docs/skill/executor-integration/SKILL.md)。
+更多可运行代码见 [examples](examples/) 和 [tutorial](examples/tutorial/)。使用 AI 辅助接入时，可让 agent 先读取 [Executor integration skill](docs/skill/kairo-integration/SKILL.md)。
 
 ## 版本与许可
 
 当前版本：**v0.5.3**
 
-Executor 使用 [MIT License](LICENSE)。
+Kairo 使用 [MIT License](LICENSE)。

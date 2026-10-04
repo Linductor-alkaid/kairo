@@ -19,8 +19,8 @@ foreach(EXAMPLE_SOURCE ${EXAMPLE_SOURCES})
     
     add_executable(${EXAMPLE_NAME} ${EXAMPLE_SOURCE})
     
-    # 链接 executor 库
-    target_link_libraries(${EXAMPLE_NAME} PRIVATE executor)
+    # 链接 kairo 库
+    target_link_libraries(${EXAMPLE_NAME} PRIVATE kairo)
 endforeach()
 
 # 生命周期快照示例只使用 CPU 后端，作为发布文档中的可执行 smoke test。
@@ -64,26 +64,26 @@ if(TARGET cycle_manager_example)
 endif()
 
 # GPU 示例：仅在启用 GPU 时构建
-if(EXECUTOR_ENABLE_GPU)
+if(KAIRO_ENABLE_GPU)
     # 设备查询示例（CUDA或OpenCL任一可用即可）
-    if(EXECUTOR_CUDA_ENABLED OR EXECUTOR_OPENCL_ENABLED)
+    if(KAIRO_CUDA_ENABLED OR KAIRO_OPENCL_ENABLED)
         add_executable(gpu_device_query gpu_device_query.cpp)
-        target_link_libraries(gpu_device_query PRIVATE executor)
+        target_link_libraries(gpu_device_query PRIVATE kairo)
     endif()
 
     # CUDA 特定示例
-    if(EXECUTOR_CUDA_ENABLED)
+    if(KAIRO_CUDA_ENABLED)
         set(_cuda_inc_dirs ${CUDA_INCLUDE_DIRS})
         if(NOT _cuda_inc_dirs AND CUDAToolkit_INCLUDE_DIRS)
             set(_cuda_inc_dirs ${CUDAToolkit_INCLUDE_DIRS})
         endif()
 
         add_executable(gpu_basic gpu_basic.cpp)
-        target_link_libraries(gpu_basic PRIVATE executor)
+        target_link_libraries(gpu_basic PRIVATE kairo)
         target_include_directories(gpu_basic PRIVATE ${_cuda_inc_dirs})
 
         add_executable(gpu_multi_device gpu_multi_device.cpp)
-        target_link_libraries(gpu_multi_device PRIVATE executor)
+        target_link_libraries(gpu_multi_device PRIVATE kairo)
         target_include_directories(gpu_multi_device PRIVATE ${_cuda_inc_dirs})
 
         # gpu_unified_memory 包含 CUDA kernel 语法，必须用 nvcc 编译
@@ -91,7 +91,7 @@ if(EXECUTOR_ENABLE_GPU)
         if(NOT CMAKE_GENERATOR MATCHES "Visual Studio")
             enable_language(CUDA)
             add_executable(gpu_unified_memory gpu_unified_memory.cpp)
-            target_link_libraries(gpu_unified_memory PRIVATE executor)
+            target_link_libraries(gpu_unified_memory PRIVATE kairo)
             set_source_files_properties(gpu_unified_memory.cpp PROPERTIES LANGUAGE CUDA)
         else()
             message(STATUS "Skipping gpu_unified_memory: Visual Studio generator requires CUDA toolset integration")
@@ -99,8 +99,8 @@ if(EXECUTOR_ENABLE_GPU)
     endif()
 
     # OpenCL 特定示例
-    if(EXECUTOR_OPENCL_ENABLED)
+    if(KAIRO_OPENCL_ENABLED)
         add_executable(gpu_opencl gpu_opencl.cpp)
-        target_link_libraries(gpu_opencl PRIVATE executor)
+        target_link_libraries(gpu_opencl PRIVATE kairo)
     endif()
 endif()

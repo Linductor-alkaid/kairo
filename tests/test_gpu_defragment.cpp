@@ -18,14 +18,14 @@
 #include <iostream>
 #include <unordered_map>
 
-#include "executor/gpu/gpu_memory_manager.hpp"
+#include "kairo/gpu/gpu_memory_manager.hpp"
 
 // 直接 include 实现以避免依赖 libexecutor 提供 GpuMemoryManager 符号
 // (在没启用 CUDA 时,src/CMakeLists.txt 会把 gpu_memory_manager.cpp 排除出生产库,
 // 但本测试用例只关心逻辑正确性,Mock 即可,无需任何 CUDA 头文件。)
-#include "executor/gpu/gpu_memory_manager.cpp"
+#include "kairo/gpu/gpu_memory_manager.cpp"
 
-using namespace executor::gpu;
+using namespace kairo::gpu;
 
 #define TEST_ASSERT(condition, message)                                       \
     do {                                                                       \

@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   lang: 'zh-CN',
-  title: 'Executor 使用手册',
+  title: 'Kairo 使用手册',
   description: '面向 C++20 应用的进程内并发执行基础设施：统一 Facade 管理普通异步任务、低延迟队列、周期实时线程、长期 Blocking I/O 与可选 GPU 工作。',
   locales: {
     root: {
@@ -12,11 +12,11 @@ export default defineConfig({
     en: {
       label: 'English',
       lang: 'en-US',
-      title: 'Executor Guide',
+      title: 'Kairo Guide',
       description: 'In-process concurrency infrastructure for C++20 applications: one facade for ordinary async tasks, low-latency queues, periodic realtime threads, long-lived blocking I/O, and optional GPU work.',
       themeConfig: {
-        logo: '/executor.svg',
-        siteTitle: 'Executor Guide',
+        logo: '/kairo.svg',
+        siteTitle: 'Kairo Guide',
         nav: [
           { text: 'Quick Start', link: '/en/quick-start/build' },
           { text: 'Tutorials', link: '/en/tutorial/' },
@@ -24,7 +24,7 @@ export default defineConfig({
           {
             text: 'Reference',
             items: [
-              { text: 'Versions and Migration · v0.5.3', link: '/en/reference/version-and-migration' },
+              { text: 'Versions and Migration · v0.6.0', link: '/en/reference/version-and-migration' },
               { text: 'API Reference', link: '/en/reference/api' }
             ]
           },
@@ -37,14 +37,14 @@ export default defineConfig({
               { text: 'Advanced', link: '/en/advanced/' }
             ]
           },
-          { text: 'GitHub', link: 'https://github.com/Linductor-alkaid/executor' }
+          { text: 'GitHub', link: 'https://github.com/Linductor-alkaid/kairo' }
         ],
         sidebar: {
           '/en/quick-start/': [
             {
               text: 'Quick Start',
               items: [
-                { text: 'What is Executor?', link: '/en/getting-started/what-is-executor' },
+                { text: 'What is Kairo?', link: '/en/getting-started/what-is-kairo' },
                 { text: 'Build and Install', link: '/en/quick-start/build' },
                 { text: 'Your First Task', link: '/en/quick-start/first-task' },
                 { text: 'Submit Functions and Data', link: '/en/quick-start/task-inputs-and-ownership' },
@@ -57,7 +57,7 @@ export default defineConfig({
             {
               text: 'Getting Started',
               items: [
-                { text: 'What is Executor?', link: '/en/getting-started/what-is-executor' },
+                { text: 'What is Kairo?', link: '/en/getting-started/what-is-kairo' },
                 { text: 'Build and Install', link: '/en/quick-start/build' }
               ]
             }
@@ -83,7 +83,8 @@ export default defineConfig({
                 { text: 'Bounded Waiting and Status', link: '/en/tutorial/waiting-and-status' },
                 { text: 'Fan Out Events with Topic', link: '/en/tutorial/topic-subscriptions' },
                 { text: 'Complete Robot Pipeline', link: '/en/tutorial/complete-robot-pipeline' },
-                { text: 'Service Data Import', link: '/en/tutorial/service-data-import' }
+                { text: 'Service Data Import', link: '/en/tutorial/service-data-import' },
+                { text: 'Declare Deadlines, Priorities, and Resources', link: '/en/tutorial/scheduling-runtime' }
               ]
             }
           ],
@@ -136,7 +137,7 @@ export default defineConfig({
                 { text: 'Source Architecture Map', link: '/en/advanced/source-architecture' },
                 { text: 'Advanced Escape Hatches', link: '/en/advanced/escape-hatches' },
                 { text: 'Custom Cycle Source', link: '/en/advanced/custom-cycle-manager' },
-                { text: 'How Tasks Travel Through Executor', link: '/en/advanced/execution-paths' },
+                { text: 'How Tasks Travel Through Kairo', link: '/en/advanced/execution-paths' },
                 { text: 'Lock-Free and Performance Experiments', link: '/en/advanced/lockfree-and-performance' },
                 { text: 'Performance Measurement and Regression Gates', link: '/en/advanced/performance-measurement' }
               ]
@@ -157,17 +158,17 @@ export default defineConfig({
         outline: { level: [2, 3], label: 'On this page' },
         docFooter: { prev: 'Previous page', next: 'Next page' },
         footer: {
-          message: 'MIT License · <a href="https://github.com/Linductor-alkaid/executor/issues/new/choose">Report a documentation issue</a> · <a href="/executor/en/maintenance">Content maintenance</a>',
-          copyright: 'Executor contributors'
+          message: 'MIT License · <a href="https://github.com/Linductor-alkaid/kairo/issues/new/choose">Report a documentation issue</a> · <a href="/kairo/en/maintenance">Content maintenance</a>',
+          copyright: 'Kairo contributors'
         }
       }
     }
   },
-  base: '/executor/',
+  base: '/kairo/',
   cleanUrls: true,
   lastUpdated: true,
   sitemap: {
-    hostname: 'https://linductor-alkaid.github.io/executor/'
+    hostname: 'https://linductor-alkaid.github.io/kairo/'
   },
   markdown: {
     config(md) {
@@ -184,14 +185,14 @@ export default defineConfig({
     }
   },
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/executor/executor.svg?v=1', sizes: 'any' }],
-    ['link', { rel: 'shortcut icon', type: 'image/svg+xml', href: '/executor/executor.svg?v=1' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/kairo/kairo.svg?v=1', sizes: 'any' }],
+    ['link', { rel: 'shortcut icon', type: 'image/svg+xml', href: '/kairo/kairo.svg?v=1' }],
     ['meta', { name: 'keywords', content: 'C++20, task executor, thread pool, real-time, realtime, robotics, lock-free, concurrent programming, C++ 任务执行器, 线程池, 实时系统, 机器人, 无锁' }],
     ['meta', { name: 'theme-color', content: '#181d26' }]
   ],
   themeConfig: {
-    logo: '/executor.svg',
-    siteTitle: 'Executor 使用手册',
+    logo: '/kairo.svg',
+    siteTitle: 'Kairo 使用手册',
     nav: [
       { text: '快速开始', link: '/zh/quick-start/build' },
       { text: '循序教程', link: '/zh/tutorial/' },
@@ -199,7 +200,7 @@ export default defineConfig({
       {
         text: '参考',
         items: [
-          { text: '版本与迁移 · v0.5.3', link: '/zh/reference/version-and-migration' },
+          { text: '版本与迁移 · v0.6.0', link: '/zh/reference/version-and-migration' },
           { text: '完整 API 参考', link: '/zh/reference/api' }
         ]
       },
@@ -212,14 +213,14 @@ export default defineConfig({
           { text: '高级与原理', link: '/zh/advanced/' }
         ]
       },
-      { text: 'GitHub', link: 'https://github.com/Linductor-alkaid/executor' }
+      { text: 'GitHub', link: 'https://github.com/Linductor-alkaid/kairo' }
     ],
     sidebar: {
       '/zh/quick-start/': [
         {
           text: '快速开始',
           items: [
-            { text: 'Executor 是什么', link: '/zh/getting-started/what-is-executor' },
+            { text: 'Kairo 是什么', link: '/zh/getting-started/what-is-kairo' },
             { text: '构建与安装', link: '/zh/quick-start/build' },
             { text: '第一个任务', link: '/zh/quick-start/first-task' },
             { text: '提交自己的函数与数据', link: '/zh/quick-start/task-inputs-and-ownership' },
@@ -232,7 +233,7 @@ export default defineConfig({
         {
           text: '开始之前',
           items: [
-            { text: 'Executor 是什么', link: '/zh/getting-started/what-is-executor' },
+            { text: 'Kairo 是什么', link: '/zh/getting-started/what-is-kairo' },
             { text: '构建与安装', link: '/zh/quick-start/build' }
           ]
         }
@@ -263,7 +264,8 @@ export default defineConfig({
             { text: '有界等待与状态快照', link: '/zh/tutorial/waiting-and-status' },
             { text: '用 Topic 扇出事件流', link: '/zh/tutorial/topic-subscriptions' },
             { text: '完整机器人数据流水线', link: '/zh/tutorial/complete-robot-pipeline' },
-            { text: '服务端数据导入案例', link: '/zh/tutorial/service-data-import' }
+            { text: '服务端数据导入案例', link: '/zh/tutorial/service-data-import' },
+            { text: '声明任务的期限、优先级与资源', link: '/zh/tutorial/scheduling-runtime' }
           ]
         }
       ],
@@ -333,8 +335,8 @@ export default defineConfig({
     outline: { level: [2, 3], label: '本页内容' },
     docFooter: { prev: '上一页', next: '下一页' },
     footer: {
-      message: 'MIT License · <a href="https://github.com/Linductor-alkaid/executor/issues/new/choose">反馈文档问题</a> · <a href="/executor/maintenance">内容维护</a>',
-      copyright: 'Executor contributors'
+      message: 'MIT License · <a href="https://github.com/Linductor-alkaid/kairo/issues/new/choose">反馈文档问题</a> · <a href="/kairo/maintenance">内容维护</a>',
+      copyright: 'Kairo contributors'
     }
   }
 })

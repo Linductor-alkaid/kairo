@@ -12,7 +12,7 @@ Treat communication failures as component-local protocol state and observe them 
 ## Two observation paths
 
 ```cpp
-channel.set_event_callback([](const executor::comm::CommEvent& event) {
+channel.set_event_callback([](const kairo::comm::CommEvent& event) {
     report_comm_event(event.component_name, event.message);
 });
 
@@ -38,7 +38,7 @@ Component latency is an age, wait duration, or publish-to-consume duration defin
 
 Thresholds come from the business period and data importance. Mailbox overwrite is normal when only the latest target matters; it indicates the wrong component when every audit event must be retained.
 
-## Boundary with Executor failures
+## Boundary with Kairo failures
 
 `CommStats` and `CommEventCallback` do not aggregate into `ExecutorFailureStatus` and do not call `Executor::set_failure_callback()` by default. Bridge low-frequency component events to your monitoring system for unified alerts. Do not install callbacks on high-frequency paths merely because `is_synchronization_lock_free()` is true: that query covers internal atomics, not event/string construction, callback allocation or user code. Poll counters from an ordinary monitoring thread when the real-time path must remain bounded.
 

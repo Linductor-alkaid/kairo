@@ -8,11 +8,11 @@
  *      first instruction of the task body, sampled into per-producer
  *      preallocated slots (no shared-write contention on the sampling path).
  *
- * Config: env EXECUTOR_BENCHMARK_* + CLI (--json, --tasks, --producers).
+ * Config: env KAIRO_BENCHMARK_* + CLI (--json, --tasks, --producers).
  * Output: human-readable text (default) or JSON lines (--json).
  */
 
-#include "executor/thread_pool/thread_pool.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -25,8 +25,8 @@
 #include <thread>
 #include <vector>
 
-using executor::ThreadPool;
-using executor::ThreadPoolConfig;
+using kairo::ThreadPool;
+using kairo::ThreadPoolConfig;
 
 namespace {
 
@@ -56,14 +56,14 @@ bool parse_bool_env(const char* s) {
 }
 
 void apply_env(Config& c) {
-    if (const char* t = std::getenv("EXECUTOR_BENCHMARK_TASKS")) {
+    if (const char* t = std::getenv("KAIRO_BENCHMARK_TASKS")) {
         c.tasks_per_producer = parse_size_t(t, c.tasks_per_producer);
     }
-    if (const char* t = std::getenv("EXECUTOR_BENCHMARK_WORKERS")) {
+    if (const char* t = std::getenv("KAIRO_BENCHMARK_WORKERS")) {
         unsigned v = static_cast<unsigned>(parse_size_t(t, c.workers));
         if (v > 0) c.workers = v;
     }
-    if (const char* t = std::getenv("EXECUTOR_BENCHMARK_JSON")) {
+    if (const char* t = std::getenv("KAIRO_BENCHMARK_JSON")) {
         if (parse_bool_env(t)) c.json_output = true;
     }
 }

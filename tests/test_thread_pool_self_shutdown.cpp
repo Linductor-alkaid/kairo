@@ -1,4 +1,4 @@
-#include "executor/thread_pool/thread_pool.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
 
 #include <gtest/gtest.h>
 
@@ -10,8 +10,8 @@ namespace {
 using namespace std::chrono_literals;
 
 TEST(ThreadPoolShutdown, ShutdownFromWorkerDoesNotDeadlock) {
-    executor::ThreadPool pool;
-    executor::ThreadPoolConfig config;
+    kairo::ThreadPool pool;
+    kairo::ThreadPoolConfig config;
     config.min_threads = 1;
     config.max_threads = 1;
     config.enable_work_stealing = false;
@@ -20,8 +20,8 @@ TEST(ThreadPoolShutdown, ShutdownFromWorkerDoesNotDeadlock) {
     auto worker_result = pool.submit([&pool]() {
         const auto first = pool.shutdown(false);
         const auto second = pool.shutdown(true);
-        return first == executor::ShutdownResult::RequestedFromWorker &&
-               second == executor::ShutdownResult::RequestedFromWorker;
+        return first == kairo::ShutdownResult::RequestedFromWorker &&
+               second == kairo::ShutdownResult::RequestedFromWorker;
     });
 
     ASSERT_EQ(worker_result.wait_for(2s), std::future_status::ready);
@@ -31,7 +31,7 @@ TEST(ThreadPoolShutdown, ShutdownFromWorkerDoesNotDeadlock) {
         return pool.shutdown(true);
     });
     ASSERT_EQ(join_result.wait_for(2s), std::future_status::ready);
-    EXPECT_EQ(join_result.get(), executor::ShutdownResult::Completed);
+    EXPECT_EQ(join_result.get(), kairo::ShutdownResult::Completed);
 
     EXPECT_TRUE(pool.is_stopped());
     EXPECT_FALSE(pool.try_submit([] {}));

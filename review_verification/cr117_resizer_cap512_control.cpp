@@ -8,14 +8,14 @@
 //
 // queue_high with capacity=512: queue_size > 512 - ceil(512/5)=103, i.e.
 // queue_size > 409 => feed queue_size=450 to trigger expansion.
-#include "executor/thread_pool/thread_pool.hpp"
-#include "executor/thread_pool/thread_pool_resizer.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
+#include "kairo/thread_pool/thread_pool_resizer.hpp"
 
 #include <chrono>
 #include <cstdio>
 #include <thread>
 
-using namespace executor;
+using namespace kairo;
 namespace chrono = std::chrono;
 
 int main() {

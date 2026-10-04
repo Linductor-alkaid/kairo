@@ -60,10 +60,10 @@ auto future = executor.submit_auto([frame] { return decode(frame); });
 
 ```cpp
 auto future = executor.submit_auto(
-    executor::task([frame] { return decode(frame); })
+    kairo::task([frame] { return decode(frame); })
         .name("decode-frame")
-        .priority(executor::TaskPriority::HIGH)
-        .intent(executor::ExecutionIntent::GeneralCpu));
+        .priority(kairo::TaskPriority::HIGH)
+        .intent(kairo::ExecutionIntent::GeneralCpu));
 ```
 
 把 builder 的 intent 改成 `LowLatency`、`RealtimeQueue` 或 `BlockingWorker` 会让 future 直接成为异常：这些协议必须使用下面的 typed API，而不是让普通 callable 被猜测路由。
@@ -73,14 +73,14 @@ auto future = executor.submit_auto(
 先提供两个独立实现，再声明 GPU 目标和可接受的回退：
 
 ```cpp
-auto work = executor::cpu_gpu_task(
+auto work = kairo::cpu_gpu_task(
     [input] { run_cpu(input); },
     [input](void* stream) { run_gpu(input, stream); })
     .name("segmentation")
     .preferred_executor("cuda0")
     .data_size(input.bytes())
     .compute_intensity(3.5F)
-    .fallback(executor::FallbackPolicy::AllowCpu);
+    .fallback(kairo::FallbackPolicy::AllowCpu);
 
 auto future = executor.submit_auto(std::move(work));
 ```

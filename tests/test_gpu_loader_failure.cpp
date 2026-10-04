@@ -9,22 +9,22 @@
 #include <thread>
 
 #define private public
-#include "executor/gpu/cuda_loader.hpp"
-#include "executor/gpu/opencl_loader.hpp"
+#include "kairo/gpu/cuda_loader.hpp"
+#include "kairo/gpu/opencl_loader.hpp"
 #undef private
 
-using executor::gpu::CudaLoader;
-using executor::gpu::OpenCLLoader;
+using kairo::gpu::CudaLoader;
+using kairo::gpu::OpenCLLoader;
 
 namespace {
 
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
 cudaError_t cuda_test_symbol() {
     return cudaSuccess;
 }
 #endif
 
-#ifdef EXECUTOR_ENABLE_OPENCL
+#ifdef KAIRO_ENABLE_OPENCL
 cl_int opencl_test_symbol(cl_command_queue) {
     return CL_SUCCESS;
 }
@@ -76,18 +76,18 @@ void verify_failed_load_can_retry(Loader& loader) {
 template <typename Loader, typename InvokeTestSymbol>
 void verify_function_table_lease_survives_concurrent_unload(
     Loader& loader, InvokeTestSymbol invoke_test_symbol) {
-#if !defined(EXECUTOR_ENABLE_CUDA) && !defined(EXECUTOR_ENABLE_OPENCL)
+#if !defined(KAIRO_ENABLE_CUDA) && !defined(KAIRO_ENABLE_OPENCL)
     GTEST_SKIP() << "CUDA and OpenCL are disabled";
 #else
     loader.unload();
     LoaderLibraryPathScope library_path;
     loader.function_resolver_ = [](const char* function_name) {
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
         if (std::string(function_name) == "cudaGetLastError") {
             return reinterpret_cast<void*>(&cuda_test_symbol);
         }
 #endif
-#ifdef EXECUTOR_ENABLE_OPENCL
+#ifdef KAIRO_ENABLE_OPENCL
         if (std::string(function_name) == "clFinish") {
             return reinterpret_cast<void*>(&opencl_test_symbol);
         }
@@ -129,7 +129,7 @@ TEST(OpenCLLoaderTest, LoaderLoadFunctionsFailureDoesNotDeadlock) {
     verify_failed_load_can_retry(OpenCLLoader::instance());
 }
 
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
 TEST(CudaLoaderTest, LoaderFunctionTableLeaseSurvivesConcurrentUnload) {
     verify_function_table_lease_survives_concurrent_unload(
         CudaLoader::instance(), [](const auto& functions) {
@@ -139,7 +139,7 @@ TEST(CudaLoaderTest, LoaderFunctionTableLeaseSurvivesConcurrentUnload) {
 }
 #endif
 
-#ifdef EXECUTOR_ENABLE_OPENCL
+#ifdef KAIRO_ENABLE_OPENCL
 TEST(OpenCLLoaderTest, LoaderFunctionTableLeaseSurvivesConcurrentUnload) {
     verify_function_table_lease_survives_concurrent_unload(
         OpenCLLoader::instance(), [](const auto& functions) {

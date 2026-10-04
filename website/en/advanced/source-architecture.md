@@ -7,15 +7,15 @@ description: Follow the public Facade into manager, thread pool, task graph, rea
 
 ## What this page solves
 
-When behavior may come from the Facade, pool, task graph, or platform layer, do not browse every header. Executor is organized around public contract, resource owner, execution path, and diagnostic path. Find the boundary, then trace one task lifecycle.
+When behavior may come from the Facade, pool, task graph, or platform layer, do not browse every header. Kairo is organized around public contract, resource owner, execution path, and diagnostic path. Find the boundary, then trace one task lifecycle.
 
-This is the current source organization. Facade/types in `include/executor/` are integration entry points; schedulers, queues, and synchronization in `src/executor/` may be refactored while tests and status APIs preserve externally observable behavior.
+This is the current source organization. Facade/types in `include/kairo/` are integration entry points; schedulers, queues, and synchronization in `src/kairo/` may be refactored while tests and status APIs preserve externally observable behavior.
 
 ## Layered architecture
 
 ```mermaid
 flowchart TD
-    A[Application\nsubmit_auto / future / status / shutdown] --> B[Public Facade\ninclude/executor/executor.hpp]
+    A[Application\nsubmit_auto / future / status / shutdown] --> B[Public Facade\ninclude/kairo/executor.hpp]
     B --> C[Resource owner\nexecutor_manager.cpp]
     C --> D[ThreadPoolExecutor]
     C --> E[RealtimeThreadExecutor]
@@ -40,14 +40,14 @@ flowchart TD
 
 | Behavior | Read first | Then read | Verification |
 | --- | --- | --- | --- |
-| `submit_auto(lambda)` returns a future | Routing and template APIs in `include/executor/executor.hpp` | `src/executor/thread_pool_executor.cpp`, `thread_pool.cpp` | Facade/routing, exception, and timeout tests |
-| Dependent task does not run | Facade `TaskGraphState`, `submit_after_with_handle` | `src/executor/task/task_dependency_manager.cpp` | Facade/dependency tests and tutorial smoke |
+| `submit_auto(lambda)` returns a future | Routing and template APIs in `include/kairo/executor.hpp` | `src/kairo/thread_pool_executor.cpp`, `thread_pool.cpp` | Facade/routing, exception, and timeout tests |
+| Dependent task does not run | Facade `TaskGraphState`, `submit_after_with_handle` | `src/kairo/task/task_dependency_manager.cpp` | Facade/dependency tests and tutorial smoke |
 | Priority does not preempt | `PriorityScheduler::dequeue()` | `TaskDispatcher::dispatch()`, worker loop | Priority tests and queue status |
 | Resize does not lose tasks | `ThreadPool::resize_local_queues()` | `TaskDispatcher::dispatch_batch()` requeue branch | Resize/concurrent-stop tests |
-| Real-time task drops | `Executor::push_realtime_task()` | `RealtimeThreadExecutor::push_task_ex()` | Push-overflow tests and status counters |
-| Lock-free queue appears empty/full | `src/executor/util/lockfree_queue.hpp` | Caller capacity/object-pool logic | MPSC benchmark, TSAN/stress |
+| Real-time task drops | `Executor::push_realtime_task()` | `RealtimeThreadExecutor::push_task()` | Push-overflow tests and status counters |
+| Lock-free queue appears empty/full | `src/kairo/util/lockfree_queue.hpp` | Caller capacity/object-pool logic | MPSC benchmark, TSAN/stress |
 
-First find object ownership and exit authority: `Executor` owns a manager in its instance model, manager owns executors, adapters use `shared_ptr` snapshots for stop/submit races, while the caller owns a realtime `cycle_manager` and Executor only borrows it.
+First find object ownership and exit authority: `Executor` owns a manager in its instance model, manager owns executors, adapters use `shared_ptr` snapshots for stop/submit races, while the caller owns a realtime `cycle_manager` and Kairo only borrows it.
 
 ## Synchronization domains are not one global lock
 

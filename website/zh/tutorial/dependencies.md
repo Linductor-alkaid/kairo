@@ -19,7 +19,7 @@ description: 用 TaskHandle、submit_after 与 when_all 构建可观察的任务
 
 <<< @/../examples/tutorial/05_dependencies.cpp{1-25}
 
-完整源码：[`examples/tutorial/05_dependencies.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/tutorial/05_dependencies.cpp)。
+完整源码：[`examples/tutorial/05_dependencies.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/05_dependencies.cpp)。
 
 ```bash
 ./build/examples/tutorial/tutorial_05_dependencies
@@ -76,11 +76,11 @@ auto plan = executor.submit_after(prerequisites, run_planner, config);
 ## 故障注入与退出
 
 1. 让 `load` 抛异常；确认 `plan` 任务体不执行，`load.future` 与 `plan` future 都能解释失败。
-2. 传入默认构造或另一 Executor 创建的 handle；确认 dependent future 得到可观察拒绝。
+2. 传入默认构造或另一 Kairo 创建的 handle；确认 dependent future 得到可观察拒绝。
 3. 用最小线程数提交多组长依赖链；观察 active/queued 和完成情况——依赖等待不再占住 worker，链应全部完成而非饿死。
 4. 在依赖未完成时开始退出；先停止创建新图，保留所有 futures，再有界等待或记录未完成图的业务 ID。
 
-Executor shutdown 不会把内存中的任务图持久化。若流程必须跨进程恢复，应把阶段和输入写入外部存储，并让任务幂等。
+Kairo shutdown 不会把内存中的任务图持久化。若流程必须跨进程恢复，应把阶段和输入写入外部存储，并让任务幂等。
 
 ## 需求变化时如何演进
 

@@ -4,10 +4,10 @@
 #include <iostream>
 #include <stdexcept>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
-const char* lifecycle_name(executor::ExecutorLifecycleState state) {
-    using executor::ExecutorLifecycleState;
+const char* lifecycle_name(kairo::ExecutorLifecycleState state) {
+    using kairo::ExecutorLifecycleState;
     switch (state) {
     case ExecutorLifecycleState::Created: return "Created";
     case ExecutorLifecycleState::Initializing: return "Initializing";
@@ -20,16 +20,16 @@ const char* lifecycle_name(executor::ExecutorLifecycleState state) {
 }
 
 int main() {
-    executor::Executor executor;
+    kairo::Executor executor;
 
-    executor::ExecutorConfig config;
+    kairo::ExecutorConfig config;
     config.min_threads = 1;
     config.max_threads = 1;
     config.enable_monitoring = true;
 
-    const auto initialized = executor.initialize_ex(config);
+    const auto initialized = executor.initialize(config);
     if (!initialized) {
-        std::cerr << "initialize_ex failed: " << initialized.message << "\n";
+        std::cerr << "initialize failed: " << initialized.message << "\n";
         return 1;
     }
 
@@ -64,12 +64,12 @@ int main() {
         std::cout << "observed task exception: " << error.what() << "\n";
     }
 
-    executor.wait_for_completion();
+    (void)executor.wait_for_completion(std::chrono::seconds{300});
     std::cout << executor.get_snapshot_text();
 
     executor.shutdown();
     const auto stopped_snapshot = executor.get_snapshot();
     std::cout << "after shutdown lifecycle=" << lifecycle_name(stopped_snapshot.lifecycle)
               << ", partial=" << (stopped_snapshot.partial ? "true" : "false") << "\n";
-    return stopped_snapshot.lifecycle == executor::ExecutorLifecycleState::Stopped ? 0 : 1;
+    return stopped_snapshot.lifecycle == kairo::ExecutorLifecycleState::Stopped ? 0 : 1;
 }

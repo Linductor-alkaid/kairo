@@ -131,10 +131,10 @@ cd executor
 mkdir build && cd build
 
 # 启用 OpenCL 支持
-cmake .. -DEXECUTOR_ENABLE_GPU=ON \
-         -DEXECUTOR_ENABLE_OPENCL=ON \
-         -DEXECUTOR_BUILD_TESTS=ON \
-         -DEXECUTOR_BUILD_EXAMPLES=ON
+cmake .. -DKAIRO_ENABLE_GPU=ON \
+         -DKAIRO_ENABLE_OPENCL=ON \
+         -DKAIRO_BUILD_TESTS=ON \
+         -DKAIRO_BUILD_EXAMPLES=ON
 
 # 构建
 cmake --build . -j$(nproc)
@@ -302,11 +302,11 @@ export OPENCL_PATH=/path/to/opencl
 
 ```cpp
 // 注册多个 OpenCL 执行器
-executor::gpu::GpuExecutorConfig config0;
+kairo::gpu::GpuExecutorConfig config0;
 config0.device_id = 0;  // Intel 集成显卡
 executor.register_gpu_executor("opencl0", config0);
 
-executor::gpu::GpuExecutorConfig config1;
+kairo::gpu::GpuExecutorConfig config1;
 config1.device_id = 1;  // NVIDIA 独立显卡
 executor.register_gpu_executor("opencl1", config1);
 ```
@@ -355,7 +355,7 @@ RUN apt-get update && apt-get install -y \
 # 构建 executor
 COPY . /executor
 WORKDIR /executor/build
-RUN cmake .. -DEXECUTOR_ENABLE_OPENCL=ON && make -j
+RUN cmake .. -DKAIRO_ENABLE_OPENCL=ON && make -j
 
 CMD ["./tests/test_opencl_executor"]
 ```

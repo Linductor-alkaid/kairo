@@ -4,7 +4,7 @@
 #include <string>
 #include <utility>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 namespace {
 
@@ -32,7 +32,7 @@ private:
 }
 
 int main() {
-    auto& executor = executor::Executor::instance();
+    auto& executor = kairo::Executor::instance();
     SensorFrame frame{7, 21};
 
     auto score = executor.submit_auto([frame] {

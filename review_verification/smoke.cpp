@@ -1,11 +1,11 @@
 // smoke: 验证链接与基础 API 用法（submit_with_handle / submit_on / cancel / snapshot）
-#include <executor/executor.hpp>
-#include <executor/serial_execution_context.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/serial_execution_context.hpp>
 #include <chrono>
 #include <cstdio>
 #include <thread>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 int main() {

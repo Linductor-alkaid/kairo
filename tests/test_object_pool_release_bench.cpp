@@ -34,7 +34,7 @@ using Clock = std::chrono::steady_clock;
 long long time_release_full_pool(size_t capacity, int repeats) {
     long long best = 0;
     for (int r = 0; r < repeats; ++r) {
-        executor::util::ObjectPool<int> pool(capacity);
+        kairo::util::ObjectPool<int> pool(capacity);
         std::vector<int*> objs;
         objs.reserve(capacity);
         for (size_t i = 0; i < capacity; ++i) {

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Executor Maintainer"
-  short_description: "Navigate and maintain the Executor C++20 codebase."
-  default_prompt: "Use $executor-maintainer to understand this repository before changing Executor behavior."

@@ -12,13 +12,13 @@
 // both insertion orders and assert the decision STRUCTURE, not a fixed
 // device number: whichever device begin() lands on wins whenever its bare
 // load is smallest, even if its load+task is NOT smallest.
-#include "executor/gpu/task_scheduler_optimizer.hpp"
+#include "kairo/gpu/task_scheduler_optimizer.hpp"
 
 #include <cstdio>
 
-using executor::gpu::TaskSchedulerOptimizer;
-using executor::gpu::DeviceLoad;
-using executor::gpu::GpuTaskNode;
+using kairo::gpu::TaskSchedulerOptimizer;
+using kairo::gpu::DeviceLoad;
+using kairo::gpu::GpuTaskNode;
 
 namespace {
 

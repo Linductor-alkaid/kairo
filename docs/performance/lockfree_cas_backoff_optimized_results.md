@@ -139,4 +139,4 @@ explicit LockFreeTaskExecutor(size_t queue_capacity = 1024,
 
 - **基准测试**: [tests/benchmark_lockfree_mpsc.cpp](../../tests/benchmark_lockfree_mpsc.cpp)
 - **自适应测试**: [tests/benchmark_adaptive_backoff.cpp](../../tests/benchmark_adaptive_backoff.cpp)
-- **实现代码**: [src/executor/util/lockfree_queue.hpp](../../src/executor/util/lockfree_queue.hpp)
+- **实现代码**: [src/executor/util/lockfree_queue.hpp](../../src/kairo/util/lockfree_queue.hpp)

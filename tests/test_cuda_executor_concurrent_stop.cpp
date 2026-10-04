@@ -16,14 +16,14 @@
 #include <vector>
 
 #define private public
-#include "executor/gpu/cuda_executor.hpp"
+#include "kairo/gpu/cuda_executor.hpp"
 #undef private
 
 namespace {
 
-using executor::gpu::CudaExecutor;
-using executor::gpu::GpuBackend;
-using executor::gpu::GpuExecutorConfig;
+using kairo::gpu::CudaExecutor;
+using kairo::gpu::GpuBackend;
+using kairo::gpu::GpuExecutorConfig;
 using namespace std::chrono_literals;
 
 GpuExecutorConfig make_config() {

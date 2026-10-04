@@ -4,9 +4,9 @@
 #include <chrono>
 #include <thread>
 
-#include "executor/realtime_thread_executor.hpp"
+#include "kairo/realtime_thread_executor.hpp"
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono_literals;
 
 namespace {

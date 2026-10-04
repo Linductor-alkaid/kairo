@@ -1,5 +1,9 @@
 # Executor 完整生命周期 Monitor 演进设计
 
+
+> [!NOTE]
+> 历史设计快照：生命周期监控设计。项目现名 kairo（`kairo::monitor`）。
+
 ## 1. 文档状态
 
 - 状态：设计提案

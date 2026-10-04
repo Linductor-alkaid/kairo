@@ -19,14 +19,14 @@ description: 用 cpu_gpu_task 表达独立路径、配置回退，并理解 lega
 
 ```cpp
 auto future = executor.submit_auto(
-    executor::cpu_gpu_task(
+    kairo::cpu_gpu_task(
         [data] { run_cpu(*data); },
         [data](void* stream) { run_gpu(stream, *data); })
         .name("segment")
         .data_size(bytes)
         .compute_intensity(3.0F)
         .preferred_executor("cuda0")
-        .fallback(executor::FallbackPolicy::AllowCpu));
+        .fallback(kairo::FallbackPolicy::AllowCpu));
 future.get();
 ```
 
@@ -64,7 +64,7 @@ auto future = executor.submit_auto(characteristics, "cuda0",
 
 ## 不会隐式回退的情况
 
-新双路径 `submit_auto()` 会按 `FallbackPolicy` 处理不可用 GPU：仅 `AllowCpu` 会回退 CPU；`NoFallback` 和 legacy overload 都会明确失败，不会偷偷改走 CPU。推荐流程是先完成 `register_gpu_executor_ex()`、检查状态，再允许 GPU 特征或 `prefer_gpu` 进入调度器。
+新双路径 `submit_auto()` 会按 `FallbackPolicy` 处理不可用 GPU：仅 `AllowCpu` 会回退 CPU；`NoFallback` 和 legacy overload 都会明确失败，不会偷偷改走 CPU。推荐流程是先完成 `register_gpu_executor()`、检查状态，再允许 GPU 特征或 `prefer_gpu` 进入调度器。
 
 ## 调整配置
 

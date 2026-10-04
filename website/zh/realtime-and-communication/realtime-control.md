@@ -1,13 +1,13 @@
 ---
 title: 启动专用实时控制循环
-description: 使用 Executor Facade 注册、诊断启动、推送和停止一个专用周期线程。
+description: 使用 Kairo Facade 注册、诊断启动、推送和停止一个专用周期线程。
 ---
 
 # 启动专用实时控制循环
 
 ## 学习目标
 
-从 CAN 或控制循环的固定周期需求出发，使用 `register_realtime_task_ex()`、`start_realtime_task_ex()`、`try_push_realtime_task()` 和状态查询完成最小的可诊断路径。
+从 CAN 或控制循环的固定周期需求出发，使用 `register_realtime_task()`、`start_realtime_task()`、`try_push_realtime_task()` 和状态查询完成最小的可诊断路径。
 
 这是专家专题：普通有限工作继续使用 `submit_auto(lambda)`；只有已有固定周期、周期预算与有界背压语义时才注册专用实时线程。若只需向已启动的实时队列投递一次工作，可使用 `dispatch_auto(RealtimeQueue)`，但它同样只报告接收，不报告完成。
 
@@ -23,7 +23,7 @@ description: 使用 Executor Facade 注册、诊断启动、推送和停止一�
 
 <<< @/../examples/tutorial/07_realtime.cpp{1-45}
 
-完整源码：[`examples/tutorial/07_realtime.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/tutorial/07_realtime.cpp)。
+完整源码：[`examples/tutorial/07_realtime.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/07_realtime.cpp)。
 
 ```bash
 ./build/examples/tutorial/tutorial_07_realtime

@@ -12,6 +12,7 @@ set(TUTORIAL_SOURCES
     11_task_inputs.cpp
     12_blocking_io_worker.cpp
     13_cancellation_and_timers.cpp
+    14_scheduling_runtime.cpp
 )
 
 set(TUTORIAL_TARGETS)
@@ -21,7 +22,7 @@ foreach(TUTORIAL_SOURCE IN LISTS TUTORIAL_SOURCES)
     set(TUTORIAL_TARGET "tutorial_${TUTORIAL_NAME}")
 
     add_executable(${TUTORIAL_TARGET} ${TUTORIAL_SOURCE})
-    target_link_libraries(${TUTORIAL_TARGET} PRIVATE executor)
+    target_link_libraries(${TUTORIAL_TARGET} PRIVATE kairo)
     list(APPEND TUTORIAL_TARGETS ${TUTORIAL_TARGET})
 
     if(BUILD_TESTING)

@@ -27,18 +27,18 @@ foreach(STANDALONE_TEST_SOURCE
     endif()
     if(STANDALONE_TEST_NAME STREQUAL "test_task_cancellation_fallback")
         # 整库 + 测试一起强制 fallback：StopToken 类型必须跨 TU 一致（ODR），
-        # 因此该目标不链接常规 executor 库（避免符号重复）。源列表直接复用
-        # executor 库目标的 EXECUTOR_LIB_SOURCES（GPU 启用时含 cuda/opencl
+        # 因此该目标不链接常规 kairo 库（避免符号重复）。源列表直接复用
+        # kairo 库目标的 KAIRO_LIB_SOURCES（GPU 启用时含 cuda/opencl
         # 源——根 CMakeLists 的 add_definitions 已全局开启对应宏，过滤掉它们
         # 会在链接期缺 CudaExecutor/OpenCLExecutor 符号；非 GPU 配置下四个
         # 常编调度器/优化器源已由 src/CMakeLists.txt 追加到列表中）。
-        target_sources(${STANDALONE_TEST_NAME} PRIVATE ${EXECUTOR_LIB_SOURCES})
+        target_sources(${STANDALONE_TEST_NAME} PRIVATE ${KAIRO_LIB_SOURCES})
         target_include_directories(${STANDALONE_TEST_NAME} PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/../include
         )
-        # 与 executor 库目标一致：CUDA/OpenCL 启用时补头文件目录（GPU
+        # 与 kairo 库目标一致：CUDA/OpenCL 启用时补头文件目录（GPU
         # headers stub 编译路径使用）。
-        if(EXECUTOR_CUDA_ENABLED)
+        if(KAIRO_CUDA_ENABLED)
             if(CUDA_INCLUDE_DIRS)
                 target_include_directories(${STANDALONE_TEST_NAME} SYSTEM PRIVATE
                     ${CUDA_INCLUDE_DIRS})
@@ -47,15 +47,15 @@ foreach(STANDALONE_TEST_SOURCE
                     ${CUDAToolkit_INCLUDE_DIRS})
             endif()
         endif()
-        if(EXECUTOR_OPENCL_ENABLED)
+        if(KAIRO_OPENCL_ENABLED)
             if(OpenCL_INCLUDE_DIRS)
                 target_include_directories(${STANDALONE_TEST_NAME} SYSTEM PRIVATE
                     ${OpenCL_INCLUDE_DIRS})
             endif()
         endif()
         target_compile_definitions(${STANDALONE_TEST_NAME} PRIVATE
-            EXECUTOR_STOP_TOKEN_FORCE_FALLBACK)
-        # 镜像 executor 库目标的平台链接（Windows 的 timer_period_guard
+            KAIRO_STOP_TOKEN_FORCE_FALLBACK)
+        # 镜像 kairo 库目标的平台链接（Windows 的 timer_period_guard
         # 需要 winmm；Linux 需要 pthread/atomic/rt）。注意用普通库名而非
         # Threads::Threads——IMPORTED 目标的目录作用域只在 src/ 内可见，
         # tests/ 直接引用会在 generate 期报 "target was not found"。
@@ -66,11 +66,11 @@ foreach(STANDALONE_TEST_SOURCE
                 pthread atomic rt)
         endif()
     else()
-        target_link_libraries(${STANDALONE_TEST_NAME} PRIVATE executor)
+        target_link_libraries(${STANDALONE_TEST_NAME} PRIVATE kairo)
     endif()
     add_test(NAME ${STANDALONE_TEST_NAME} COMMAND ${STANDALONE_TEST_NAME})
     if(STANDALONE_TEST_NAME STREQUAL "android_smoke")
-        # android_smoke 支持 EXECUTOR_ANDROID_SOAK_SECONDS 长稳模式。
+        # android_smoke 支持 KAIRO_ANDROID_SOAK_SECONDS 长稳模式。
         set(STANDALONE_TEST_TIMEOUT 900)
     else()
         set(STANDALONE_TEST_TIMEOUT 120)
@@ -84,17 +84,17 @@ endforeach()
 # 查找 Google Test
 find_package(GTest)
 
-# 离线兜底：EXECUTOR_LOCAL_GTEST_DIR 指向本机已有的 googletest 源码 checkout
+# 离线兜底：KAIRO_LOCAL_GTEST_DIR 指向本机已有的 googletest 源码 checkout
 # （如其他项目的 third_party），供无网络且未装 libgtest-dev 的验证环境使用。
 # 仅在显式指定且目录有效时启用；不指定时行为与原先完全一致。
-set(EXECUTOR_LOCAL_GTEST_DIR "" CACHE PATH
+set(KAIRO_LOCAL_GTEST_DIR "" CACHE PATH
     "Path to a local googletest checkout used when system GTest is unavailable")
-if(NOT GTest_FOUND AND EXECUTOR_LOCAL_GTEST_DIR
-        AND EXISTS "${EXECUTOR_LOCAL_GTEST_DIR}/CMakeLists.txt")
-    message(STATUS "Using local googletest checkout: ${EXECUTOR_LOCAL_GTEST_DIR}")
+if(NOT GTest_FOUND AND KAIRO_LOCAL_GTEST_DIR
+        AND EXISTS "${KAIRO_LOCAL_GTEST_DIR}/CMakeLists.txt")
+    message(STATUS "Using local googletest checkout: ${KAIRO_LOCAL_GTEST_DIR}")
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-    add_subdirectory("${EXECUTOR_LOCAL_GTEST_DIR}"
+    add_subdirectory("${KAIRO_LOCAL_GTEST_DIR}"
         "${CMAKE_BINARY_DIR}/googletest-local" EXCLUDE_FROM_ALL)
     if(NOT TARGET GTest::GTest)
         add_library(GTest::GTest INTERFACE IMPORTED)
@@ -110,9 +110,9 @@ endif()
 if(NOT GTest_FOUND)
     # 可选兜底：无系统 GTest 时（如未装 libgtest-dev 的 runner），用 FetchContent
     # 拉取固定版本的 googletest。默认关闭，离线构建不受影响。
-    option(EXECUTOR_FETCH_GTEST
+    option(KAIRO_FETCH_GTEST
         "Download googletest via FetchContent when system GTest is not found" OFF)
-    if(EXECUTOR_FETCH_GTEST)
+    if(KAIRO_FETCH_GTEST)
         include(FetchContent)
         FetchContent_Declare(googletest
             URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.zip)
@@ -135,7 +135,7 @@ if(NOT GTest_FOUND)
         message(WARNING
             "GTest not found: skipping all GTest-based tests; only the standalone "
             "tests will build and run. Install libgtest-dev (Ubuntu) or set "
-            "-DEXECUTOR_FETCH_GTEST=ON to get the full suite.")
+            "-DKAIRO_FETCH_GTEST=ON to get the full suite.")
         return()
     endif()
 endif()
@@ -144,23 +144,23 @@ list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/test_dispatch_task_fallback\\.cpp$")
 list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/test_task_cancellation_fallback\\.cpp$")
 list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/test_object_pool_double_release_detect\\.cpp$")
 
-if(NOT (EXECUTOR_CUDA_ENABLED OR EXECUTOR_OPENCL_ENABLED))
+if(NOT (KAIRO_CUDA_ENABLED OR KAIRO_OPENCL_ENABLED))
     list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/test_gpu_executor_direct_config_validation\\.cpp$")
 endif()
 
-# 如果未启用CUDA，排除CUDA/GPU相关测试（executor 不编译 gpu 源）
-if(NOT EXECUTOR_CUDA_ENABLED)
+# 如果未启用CUDA，排除CUDA/GPU相关测试（kairo 不编译 gpu 源）
+if(NOT KAIRO_CUDA_ENABLED)
     list(FILTER TEST_SOURCES EXCLUDE REGEX ".*cuda.*")
     list(FILTER TEST_SOURCES EXCLUDE REGEX ".*gpu_memory_manager.*")
     list(FILTER TEST_SOURCES EXCLUDE REGEX ".*unified_memory.*")
 endif()
 
 # 如果未启用OpenCL，排除OpenCL相关测试
-if(NOT EXECUTOR_OPENCL_ENABLED)
+if(NOT KAIRO_OPENCL_ENABLED)
     list(FILTER TEST_SOURCES EXCLUDE REGEX ".*opencl.*")
 endif()
 
-# MSVC 主门禁经 EXECUTOR_FETCH_GTEST 首次纳入 GTest 测试。以下文件存在
+# MSVC 主门禁经 KAIRO_FETCH_GTEST 首次纳入 GTest 测试。以下文件存在
 # 既有的 Windows 移植债务（POSIX 专用 API、按直接源码编译的 CUDA 链接
 # 配置、facade record_* 符号在 MSVC 下未解析），补齐前先在 MSVC 排除，
 # 其余 ~110 个测试进入 Windows 门禁（此前只有 6 个 standalone）。
@@ -186,7 +186,7 @@ endif()
 add_executable(test_comm_harness_foundation
     harness/test_comm_harness_foundation.cpp
 )
-target_link_libraries(test_comm_harness_foundation PRIVATE executor GTest::GTest GTest::Main)
+target_link_libraries(test_comm_harness_foundation PRIVATE kairo GTest::GTest GTest::Main)
 target_include_directories(test_comm_harness_foundation PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
     ${CMAKE_CURRENT_SOURCE_DIR}/harness
@@ -194,7 +194,7 @@ target_include_directories(test_comm_harness_foundation PRIVATE
 if(MSVC)
     target_compile_options(test_comm_harness_foundation PRIVATE /utf-8)
 endif()
-executor_apply_coverage_to_test(test_comm_harness_foundation)
+kairo_apply_coverage_to_test(test_comm_harness_foundation)
 add_test(NAME test_comm_harness_foundation COMMAND test_comm_harness_foundation)
 set_tests_properties(test_comm_harness_foundation PROPERTIES
     LABELS "unit;harness"
@@ -204,11 +204,11 @@ set_tests_properties(test_comm_harness_foundation PROPERTIES
 add_executable(test_comm_facade_usage
     harness/test_comm_facade_usage.cpp
 )
-target_link_libraries(test_comm_facade_usage PRIVATE executor GTest::GTest GTest::Main)
+target_link_libraries(test_comm_facade_usage PRIVATE kairo GTest::GTest GTest::Main)
 if(MSVC)
     target_compile_options(test_comm_facade_usage PRIVATE /utf-8)
 endif()
-executor_apply_coverage_to_test(test_comm_facade_usage)
+kairo_apply_coverage_to_test(test_comm_facade_usage)
 add_test(NAME test_comm_facade_usage COMMAND test_comm_facade_usage)
 set_tests_properties(test_comm_facade_usage PROPERTIES
     LABELS "unit;harness"
@@ -222,39 +222,39 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
     add_executable(${TEST_NAME} ${TEST_SOURCE})
 
     # Keep CUDA memory validation runnable on hosts without a CUDA SDK.  The
-    # executor source uses its fallback CUDA types there, so this target can
+    # kairo source uses its fallback CUDA types there, so this target can
     # exercise the pre-driver validation gate without linking a CUDA runtime.
-    if(TEST_NAME STREQUAL "test_gpu_memory_validation" AND NOT EXECUTOR_CUDA_ENABLED)
+    if(TEST_NAME STREQUAL "test_gpu_memory_validation" AND NOT KAIRO_CUDA_ENABLED)
         target_sources(${TEST_NAME} PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/../src/executor/gpu/cuda_executor.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/../src/executor/gpu/cuda_loader.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/../src/executor/gpu/gpu_memory_manager.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../src/kairo/gpu/cuda_executor.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../src/kairo/gpu/cuda_loader.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../src/kairo/gpu/gpu_memory_manager.cpp
         )
     endif()
 
     if(TEST_NAME STREQUAL "test_gpu_loader_failure")
-        if(NOT EXECUTOR_CUDA_ENABLED)
+        if(NOT KAIRO_CUDA_ENABLED)
             target_sources(${TEST_NAME} PRIVATE
-                ${CMAKE_CURRENT_SOURCE_DIR}/../src/executor/gpu/cuda_loader.cpp
+                ${CMAKE_CURRENT_SOURCE_DIR}/../src/kairo/gpu/cuda_loader.cpp
             )
         endif()
-        if(NOT EXECUTOR_OPENCL_ENABLED)
+        if(NOT KAIRO_OPENCL_ENABLED)
             target_sources(${TEST_NAME} PRIVATE
-                ${CMAKE_CURRENT_SOURCE_DIR}/../src/executor/gpu/opencl_loader.cpp
+                ${CMAKE_CURRENT_SOURCE_DIR}/../src/kairo/gpu/opencl_loader.cpp
             )
         endif()
     endif()
 
-    # 链接 executor 库和 GTest
-    target_link_libraries(${TEST_NAME} PRIVATE executor GTest::GTest GTest::Main)
+    # 链接 kairo 库和 GTest
+    target_link_libraries(${TEST_NAME} PRIVATE kairo GTest::GTest GTest::Main)
     
     # 如果启用了 GPU 支持，传递宏定义给测试
-    if(EXECUTOR_ENABLE_GPU)
-        target_compile_definitions(${TEST_NAME} PRIVATE EXECUTOR_ENABLE_GPU)
+    if(KAIRO_ENABLE_GPU)
+        target_compile_definitions(${TEST_NAME} PRIVATE KAIRO_ENABLE_GPU)
     endif()
 
     if(TEST_NAME STREQUAL "test_thread_pool")
-        target_compile_definitions(${TEST_NAME} PRIVATE EXECUTOR_THREAD_POOL_TEST_HOOKS)
+        target_compile_definitions(${TEST_NAME} PRIVATE KAIRO_THREAD_POOL_TEST_HOOKS)
     endif()
 
     if(TEST_NAME STREQUAL "test_multithread_mpsc")
@@ -262,7 +262,7 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
     endif()
     
     # 如果是 CUDA/GPU 测试，添加 CUDA 头文件支持（不链接库，使用动态加载）
-    if((TEST_NAME MATCHES ".*cuda.*" OR TEST_NAME MATCHES ".*gpu_memory_validation.*" OR TEST_NAME MATCHES ".*gpu_executor.*" OR TEST_NAME MATCHES ".*gpu_multi_device.*" OR TEST_NAME MATCHES ".*gpu_memory_manager.*" OR TEST_NAME MATCHES ".*gpu_monitor.*" OR TEST_NAME MATCHES ".*gpu_dep_async.*" OR TEST_NAME MATCHES ".*gpu_wait_for_completion.*" OR TEST_NAME MATCHES ".*unified_memory.*" OR TEST_NAME STREQUAL "test_gpu_loader_failure") AND EXECUTOR_CUDA_ENABLED)
+    if((TEST_NAME MATCHES ".*cuda.*" OR TEST_NAME MATCHES ".*gpu_memory_validation.*" OR TEST_NAME MATCHES ".*gpu_executor.*" OR TEST_NAME MATCHES ".*gpu_multi_device.*" OR TEST_NAME MATCHES ".*gpu_memory_manager.*" OR TEST_NAME MATCHES ".*gpu_monitor.*" OR TEST_NAME MATCHES ".*gpu_dep_async.*" OR TEST_NAME MATCHES ".*gpu_wait_for_completion.*" OR TEST_NAME MATCHES ".*unified_memory.*" OR TEST_NAME STREQUAL "test_gpu_loader_failure") AND KAIRO_CUDA_ENABLED)
         if(CUDA_INCLUDE_DIRS)
             target_include_directories(${TEST_NAME} SYSTEM PRIVATE ${CUDA_INCLUDE_DIRS})
         elseif(CUDAToolkit_INCLUDE_DIRS)
@@ -273,11 +273,11 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
     endif()
 
     # 如果是 OpenCL 测试，添加 OpenCL 头文件支持（不链接库，使用动态加载）
-    if((TEST_NAME MATCHES ".*opencl.*" OR TEST_NAME MATCHES ".*gpu_executor.*") AND EXECUTOR_OPENCL_ENABLED)
+    if((TEST_NAME MATCHES ".*opencl.*" OR TEST_NAME MATCHES ".*gpu_executor.*") AND KAIRO_OPENCL_ENABLED)
         if(OpenCL_INCLUDE_DIRS)
             target_include_directories(${TEST_NAME} SYSTEM PRIVATE ${OpenCL_INCLUDE_DIRS})
         endif()
-        target_compile_definitions(${TEST_NAME} PRIVATE EXECUTOR_ENABLE_OPENCL)
+        target_compile_definitions(${TEST_NAME} PRIVATE KAIRO_ENABLE_OPENCL)
     endif()
     
     # 添加src目录到包含路径，以便测试可以访问内部头文件
@@ -291,7 +291,7 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
     endif()
     
     # 应用覆盖率选项（如果启用）——复用 Coverage.cmake 的统一入口（NN-08）
-    executor_apply_coverage_to_test(${TEST_NAME})
+    kairo_apply_coverage_to_test(${TEST_NAME})
     
     # 添加测试
     if(TEST_NAME STREQUAL "test_gpu_memory_validation")
@@ -431,7 +431,7 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
         set_tests_properties(${TEST_NAME} PROPERTIES RUN_SERIAL TRUE)
     endif()
 
-    if(EXECUTOR_ENABLE_TSAN AND TEST_NAME MATCHES "^test_(comm_(channel|double_buffer|mailbox|phase_gate|topic)|thread_pool|thread_pool_resize_uaf|thread_pool_resize_status|thread_pool_monitor_concurrent_set|dispatcher_resize_under_load|concurrent_stop_submit|load_balancer_concurrent_resize|opencl_lifecycle|self_stop_handoff|lockfree_task_executor|lockfree_mpsc|batch_integration|executor_manager)$")
+    if(KAIRO_ENABLE_TSAN AND TEST_NAME MATCHES "^test_(comm_(channel|double_buffer|mailbox|phase_gate|topic)|thread_pool|thread_pool_resize_uaf|thread_pool_resize_status|thread_pool_monitor_concurrent_set|dispatcher_resize_under_load|concurrent_stop_submit|load_balancer_concurrent_resize|opencl_lifecycle|self_stop_handoff|lockfree_task_executor|lockfree_mpsc|batch_integration|executor_manager)$")
         set_tests_properties(${TEST_NAME} PROPERTIES
             TIMEOUT 180
         )
@@ -442,7 +442,7 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
     # 者）在 TSAN 插桩下减速 ~20x，全 6 档实测 220-276s（gcc 13.3 / 8 worker），
     # 远超 30s 默认档。按 600s 放宽供 TSAN 全量树外取证使用；CI 的 TSAN job 只
     # 跑白名单 test_* 目标，不含 benchmark，不受影响。
-    if(EXECUTOR_ENABLE_TSAN AND TEST_NAME STREQUAL "benchmark_thread_pool_hotpath")
+    if(KAIRO_ENABLE_TSAN AND TEST_NAME STREQUAL "benchmark_thread_pool_hotpath")
         set_tests_properties(${TEST_NAME} PROPERTIES
             TIMEOUT 600
         )
@@ -450,7 +450,7 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
 
     # --coverage 插桩对时序敏感的池测试有 2-5 倍减速（与 TSan 放宽同理），
     # 2-vCPU runner 上偶发超出 30s 默认档；coverage 构建下放宽到 120s。
-    if(EXECUTOR_ENABLE_COVERAGE AND TEST_NAME MATCHES "^test_(thread_pool|thread_pool_integration|monitor_integration)$")
+    if(KAIRO_ENABLE_COVERAGE AND TEST_NAME MATCHES "^test_(thread_pool|thread_pool_integration|monitor_integration)$")
         set_tests_properties(${TEST_NAME} PROPERTIES
             TIMEOUT 120
         )
@@ -491,14 +491,14 @@ if(TARGET test_dependency_driven_pr3)
 endif()
 
 add_executable(test_dispatch_task_fallback test_dispatch_task_fallback.cpp)
-target_link_libraries(test_dispatch_task_fallback PRIVATE executor GTest::GTest GTest::Main)
+target_link_libraries(test_dispatch_task_fallback PRIVATE kairo GTest::GTest GTest::Main)
 target_include_directories(test_dispatch_task_fallback PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 if(MSVC)
     target_compile_options(test_dispatch_task_fallback PRIVATE /utf-8)
 endif()
-executor_apply_coverage_to_test(test_dispatch_task_fallback)
+kairo_apply_coverage_to_test(test_dispatch_task_fallback)
 add_test(NAME test_dispatch_task_fallback COMMAND test_dispatch_task_fallback)
 set_tests_properties(test_dispatch_task_fallback PROPERTIES
     LABELS "unit"
@@ -506,14 +506,14 @@ set_tests_properties(test_dispatch_task_fallback PROPERTIES
 )
 
 add_executable(test_object_pool_double_release_detect test_object_pool_double_release_detect.cpp)
-target_link_libraries(test_object_pool_double_release_detect PRIVATE executor GTest::GTest GTest::Main)
+target_link_libraries(test_object_pool_double_release_detect PRIVATE kairo GTest::GTest GTest::Main)
 target_include_directories(test_object_pool_double_release_detect PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 if(MSVC)
     target_compile_options(test_object_pool_double_release_detect PRIVATE /utf-8)
 endif()
-executor_apply_coverage_to_test(test_object_pool_double_release_detect)
+kairo_apply_coverage_to_test(test_object_pool_double_release_detect)
 add_test(NAME test_object_pool_double_release_detect COMMAND test_object_pool_double_release_detect)
 set_tests_properties(test_object_pool_double_release_detect PROPERTIES
     LABELS "unit"
@@ -521,7 +521,7 @@ set_tests_properties(test_object_pool_double_release_detect PROPERTIES
 )
 
 add_executable(test_object_pool_double_release_detect_ndebug test_object_pool_double_release_detect.cpp)
-target_link_libraries(test_object_pool_double_release_detect_ndebug PRIVATE executor GTest::GTest GTest::Main)
+target_link_libraries(test_object_pool_double_release_detect_ndebug PRIVATE kairo GTest::GTest GTest::Main)
 target_include_directories(test_object_pool_double_release_detect_ndebug PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
@@ -529,7 +529,7 @@ target_compile_definitions(test_object_pool_double_release_detect_ndebug PRIVATE
 if(MSVC)
     target_compile_options(test_object_pool_double_release_detect_ndebug PRIVATE /utf-8)
 endif()
-executor_apply_coverage_to_test(test_object_pool_double_release_detect_ndebug)
+kairo_apply_coverage_to_test(test_object_pool_double_release_detect_ndebug)
 add_test(NAME test_object_pool_double_release_detect_ndebug COMMAND test_object_pool_double_release_detect_ndebug)
 set_tests_properties(test_object_pool_double_release_detect_ndebug PROPERTIES
     LABELS "unit"
@@ -539,7 +539,7 @@ set_tests_properties(test_object_pool_double_release_detect_ndebug PROPERTIES
 # 如果使用 Google Test 或其他测试框架，可以在这里配置
 # 例如：
 # find_package(GTest REQUIRED)
-# target_link_libraries(test_name PRIVATE executor GTest::GTest GTest::Main)
+# target_link_libraries(test_name PRIVATE kairo GTest::GTest GTest::Main)
 
 # CR-084 配套：安装树头文件冒烟——安装到临时 prefix 后编译包含全部已安装头的
 # 探针 TU，防止 install 规则再次遗漏依赖闭包。需要 GNU/Clang 直接驱动探针编译

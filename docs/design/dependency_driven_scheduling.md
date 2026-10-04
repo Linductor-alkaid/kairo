@@ -1,8 +1,11 @@
+> [!NOTE]
+> 已随 v0.5.2 交付。
+
 # Dependency-Driven Scheduling 设计（调度侧唤醒）
 
 状态：评审中（v0.5.2 主线，主清单阶段 21）
-关联：[项目任务清单](../todolists/todolist.md) 阶段 21、
-[性能审查台账](../todolists/performance_audit_2026-09_plan.md) PA-6/P4、
+关联：[项目任务清单](../archive/todolists/todolist.md) 阶段 21、
+[性能审查台账](../archive/todolists/performance_audit_2026-09_plan.md) PA-6/P4、
 [总量有界 admission](bounded_admission.md)、
 [任务协作取消与定时句柄](task_cancellation_and_timers.md)
 

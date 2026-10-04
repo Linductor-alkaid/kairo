@@ -16,7 +16,7 @@
 // 测试模式：与 PR-1/PR-2 相同——门控握手 + 有限等待；"状态保持稳定"的观察
 // 窗口有界，不作为通过/失败的 sleep 时序依据。
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <gtest/gtest.h>
 
@@ -35,7 +35,7 @@ using namespace std::chrono_literals;
 namespace {
 
 // 单个 future 的有限等待上限；超时即失败（防挂死）。TSAN 下放大。
-#if defined(EXECUTOR_TEST_TSAN)
+#if defined(KAIRO_TEST_TSAN)
 constexpr auto kSettleLimit = std::chrono::seconds{30};
 #else
 constexpr auto kSettleLimit = std::chrono::seconds{10};
@@ -48,19 +48,19 @@ constexpr int64_t kTimeoutBudgetMs = 200;
 // 等待"预算肯定已流逝"的观察窗口（>= 2x 预算，容忍负载抖动）。
 constexpr auto kBudgetElapseWindow = std::chrono::milliseconds{500};
 
-executor::ExecutorConfig pool_config(std::size_t workers,
+kairo::ExecutorConfig pool_config(std::size_t workers,
                                      std::size_t queue_capacity = 64) {
-    executor::ExecutorConfig config;
+    kairo::ExecutorConfig config;
     config.min_threads = workers;
     config.max_threads = workers;
     config.queue_capacity = queue_capacity;
     return config;
 }
 
-executor::ExecutorConfig timeout_config(std::size_t workers,
+kairo::ExecutorConfig timeout_config(std::size_t workers,
                                         int64_t timeout_ms,
                                         std::size_t max_in_flight = 0) {
-    executor::ExecutorConfig config = pool_config(workers);
+    kairo::ExecutorConfig config = pool_config(workers);
     config.task_timeout_ms = timeout_ms;
     config.max_in_flight_tasks = max_in_flight;
     return config;
@@ -78,7 +78,7 @@ public:
 
     ~Gate() { release(); }
 
-    executor::TaskSubmission<int> spawn_on(executor::Executor& executor) {
+    kairo::TaskSubmission<int> spawn_on(kairo::Executor& executor) {
         auto entered = std::make_shared<std::promise<void>>();
         entered_ = entered->get_future();
         auto release = release_;
@@ -112,6 +112,10 @@ private:
 };
 
 // 有限等待 future<int> 就绪；不就绪返回 false（配合断言防挂死）。
+template <typename T>
+bool settles_within(kairo::TimerSubmission<T>& submission,
+                    std::chrono::milliseconds limit = kSettleLimit);
+
 bool settles_within(std::future<int>& future,
                     std::chrono::milliseconds limit = kSettleLimit) {
     return future.valid() &&
@@ -122,6 +126,12 @@ bool settles_within(std::future<void>& future,
                     std::chrono::milliseconds limit = kSettleLimit) {
     return future.valid() &&
            future.wait_for(limit) == std::future_status::ready;
+}
+
+template <typename T>
+bool settles_within(kairo::TimerSubmission<T>& submission,
+                    std::chrono::milliseconds limit) {
+    return settles_within(submission.future, limit);
 }
 
 // 有界等待谓词成立（轮询诊断快照/接口用，5ms 步进）。
@@ -141,9 +151,9 @@ bool waits_until(Predicate&& predicate,
 }
 
 // 从快照中读取任务的 lifecycle 状态；任务不在快照中返回 false。
-bool lifecycle_state_of(executor::Executor& executor,
-                        const executor::TaskHandle& handle,
-                        executor::TaskLifecycleState& state) {
+bool lifecycle_state_of(kairo::Executor& executor,
+                        const kairo::TaskHandle& handle,
+                        kairo::TaskLifecycleState& state) {
     const auto snapshot = executor.get_snapshot();
     for (const auto& task : snapshot.in_flight_tasks) {
         if (task.task_id == handle.id()) {
@@ -163,7 +173,7 @@ bool lifecycle_state_of(executor::Executor& executor,
 // worker 紧接着取走队头的 P 并阻塞在门 B 上——此后 D 滞留队列，其 Queued
 // 状态无需竞速即可确定性采样。释放门 B 后 D 经 Running 执行、Succeeded 离场。
 TEST(DependencyDrivenPR3Test, ParkedDrainRecordsQueuedWhileWorkerOccupied) {
-    executor::Executor executor;
+    kairo::Executor executor;
     auto config = pool_config(1);
     config.max_in_flight_tasks = 16;
     ASSERT_TRUE(executor.initialize(config));
@@ -183,7 +193,7 @@ TEST(DependencyDrivenPR3Test, ParkedDrainRecordsQueuedWhileWorkerOccupied) {
     // 先于 callable 调用）。句柄槽位在提交返回后回填——callable 受两道门
     // 保护，必然晚于回填执行。
     std::atomic<int> self_observed_running{-1};
-    auto self = std::make_shared<executor::TaskHandle>();
+    auto self = std::make_shared<kairo::TaskHandle>();
     auto dependent = executor.submit_after_with_handle(
         upstream.handle,
         [&ran_dependent, &executor, &self_observed_running, self] {
@@ -193,7 +203,7 @@ TEST(DependencyDrivenPR3Test, ParkedDrainRecordsQueuedWhileWorkerOccupied) {
             for (const auto& task : snapshot.in_flight_tasks) {
                 if (task.task_id == self->id()) {
                     running = task.state ==
-                              executor::TaskLifecycleState::Running;
+                              kairo::TaskLifecycleState::Running;
                     break;
                 }
             }
@@ -205,9 +215,9 @@ TEST(DependencyDrivenPR3Test, ParkedDrainRecordsQueuedWhileWorkerOccupied) {
 
     // 提交即驻留 DependencyBlocked（PR-1 既有行为回归）。
     {
-        executor::TaskLifecycleState state{};
+        kairo::TaskLifecycleState state{};
         ASSERT_TRUE(lifecycle_state_of(executor, dependent.handle, state));
-        EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+        EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
     }
 
     // 释放门 A：U 完成 → drain 定向入队 D（补记 Queued）→ worker 取走队头
@@ -220,18 +230,18 @@ TEST(DependencyDrivenPR3Test, ParkedDrainRecordsQueuedWhileWorkerOccupied) {
 
     // 确定性采样：D 已出队（被接受）但 worker 被占 → 必须 = Queued。
     {
-        executor::TaskLifecycleState state{};
+        kairo::TaskLifecycleState state{};
         ASSERT_TRUE(lifecycle_state_of(executor, dependent.handle, state))
             << "dependent left the in-flight snapshot before running";
-        EXPECT_EQ(state, executor::TaskLifecycleState::Queued);
+        EXPECT_EQ(state, kairo::TaskLifecycleState::Queued);
     }
     // 状态稳定性观察窗口：worker 仍被占位任务占住，D 必须持续 Queued、
     // 未被执行（有界窗口，非通过性时序）。
     std::this_thread::sleep_for(std::chrono::milliseconds{300});
     {
-        executor::TaskLifecycleState state{};
+        kairo::TaskLifecycleState state{};
         ASSERT_TRUE(lifecycle_state_of(executor, dependent.handle, state));
-        EXPECT_EQ(state, executor::TaskLifecycleState::Queued)
+        EXPECT_EQ(state, kairo::TaskLifecycleState::Queued)
             << "Queued record was lost or prematurely advanced";
         EXPECT_FALSE(ran_dependent.load(std::memory_order_acquire));
     }
@@ -249,7 +259,7 @@ TEST(DependencyDrivenPR3Test, ParkedDrainRecordsQueuedWhileWorkerOccupied) {
 
     // 终态离场：不再滞留 in-flight 快照。
     {
-        executor::TaskLifecycleState state{};
+        kairo::TaskLifecycleState state{};
         EXPECT_FALSE(lifecycle_state_of(executor, dependent.handle, state));
     }
 
@@ -263,7 +273,7 @@ TEST(DependencyDrivenPR3Test, ParkedDrainRecordsQueuedWhileWorkerOccupied) {
 
 TEST(DependencyDrivenPR3Test,
      GraveyardGrowsOnParkedTimeoutAndSweepClearsOnShutdown) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(
         timeout_config(2, kTimeoutBudgetMs, /*max_in_flight=*/16)));
 
@@ -288,7 +298,7 @@ TEST(DependencyDrivenPR3Test,
         bool timed_out = false;
         try {
             (void)dependent.future.get();
-        } catch (const executor::TimedOutException&) {
+        } catch (const kairo::TimedOutException&) {
             timed_out = true;
         } catch (...) {
             timed_out = false;
@@ -309,9 +319,9 @@ TEST(DependencyDrivenPR3Test,
     auto still_parked = executor.submit_after_with_handle(
         upstream.handle, [] { return 2; });
     {
-        executor::TaskLifecycleState state{};
+        kairo::TaskLifecycleState state{};
         ASSERT_TRUE(lifecycle_state_of(executor, still_parked.handle, state));
-        EXPECT_EQ(state, executor::TaskLifecycleState::DependencyBlocked);
+        EXPECT_EQ(state, kairo::TaskLifecycleState::DependencyBlocked);
     }
 
     executor.shutdown(/*wait_for_tasks=*/false);
@@ -338,7 +348,7 @@ TEST(DependencyDrivenPR3Test,
 // 恰好有 parked 节点可扫。
 TEST(DependencyDrivenPR3Test,
      GraveyardClearedOnCleanShutdownWithoutParkedTasks) {
-    executor::Executor executor;
+    kairo::Executor executor;
     ASSERT_TRUE(executor.initialize(
         timeout_config(2, kTimeoutBudgetMs, /*max_in_flight=*/16)));
 
@@ -358,7 +368,7 @@ TEST(DependencyDrivenPR3Test,
         bool timed_out = false;
         try {
             (void)dependent.future.get();
-        } catch (const executor::TimedOutException&) {
+        } catch (const kairo::TimedOutException&) {
             timed_out = true;
         } catch (...) {
             timed_out = false;

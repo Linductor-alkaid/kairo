@@ -2,13 +2,13 @@
  * 批量提交性能测试 - 多个规模
  */
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <chrono>
 #include <iostream>
 #include <iomanip>
 #include <atomic>
 
-using namespace executor;
+using namespace kairo;
 using namespace std::chrono;
 
 void test_scale(int num_tasks) {

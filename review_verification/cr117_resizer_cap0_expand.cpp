@@ -14,14 +14,14 @@
 // CONFIRMED iff: expansion fires (2->3->4 workers) once queue_size>0 and
 // avg_wait>100ms are reported, and during 75s of reported-total-idle
 // (queue_size=0, active=0) no shrink ever happens (threads stay 4).
-#include "executor/thread_pool/thread_pool.hpp"
-#include "executor/thread_pool/thread_pool_resizer.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
+#include "kairo/thread_pool/thread_pool_resizer.hpp"
 
 #include <chrono>
 #include <cstdio>
 #include <thread>
 
-using namespace executor;
+using namespace kairo;
 namespace chrono = std::chrono;
 
 int main() {

@@ -1,9 +1,9 @@
 ---
-title: How Tasks Travel Through Executor
+title: How Tasks Travel Through Kairo
 description: Explain current ordinary and realtime task scheduling, execution, state, and shutdown paths while separating implementation from stable API.
 ---
 
-# How Tasks Travel Through Executor
+# How Tasks Travel Through Kairo
 
 ## Goal
 
@@ -13,7 +13,7 @@ Understand how work runs and completes while keeping current internal paths dist
 
 ```mermaid
 flowchart LR
-    A[Executor Facade] --> B[ExecutorManager]
+    A[Kairo Facade] --> B[ExecutorManager]
     B --> C[ThreadPoolExecutor\nIAsyncExecutor]
     C --> D[ThreadPool]
     D --> E[PriorityScheduler]
@@ -67,13 +67,13 @@ global scheduler empty
 ∧ total_tasks == completed_tasks
 ```
 
-`failed_tasks` is included in completed. `wait_for_completion_ex()` concerns only the default async executor—not all process activity—and actively dispatches pending work while rechecking because workers may have observed stop.
+`failed_tasks` is included in completed. `wait_for_completion()` concerns only the default async executor—not all process activity—and actively dispatches pending work while rechecking because workers may have observed stop.
 
 ## Realtime task path
 
 ```mermaid
 flowchart LR
-    A[Executor Facade] --> B[ExecutorManager]
+    A[Kairo Facade] --> B[ExecutorManager]
     B --> C[RealtimeThreadExecutor]
     C --> D[cycle trigger\nsleep_until or ICycleManager]
     D --> E[cycle_callback]
@@ -83,16 +83,16 @@ flowchart LR
 
 Each cycle runs `cycle_callback`, then pops up to `max_tasks_per_cycle` MPSC items and returns wrappers to the pool. Callback exceptions are handled without killing the thread but still need application observation. Budget `0` means unlimited; normal bounds preserve the period. Timeout increments `cycle_timeout_count`; missed timing rephases from now plus one period instead of catch-up spinning.
 
-`push_task_ex()` registers an in-flight producer, checks running state, acquires preallocated wrapper, and enqueues. Empty work, not-running, pool exhaustion, and queue full have separate visible counts. Stop blocks producers, waits registered pushers out, then drains so no accepted wrapper appears after the final drain.
+`push_task()` registers an in-flight producer, checks running state, acquires preallocated wrapper, and enqueues. Empty work, not-running, pool exhaustion, and queue full have separate visible counts. Stop blocks producers, waits registered pushers out, then drains so no accepted wrapper appears after the final drain.
 
 The MPSC queue is lock-free, not the entire real-time path: `ObjectPool` uses a mutex for memory-reclamation correctness, and user callback/handler/custom cycle source can lock, allocate, or call the system. “Avoid locks, unlimited waits, and runtime allocation” is a design goal and caller constraint, not a promise about every internal instruction. Measure target-hardware traces and status.
 
 ## Shutdown and stability boundary
 
-Normal `wait_for_completion_ex()` cannot prove realtime callback/queue completion. A realtime pipeline needs its own acknowledgement, phase gate, or stop sequence. Status is a snapshot; use it plus failure/communication events rather than scheduling coincidence.
+Normal `wait_for_completion()` cannot prove realtime callback/queue completion. A realtime pipeline needs its own acknowledgement, phase gate, or stop sequence. Status is a snapshot; use it plus failure/communication events rather than scheduling coincidence.
 
 `ThreadPoolExecutor` copies a local pool `shared_ptr` under mutex; stop clears its member then shuts down the local copy. Concurrent submission therefore gets a still-live pool or a rejection, never freed memory. `stop(false)` may move pool shutdown to a detached resource-reclamation thread; it does not kill running user work or define recovery semantics.
 
-`ThreadPool`, `PriorityScheduler`, `TaskDispatcher`, worker queues, and steal policy can change while public behavior remains stable. Treat this as current implementation explanation, not a callable integration API. See current source entries [`executor.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/executor.cpp), [`executor_manager.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/executor_manager.cpp), [`thread_pool.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/thread_pool/thread_pool.cpp), and [`task_dispatcher.hpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/thread_pool/task_dispatcher.hpp).
+`ThreadPool`, `PriorityScheduler`, `TaskDispatcher`, worker queues, and steal policy can change while public behavior remains stable. Treat this as current implementation explanation, not a callable integration API. See current source entries [`executor.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/executor.cpp), [`executor_manager.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/executor_manager.cpp), [`thread_pool.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/thread_pool/thread_pool.cpp), and [`task_dispatcher.hpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/thread_pool/task_dispatcher.hpp).
 
 Next: [lock-free and performance experiments](/en/advanced/lockfree-and-performance) or [performance measurement](/en/advanced/performance-measurement).

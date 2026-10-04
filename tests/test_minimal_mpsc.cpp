@@ -2,12 +2,12 @@
  * 最小化测试 - 定位段错误问题
  */
 
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 #include <iostream>
 #include <thread>
 #include <chrono>
 
-using namespace executor;
+using namespace kairo;
 
 int main() {
     std::cout << "测试1: 创建执行器\n";

@@ -2,7 +2,7 @@
 #
 # 触发：推送 v* tag（例如 git tag v0.5.0 && git push origin v0.5.0）。
 # 产物：
-#   - Linux amd64：tar.gz + libexecutor/libexecutor-dev deb（在 CUDA devel 容器内
+#   - Linux amd64：tar.gz + libkairo/libkairo-dev deb（在 CUDA devel 容器内
 #     完整构建——编译期不需要 GPU，产物包含 CUDA 执行器，运行期 dlopen libcuda
 #     优雅降级，与手工发布 v0.4.0 的 deb 口径一致）；
 #   - Windows x64：静态库发行包（CPU-only，runner 无 CUDA 工具链，CMake 自动降级）；
@@ -79,7 +79,7 @@ jobs:
             -Arch x64
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Get-ChildItem .\dist\
-          $PackageDir = "dist\executor-$Version-windows-x64"
+          $PackageDir = "dist\kairo-$Version-windows-x64"
           if (-not (Test-Path (Join-Path $PackageDir 'static\lib'))) {
             Write-Host "::error::static lib directory missing in package"
             exit 1
@@ -88,8 +88,8 @@ jobs:
         shell: pwsh
         run: |
           $Version = "${{ github.ref_name }}" -replace '^v', ''
-          Compress-Archive -Path "dist\executor-$Version-windows-x64" `
-            -DestinationPath "dist\executor-$Version-windows-x64.zip" -Force
+          Compress-Archive -Path "dist\kairo-$Version-windows-x64" `
+            -DestinationPath "dist\kairo-$Version-windows-x64.zip" -Force
           Get-ChildItem .\dist\*.zip
       - name: 上传产物
         uses: actions/upload-artifact@v4
@@ -127,6 +127,6 @@ jobs:
           mkdir -p assets
           find artifacts -type f -exec cp {} assets/ \;
           gh release create "$GITHUB_REF_NAME" \
-            --title "executor $GITHUB_REF_NAME" \
+            --title "kairo $GITHUB_REF_NAME" \
             --notes-file release-notes.md \
             assets/*

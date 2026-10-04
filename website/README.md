@@ -1,7 +1,7 @@
 # Executor 使用手册网站
 
 <p align="center">
-  <img src="/executor.svg" width="160" alt="Executor logo">
+  <img src="/kairo.svg" width="160" alt="Executor logo">
 </p>
 
 本目录包含 Executor 的 VitePress 使用手册站点。首发以中文内容为主，路由结构预留 `zh/` 和 `en/` 对称目录。

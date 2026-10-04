@@ -7,10 +7,10 @@
 #include <future>
 #include <algorithm>
 
-#include "executor/thread_pool/thread_pool.hpp"
-#include <executor/config.hpp>
+#include "kairo/thread_pool/thread_pool.hpp"
+#include <kairo/config.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 // 测试辅助宏
 #define TEST_ASSERT(condition, message) \

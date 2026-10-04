@@ -17,7 +17,7 @@ $ErrorActionPreference = "Stop"
 # CR-085: 版本单一来源——在首个横幅输出前解析，横幅需要显示它
 if (-not $Version) {
     $CMakeListsPath = Join-Path (Split-Path -Parent $PSScriptRoot) "CMakeLists.txt"
-    $VersionMatch = Select-String -Path $CMakeListsPath -Pattern '^project\(executor\s+[^\)]*VERSION\s+([0-9][0-9.]*)\)' |
+    $VersionMatch = Select-String -Path $CMakeListsPath -Pattern '^project\(kairo\s+[^\)]*VERSION\s+([0-9][0-9.]*)\)' |
         Select-Object -First 1
     if ($VersionMatch) {
         $Version = $VersionMatch.Matches[0].Groups[1].Value
@@ -29,7 +29,7 @@ if (-not $Version) {
 }
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Executor Windows Package Script" -ForegroundColor Cyan
+Write-Host "Kairo Windows Package Script" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Version: $Version" -ForegroundColor Yellow
 Write-Host "Build Dir: $BuildDir" -ForegroundColor Yellow
@@ -46,7 +46,7 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 
 # Create output directories
 if (-not $Arch) { $Arch = $env:PROCESSOR_ARCHITECTURE }
-$PackageName = "executor-${Version}-windows-${Arch}"
+$PackageName = "kairo-${Version}-windows-${Arch}"
 $PackageDir = Join-Path $OutputDir $PackageName
 $PackageDirStatic = Join-Path $PackageDir "static"
 $PackageDirShared = Join-Path $PackageDir "shared"
@@ -70,9 +70,9 @@ if ($IncludeStatic) {
         Copy-Item -Recurse -Path "$StaticInstallDir\*" -Destination $PackageDirStatic -Force
         
         # Verify key files
-        $libFile = Get-ChildItem -Path $PackageDirStatic -Filter "executor.lib" -Recurse | Select-Object -First 1
+        $libFile = Get-ChildItem -Path $PackageDirStatic -Filter "kairo.lib" -Recurse | Select-Object -First 1
         if (-not $libFile) {
-            Write-Host "Warning: executor.lib not found" -ForegroundColor Yellow
+            Write-Host "Warning: kairo.lib not found" -ForegroundColor Yellow
         } else {
             Write-Host "  Found: $($libFile.FullName)" -ForegroundColor Green
         }
@@ -89,17 +89,17 @@ if ($IncludeShared) {
         Copy-Item -Recurse -Path "$SharedInstallDir\*" -Destination $PackageDirShared -Force
         
         # Verify key files
-        $dllFile = Get-ChildItem -Path $PackageDirShared -Filter "executor.dll" -Recurse | Select-Object -First 1
-        $libFile = Get-ChildItem -Path $PackageDirShared -Filter "executor.lib" -Recurse | Select-Object -First 1
+        $dllFile = Get-ChildItem -Path $PackageDirShared -Filter "kairo.dll" -Recurse | Select-Object -First 1
+        $libFile = Get-ChildItem -Path $PackageDirShared -Filter "kairo.lib" -Recurse | Select-Object -First 1
         
         if (-not $dllFile) {
-            Write-Host "Warning: executor.dll not found" -ForegroundColor Yellow
+            Write-Host "Warning: kairo.dll not found" -ForegroundColor Yellow
         } else {
             Write-Host "  Found: $($dllFile.FullName)" -ForegroundColor Green
         }
         
         if (-not $libFile) {
-            Write-Host "Warning: executor.lib (import library) not found" -ForegroundColor Yellow
+            Write-Host "Warning: kairo.lib (import library) not found" -ForegroundColor Yellow
         } else {
             Write-Host "  Found: $($libFile.FullName)" -ForegroundColor Green
         }
@@ -126,7 +126,7 @@ foreach ($doc in $DocsToCopy) {
 
 # Create usage guide
 $UsageGuide = @"
-# Executor Windows Distribution Package Usage Guide
+# Kairo Windows Distribution Package Usage Guide
 
 ## Version Information
 - Version: $Version
@@ -136,45 +136,45 @@ $UsageGuide = @"
 ## Directory Structure
 
 ### Static Library (static/)
-- \`lib/executor.lib\` - Static library file
-- \`include/executor/\` - Header files directory
-- \`lib/cmake/executor/\` - CMake configuration files (for find_package)
+- \`lib/kairo.lib\` - Static library file
+- \`include/kairo/\` - Header files directory
+- \`lib/cmake/kairo/\` - CMake configuration files (for find_package)
 
 ### Shared Library (shared/)
-- \`bin/executor.dll\` - Shared library file (required at runtime)
-- \`lib/executor.lib\` - Import library file (for linking)
-- \`include/executor/\` - Header files directory
-- \`lib/cmake/executor/\` - CMake configuration files (for find_package)
+- \`bin/kairo.dll\` - Shared library file (required at runtime)
+- \`lib/kairo.lib\` - Import library file (for linking)
+- \`include/kairo/\` - Header files directory
+- \`lib/cmake/kairo/\` - CMake configuration files (for find_package)
 
 ## Usage
 
 ### Using Static Library
 
 \`\`\`cmake
-find_package(executor REQUIRED)
-target_link_libraries(your_target PRIVATE executor::executor)
+find_package(kairo REQUIRED)
+target_link_libraries(your_target PRIVATE kairo::kairo)
 \`\`\`
 
 Make sure to set the path when configuring CMake:
 \`\`\`bash
-cmake -DCMAKE_PREFIX_PATH=path/to/executor-$Version-windows-$Arch/static
+cmake -DCMAKE_PREFIX_PATH=path/to/kairo-$Version-windows-$Arch/static
 \`\`\`
 
 ### Using Shared Library
 
 \`\`\`cmake
-find_package(executor REQUIRED)
-target_link_libraries(your_target PRIVATE executor::executor)
+find_package(kairo REQUIRED)
+target_link_libraries(your_target PRIVATE kairo::kairo)
 \`\`\`
 
 Make sure to set the path when configuring CMake:
 \`\`\`bash
-cmake -DCMAKE_PREFIX_PATH=path/to/executor-$Version-windows-$Arch/shared
+cmake -DCMAKE_PREFIX_PATH=path/to/kairo-$Version-windows-$Arch/shared
 \`\`\`
 
-**Note**: When using shared library, ensure \`executor.dll\` is available at runtime:
-- Copy \`executor.dll\` to the executable directory
-- Or add the directory containing \`executor.dll\` to PATH environment variable
+**Note**: When using shared library, ensure \`kairo.dll\` is available at runtime:
+- Copy \`kairo.dll\` to the executable directory
+- Or add the directory containing \`kairo.dll\` to PATH environment variable
 
 ## System Requirements
 

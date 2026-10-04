@@ -1,6 +1,74 @@
 # Changelog
 
-本文档记录 executor 项目的版本变更。版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+本文档记录 kairo 项目的版本变更。版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+---
+
+## [0.6.0] - 2026-10-03
+
+0.6.0 是破坏性变更窗口，包含三部分：项目更名（Executor → kairo）、历史
+兼容层全面清理、以及 0.6.0 的核心主题 **Scheduling Runtime**——调度器与
+执行器解耦，并建立统一的 deadline / QoS / affinity / resource 任务调度
+模型。设计文档：`docs/design/scheduling_runtime.md`；迁移指南：
+`docs/MIGRATION.md` 0.6.0 节。
+
+### 项目更名（Executor → kairo）
+
+项目边界已超出"执行器"单一概念，更名为 kairo；executor 保留为领域概念
+（执行后端类名 `Executor`、`ThreadPoolExecutor` 等不变，挂于
+`kairo::` 命名空间）：
+
+- 命名空间 `executor::` → `kairo::`；include 路径 `<executor/...>` →
+  `<kairo/...>`（目录 `include/kairo/`）。
+- CMake：`find_package(kairo)`、target `kairo::kairo`、产物 `libkairo`、
+  选项/宏 `EXECUTOR_*` → `KAIRO_*`。
+- 打包 `libkairo`（deb/prefab/Windows zip）、CI artifact/release 命名、
+  README/website/skill 品牌同步；项目图标更换为 `docs/kairo.png`。
+
+### 兼容层清理（breaking）
+
+历史版本为迁移期保留的弱 API 全部移除，可诊断的 Result 版本接管主名：
+
+- 7 对 facade API：`initialize_ex → initialize`（ExecutorResult）、
+  `wait_for_completion_ex → wait_for_completion`（WaitResult）、
+  `register/start_realtime_task_ex`、`register/start_blocking_io_worker_ex`、
+  `register_gpu_executor_ex` 全部去后缀；旧 bool/void 版本删除。
+- `IRealtimeExecutor::push_task()` 从 void 改为返回 ExecutorResult
+  （0.2.2 P-001 的 ABI 兼容约束解除）；`push_task_ex()` 删除。
+- 定时器字符串 ID 体系删除：`submit_delayed` 返回 `TimerSubmission`、
+  `submit_periodic` 返回 `TimerHandle`、`cancel_task(task_id)` 由
+  `TimerHandle::cancel()` 取代；`_with_handle` 拼写随之消失。句柄版取消
+  后记录保留为 Cancelled 终态（`is_running=false`，仍可查询），二次取消
+  返回 `AlreadyCancelled`。
+- 4 参 legacy `submit_auto`、comm `is_lock_free()` 别名、
+  `RealtimeExecutorStatus::memory_locked` 兼容字段删除。
+- 保留：`StopToken`/`JThread` 平台兼容层、`submit_with_handle`/
+  `submit_after_with_handle`（TaskHandle 任务图族）。
+
+### Scheduling Runtime（核心）
+
+- **IScheduler 解耦**：路由/准入决策从 facade 内联代码移入可注入的
+  `IScheduler`（`Executor::set_scheduler()`），默认实现 `DefaultScheduler`
+  组合意图路由（TaskRouter）与调度模型约束。调度器只产出决策，投递仍经
+  既有后端协议执行；热路径不变式（admission 先于 future、queued 诊断
+  先于 enqueue、CR-106 惰性能力采集、PA-2 驻停代次唤醒）不回退。
+- **deadline 模型**：`TaskBuilder::deadline()` 从纯诊断升级为真实调度
+  输入——同优先级内 EDF 排序；提交时已过期明确拒绝；开始执行时已错过
+  记录 `FailureKind::DeadlineMissed`（`deadline_missed_count`），契约
+  保持"取消是请求不是中断"，错过的任务仍执行。
+- **QoS 模型**：`QosClass{BestEffort, Standard, Interactive, Critical}`
+  在未显式设置 priority 时映射默认排队优先级；QoS 定位为排队优先级
+  preset（命名有意避开 HardRealtime——硬实时语义预留给 RealtimeQueue
+  执行模型）；严格优先级无 aging 的 CR-024 契约文档化（BestEffort
+  可被饿死，防饿死在应用层拆分）。
+- **affinity 模型**：per-task advisory 亲和提示，与后端绑核集合不相交时
+  在路由决策 detail 给出 `AffinityMismatch` 警告（不拒绝、不重绑线程）。
+- **resource 模型**：声明式 `gpu_device`/`memory_bytes` 与能力快照核对，
+  不满足时以 `BackendUnavailable`/`CapacityPressure` 拒绝而非隐式降级；
+  `ExecutorCapability` 新增绑核集合与 GPU 设备/内存维度。
+- 新增公开头：`<kairo/scheduling.hpp>`、`<kairo/scheduler.hpp>`；测试
+  `test_scheduling_runtime` 32 项行为用例（EDF 排序、准入/错过、QoS 映射、
+  affinity 诊断、resource 拒绝矩阵、调度器注入）。
 
 ---
 

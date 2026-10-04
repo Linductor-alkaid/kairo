@@ -1,5 +1,5 @@
 # Windows 构建脚本
-# 用于构建 executor 库的静态库和动态库
+# 用于构建 kairo 库的静态库和动态库
 
 param(
     [string]$BuildType = "Release",
@@ -18,7 +18,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Executor Windows Build Script" -ForegroundColor Cyan
+Write-Host "Kairo Windows Build Script" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Build Type: $BuildType" -ForegroundColor Yellow
 Write-Host "Generator: $Generator" -ForegroundColor Yellow
@@ -57,9 +57,9 @@ if ($BuildStatic) {
     # CR-082: 尊重 -BuildTests/-BuildExamples 开关（旧版硬编码 OFF 无视入参）
     $CmakeArgs += @(
         "-DCMAKE_BUILD_TYPE=$BuildType",
-        "-DEXECUTOR_BUILD_SHARED=OFF",
-        "-DEXECUTOR_BUILD_TESTS=$(if ($BuildTests) { 'ON' } else { 'OFF' })",
-        "-DEXECUTOR_BUILD_EXAMPLES=$(if ($BuildExamples) { 'ON' } else { 'OFF' })",
+        "-DKAIRO_BUILD_SHARED=OFF",
+        "-DKAIRO_BUILD_TESTS=$(if ($BuildTests) { 'ON' } else { 'OFF' })",
+        "-DKAIRO_BUILD_EXAMPLES=$(if ($BuildExamples) { 'ON' } else { 'OFF' })",
         "-DCMAKE_INSTALL_PREFIX=$StaticBuildDir\install"
     )
     & cmake @CmakeArgs
@@ -106,9 +106,9 @@ if ($BuildShared) {
     # CR-082: 同静态库块——开关透传
     $CmakeArgs += @(
         "-DCMAKE_BUILD_TYPE=$BuildType",
-        "-DEXECUTOR_BUILD_SHARED=ON",
-        "-DEXECUTOR_BUILD_TESTS=$(if ($BuildTests) { 'ON' } else { 'OFF' })",
-        "-DEXECUTOR_BUILD_EXAMPLES=$(if ($BuildExamples) { 'ON' } else { 'OFF' })",
+        "-DKAIRO_BUILD_SHARED=ON",
+        "-DKAIRO_BUILD_TESTS=$(if ($BuildTests) { 'ON' } else { 'OFF' })",
+        "-DKAIRO_BUILD_EXAMPLES=$(if ($BuildExamples) { 'ON' } else { 'OFF' })",
         "-DCMAKE_INSTALL_PREFIX=$SharedBuildDir\install"
     )
     & cmake @CmakeArgs

@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include <executor/config.hpp>
-#include <executor/lockfree_task_executor.hpp>
-#include "executor/realtime_thread_executor.hpp"
+#include <kairo/config.hpp>
+#include <kairo/lockfree_task_executor.hpp>
+#include "kairo/realtime_thread_executor.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -20,7 +20,7 @@ using namespace std::chrono_literals;
 // 期望 stop_and_join() 返回 false(已请求停止但未 join),外部线程随后 stop_and_join()
 // 返回 true 正常 join。
 TEST(SelfStopHandoff, SelfStopDoesNotTerminate_LockFreeTaskExecutor) {
-    auto executor = std::make_unique<executor::LockFreeTaskExecutor>(8);
+    auto executor = std::make_unique<kairo::LockFreeTaskExecutor>(8);
     std::promise<bool> self_stop_result;
     auto self_stop_future = self_stop_result.get_future();
 
@@ -37,10 +37,10 @@ TEST(SelfStopHandoff, SelfStopDoesNotTerminate_LockFreeTaskExecutor) {
 }
 
 TEST(SelfStopHandoff, SelfStopDoesNotTerminate_RealtimeThreadExecutor) {
-    executor::RealtimeThreadConfig config;
+    kairo::RealtimeThreadConfig config;
     config.thread_name = "external_stop_rt";
     config.cycle_period_ns = 1'000'000;
-    std::atomic<executor::RealtimeThreadExecutor*> executor_ptr{nullptr};
+    std::atomic<kairo::RealtimeThreadExecutor*> executor_ptr{nullptr};
     std::atomic<bool> callback_invoked{false};
     std::promise<bool> self_stop_result;
     auto self_stop_future = self_stop_result.get_future();
@@ -52,7 +52,7 @@ TEST(SelfStopHandoff, SelfStopDoesNotTerminate_RealtimeThreadExecutor) {
         }
     };
 
-    auto executor = std::make_unique<executor::RealtimeThreadExecutor>(
+    auto executor = std::make_unique<kairo::RealtimeThreadExecutor>(
         "external_stop_rt", config);
     executor_ptr.store(executor.get(), std::memory_order_release);
     ASSERT_TRUE(executor->start());
@@ -67,7 +67,7 @@ TEST(SelfStopHandoff, SelfStopDoesNotTerminate_RealtimeThreadExecutor) {
 // 并发外部线程 stop_and_join:两个外部线程同时调用 stop_and_join,断言两个都返回
 // true 且无死锁。stop_mutex_ 应串行化 join,确保只有一个 thread 真正 join。
 TEST(SelfStopHandoff, ConcurrentStopFromTwoExternalThreads) {
-    executor::LockFreeTaskExecutor executor(8);
+    kairo::LockFreeTaskExecutor executor(8);
     ASSERT_TRUE(executor.start());
 
     std::atomic<int> ready{0};
@@ -97,7 +97,7 @@ TEST(SelfStopHandoff, ConcurrentStopFromTwoExternalThreads) {
     EXPECT_TRUE(second_result);
 }
 
-class CountingLockFreeTaskExecutor : public executor::LockFreeTaskExecutor {
+class CountingLockFreeTaskExecutor : public kairo::LockFreeTaskExecutor {
 public:
     using LockFreeTaskExecutor::LockFreeTaskExecutor;
 
@@ -151,7 +151,7 @@ TEST(SelfStopHandoff, LockFreeConcurrentStartStopNoLeakedThread) {
 }
 
 TEST(RealtimeConcurrentStop, StartRejectedUntilJoinCompletes) {
-    executor::RealtimeThreadConfig config;
+    kairo::RealtimeThreadConfig config;
     config.thread_name = "concurrent_stop_rt";
     config.cycle_period_ns = 1'000'000;
 
@@ -169,7 +169,7 @@ TEST(RealtimeConcurrentStop, StartRejectedUntilJoinCompletes) {
         callback_cv.wait(lock, [&] { return release_callback; });
     };
 
-    executor::RealtimeThreadExecutor executor("concurrent_stop_rt", config);
+    kairo::RealtimeThreadExecutor executor("concurrent_stop_rt", config);
     ASSERT_TRUE(executor.start());
     ASSERT_EQ(callback_entered_future.wait_for(1s), std::future_status::ready);
 
@@ -215,7 +215,7 @@ TEST(RealtimeConcurrentStop, StartRejectedUntilJoinCompletes) {
 // 自停止后剩余任务被丢弃:任务 A 在内部调 stop(),后续任务 B 不应再执行,
 // processed_count 应只统计已执行的任务(A)。
 TEST(SelfStopHandoff, DrainOnStopRejectedWhenSelfStop) {
-    executor::LockFreeTaskExecutor executor(8);
+    kairo::LockFreeTaskExecutor executor(8);
     std::promise<void> self_stop_done;
     auto self_stop_future = self_stop_done.get_future();
     std::atomic<int> executed{0};

@@ -1,4 +1,4 @@
-#include <executor/comm.hpp>
+#include <kairo/comm.hpp>
 
 #include <gtest/gtest.h>
 
@@ -16,12 +16,12 @@ using namespace std::chrono_literals;
 
 namespace {
 
-using executor::comm::CommErrorCode;
-using executor::comm::CommEventKind;
-using executor::comm::DropPolicy;
-using executor::comm::Topic;
-using executor::comm::TopicSubscription;
-using executor::comm::TopicSubscriptionOptions;
+using kairo::comm::CommErrorCode;
+using kairo::comm::CommEventKind;
+using kairo::comm::DropPolicy;
+using kairo::comm::Topic;
+using kairo::comm::TopicSubscription;
+using kairo::comm::TopicSubscriptionOptions;
 
 TopicSubscriptionOptions options(size_t capacity,
                                  DropPolicy policy = DropPolicy::RejectNewest,
@@ -269,7 +269,7 @@ TEST(CommTopicTest, CallbackExceptionsDoNotChangePublishOutcome) {
     Topic<int> topic;
     auto subscription = topic.subscribe(options(1));
     std::atomic<int> callbacks{0};
-    subscription.set_event_callback([&](const executor::comm::CommEvent& event) {
+    subscription.set_event_callback([&](const kairo::comm::CommEvent& event) {
         if (event.kind == CommEventKind::Dropped) {
             callbacks.fetch_add(1, std::memory_order_relaxed);
             throw std::runtime_error("diagnostic failure");

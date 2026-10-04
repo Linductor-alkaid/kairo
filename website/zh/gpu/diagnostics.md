@@ -11,23 +11,23 @@ description: 在没有 CUDA、OpenCL 或 GPU 设备时，通过可诊断注册�
 
 ## 构建前置
 
-GPU 模块是可选的。CUDA 需要 `EXECUTOR_ENABLE_GPU=ON` 与 `EXECUTOR_ENABLE_CUDA=ON`，OpenCL 需要 `EXECUTOR_ENABLE_GPU=ON` 与 `EXECUTOR_ENABLE_OPENCL=ON`；还需要相应头文件、运行时、驱动和可访问的设备。运行时动态加载不保证后端一定可用。
+GPU 模块是可选的。CUDA 需要 `KAIRO_ENABLE_GPU=ON` 与 `KAIRO_ENABLE_CUDA=ON`，OpenCL 需要 `KAIRO_ENABLE_GPU=ON` 与 `KAIRO_ENABLE_OPENCL=ON`；还需要相应头文件、运行时、驱动和可访问的设备。运行时动态加载不保证后端一定可用。
 
 基础教程可显式关闭 GPU 后构建：
 
 ```bash
-cmake -B build -DEXECUTOR_BUILD_EXAMPLES=ON -DEXECUTOR_ENABLE_GPU=OFF
+cmake -B build -DKAIRO_BUILD_EXAMPLES=ON -DKAIRO_ENABLE_GPU=OFF
 cmake --build build
 ctest --test-dir build -L tutorial --output-on-failure
 ```
 
 ## 推荐方案
 
-使用 `register_gpu_executor_ex()`，根据 `ExecutorResult` 作出业务回退。教程示例故意选择未实现的 SYCL 后端，因此在任何机器上都会验证诊断路径：
+使用 `register_gpu_executor()`，根据 `ExecutorResult` 作出业务回退。教程示例故意选择未实现的 SYCL 后端，因此在任何机器上都会验证诊断路径：
 
 <<< @/../examples/tutorial/09_gpu.cpp{1-27}
 
-完整源码：[`examples/tutorial/09_gpu.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/tutorial/09_gpu.cpp)。
+完整源码：[`examples/tutorial/09_gpu.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/09_gpu.cpp)。
 
 ```bash
 ./build/examples/tutorial/tutorial_09_gpu

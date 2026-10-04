@@ -1,4 +1,4 @@
-#include <executor/comm.hpp>
+#include <kairo/comm.hpp>
 
 #include <gtest/gtest.h>
 
@@ -14,11 +14,11 @@ using namespace std::chrono_literals;
 
 namespace {
 
-using executor::comm::CommEventKind;
-using executor::comm::CommErrorCode;
-using executor::comm::DoubleBuffer;
-using executor::comm::PhaseGate;
-using executor::comm::Snapshot;
+using kairo::comm::CommEventKind;
+using kairo::comm::CommErrorCode;
+using kairo::comm::DoubleBuffer;
+using kairo::comm::PhaseGate;
+using kairo::comm::Snapshot;
 
 struct State {
     int version = 0;
@@ -132,7 +132,7 @@ TEST(CommDoubleBufferTest, UpdateMutatesInactiveCopyThenPublishesOnce) {
 TEST(CommDoubleBufferTest, LoadNewerThanAvoidsDuplicateConsumption) {
     DoubleBuffer<State> buffer(make_state(1), "state_buffer");
     int stale_events = 0;
-    buffer.set_event_callback([&](const executor::comm::CommEvent& event) noexcept {
+    buffer.set_event_callback([&](const kairo::comm::CommEvent& event) noexcept {
         if (event.kind == CommEventKind::StaleRead) {
             ++stale_events;
             EXPECT_EQ(event.component_name, "state_buffer");

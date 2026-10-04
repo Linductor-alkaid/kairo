@@ -29,8 +29,8 @@ struct CommWindow {
     double depth_ratio = 0.0;
 };
 
-CommWindow calculate_window(const executor::comm::CommStats& before,
-                            const executor::comm::CommStats& after,
+CommWindow calculate_window(const kairo::comm::CommStats& before,
+                            const kairo::comm::CommStats& after,
                             std::chrono::duration<double> elapsed) {
     const double seconds = elapsed.count();
     const auto delta = [](uint64_t old_value, uint64_t new_value) {
@@ -68,7 +68,7 @@ scheduler 全局队列，过载表现为无界积压。需要结构化过载拒�
 `max_in_flight_tasks`：
 
 ```cpp
-executor::ExecutorConfig config;
+kairo::ExecutorConfig config;
 config.max_in_flight_tasks = 256;   // 已接纳未结算的提交总量
 ```
 

@@ -4,12 +4,12 @@
 #include <iostream>
 #include <thread>
 
-#include <executor/config.hpp>
-#include <executor/executor.hpp>
-#include <executor/thread_pool/thread_pool.hpp>
-#include <executor/types.hpp>
+#include <kairo/config.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/thread_pool/thread_pool.hpp>
+#include <kairo/types.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message)                                      \
     do {                                                                     \
@@ -74,13 +74,13 @@ bool test_try_wait_for_completion_returns_false_on_timeout() {
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
     });
 
-    auto wait_result = executor.wait_for_completion_ex(std::chrono::milliseconds(50));
+    auto wait_result = executor.wait_for_completion(std::chrono::milliseconds(50));
     TEST_ASSERT(!wait_result.completed,
-                "wait_for_completion_ex should report incomplete on timeout");
+                "wait_for_completion should report incomplete on timeout");
     TEST_ASSERT(wait_result.timed_out,
-                "wait_for_completion_ex should mark timed_out on timeout");
+                "wait_for_completion should mark timed_out on timeout");
     TEST_ASSERT(wait_result.timeout == std::chrono::milliseconds(50),
-                "wait_for_completion_ex should echo timeout duration");
+                "wait_for_completion should echo timeout duration");
     TEST_ASSERT(!wait_result.status.is_idle,
                 "timeout result should include non-idle completion status");
     TEST_ASSERT(wait_result.status.pending_tasks > 0,
@@ -168,9 +168,9 @@ bool test_completion_status_before_initialize() {
     TEST_ASSERT(status.pending_tasks == 0,
                 "uninitialized executor should report no pending tasks");
 
-    auto result = executor.wait_for_completion_ex(std::chrono::milliseconds(1));
+    auto result = executor.wait_for_completion(std::chrono::milliseconds(1));
     TEST_ASSERT(result.completed,
-                "wait_for_completion_ex should complete for uninitialized executor");
+                "wait_for_completion should complete for uninitialized executor");
     TEST_ASSERT(!result.timed_out,
                 "uninitialized wait should not time out");
     TEST_ASSERT(result.status.is_idle,

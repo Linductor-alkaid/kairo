@@ -6,21 +6,21 @@
 #include <string>
 #include <vector>
 
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 int main() {
-    executor::Executor executor;
-    executor::ExecutorConfig config;
+    kairo::Executor executor;
+    kairo::ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 2;
     config.queue_capacity = 32;
-    if (!executor.initialize_ex(config)) {
+    if (!executor.initialize(config)) {
         return 1;
     }
 
     std::atomic<int> failure_callbacks{0};
-    executor.set_failure_callback([&](const executor::ExecutorFailureEvent& event) noexcept {
-        if (event.kind == executor::FailureKind::TaskException) {
+    executor.set_failure_callback([&](const kairo::ExecutorFailureEvent& event) noexcept {
+        if (event.kind == kairo::FailureKind::TaskException) {
             ++failure_callbacks;
         }
     });
@@ -59,7 +59,7 @@ int main() {
     }
 
     const auto drained =
-        executor.wait_for_completion_ex(std::chrono::seconds{1});
+        executor.wait_for_completion(std::chrono::seconds{1});
     std::cout << "prepared=" << (is_prepared ? "yes" : "no")
               << ", schema=" << schema_name
               << ", table=" << table_name << '\n';

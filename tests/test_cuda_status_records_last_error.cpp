@@ -1,15 +1,15 @@
 #include <gtest/gtest.h>
 
-#include "executor/gpu/cuda_executor.hpp"
+#include "kairo/gpu/cuda_executor.hpp"
 
 #include <future>
 #include <string>
 
-using executor::gpu::CudaExecutor;
-using executor::gpu::GpuBackend;
-using executor::gpu::GpuExecutorConfig;
-using executor::gpu::GpuTaskConfig;
-using executor::gpu::InvalidStreamException;
+using kairo::gpu::CudaExecutor;
+using kairo::gpu::GpuBackend;
+using kairo::gpu::GpuExecutorConfig;
+using kairo::gpu::GpuTaskConfig;
+using kairo::gpu::InvalidStreamException;
 
 namespace {
 
@@ -54,7 +54,7 @@ TEST(CudaStatusRecordsLastError, DirectStartRecordsInvalidDeviceId) {
 }
 
 TEST(CudaStatusRecordsLastError, SubmitWithInvalidStreamRecordsLastError) {
-#ifndef EXECUTOR_ENABLE_CUDA
+#ifndef KAIRO_ENABLE_CUDA
     GTEST_SKIP() << "CUDA support not enabled";
 #else
     auto config = make_cuda_config(0);
@@ -64,7 +64,7 @@ TEST(CudaStatusRecordsLastError, SubmitWithInvalidStreamRecordsLastError) {
                      << executor.get_status().last_error_message;
     }
 
-    executor::gpu::GpuTaskConfig task_config;
+    kairo::gpu::GpuTaskConfig task_config;
     task_config.stream_id = 1234;
     auto future = executor.submit_kernel([](void*) {}, task_config);
 

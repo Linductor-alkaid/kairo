@@ -15,4 +15,4 @@ description: 只有默认 Facade 无法满足资源隔离或底层控制需求�
 4. [无锁与性能实验](/zh/advanced/lockfree-and-performance)：`LockFreeTaskExecutor`、MPSC 槽位协议、对象池和退避。
 5. [性能测量与回归检查](/zh/advanced/performance-measurement)：统一测量吞吐、尾延迟、jitter 和正确性的实验方法。
 
-以下页面介绍当前实现，方便调试和性能分析；除 `include/executor/` 下的公开接口外，不承诺 `src/` 内类型、数据结构或调度细节保持兼容。设计说明见 [`docs/design/executor.md`](https://github.com/Linductor-alkaid/executor/blob/master/docs/design/executor.md)、[`docs/design/lockfree_user_api.md`](https://github.com/Linductor-alkaid/executor/blob/master/docs/design/lockfree_user_api.md) 和 [`docs/API.md`](https://github.com/Linductor-alkaid/executor/blob/master/docs/API.md)。
+以下页面介绍当前实现，方便调试和性能分析；除 `include/kairo/` 下的公开接口外，不承诺 `src/` 内类型、数据结构或调度细节保持兼容。设计说明见 [`docs/design/executor.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/design/executor.md)、[`docs/design/lockfree_user_api.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/design/lockfree_user_api.md) 和 [`docs/API.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md)。

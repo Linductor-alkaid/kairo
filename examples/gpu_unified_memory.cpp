@@ -1,8 +1,8 @@
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 #include <iostream>
 #include <vector>
 
-#ifdef EXECUTOR_ENABLE_CUDA
+#ifdef KAIRO_ENABLE_CUDA
 #include <cuda_runtime.h>
 
 __global__ void vector_scale_kernel(float* data, float scale, int n) {
@@ -16,12 +16,12 @@ int main() {
     std::cout << "Unified Memory Example\n";
     std::cout << "======================\n\n";
 
-    auto& executor = executor::Executor::instance();
+    auto& executor = kairo::Executor::instance();
 
     // 配置启用统一内存
-    executor::gpu::GpuExecutorConfig config;
+    kairo::gpu::GpuExecutorConfig config;
     config.name = "cuda0";
-    config.backend = executor::gpu::GpuBackend::CUDA;
+    config.backend = kairo::gpu::GpuBackend::CUDA;
     config.device_id = 0;
     config.enable_unified_memory = true;
 
@@ -62,7 +62,7 @@ int main() {
 
     // GPU 处理
     std::cout << "Processing on GPU...\n";
-    executor::gpu::GpuTaskConfig task_config;
+    kairo::gpu::GpuTaskConfig task_config;
     task_config.grid_size[0] = (n + 255) / 256;
     task_config.block_size[0] = 256;
 

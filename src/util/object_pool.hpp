@@ -15,12 +15,12 @@
 #  else
 #    include <immintrin.h>
 #  endif
-#  define EXECUTOR_POOL_PAUSE() _mm_pause()
+#  define KAIRO_POOL_PAUSE() _mm_pause()
 #else
-#  define EXECUTOR_POOL_PAUSE() std::this_thread::yield()
+#  define KAIRO_POOL_PAUSE() std::this_thread::yield()
 #endif
 
-namespace executor {
+namespace kairo {
 namespace util {
 
 /**
@@ -123,7 +123,7 @@ public:
             // 带陈旧期望值重试是确定性失败——偶发参与者（如 RT 线程）
             // 会因此饿死秒级（实测 20s+）。重读是共享读，不独占缓存行。
             for (uint32_t i = 0; i < backoff; ++i) {
-                EXECUTOR_POOL_PAUSE();
+                KAIRO_POOL_PAUSE();
             }
             backoff = backoff < 32u ? backoff * 2 : 32u;
             head = head_.load(std::memory_order_acquire);
@@ -204,7 +204,7 @@ public:
                     std::memory_order_release, std::memory_order_relaxed)) {
                 return;
             }
-            EXECUTOR_POOL_PAUSE();
+            KAIRO_POOL_PAUSE();
         }
     }
 
@@ -287,4 +287,4 @@ private:
 };
 
 } // namespace util
-} // namespace executor
+} // namespace kairo

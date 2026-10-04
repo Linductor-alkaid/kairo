@@ -2,9 +2,9 @@
 // Deleting a Derived through TaskMonitor* is UB. Compile this TU with
 //   g++ -std=c++20 -Wall -Wextra -Wdelete-non-virtual-dtor -c
 // and capture the compiler diagnostic as evidence.
-#include "executor/monitor/task_monitor.hpp"
+#include "kairo/monitor/task_monitor.hpp"
 
-using executor::monitor::TaskMonitor;
+using kairo::monitor::TaskMonitor;
 
 namespace {
 class DerivedMonitor : public TaskMonitor {

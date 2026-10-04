@@ -11,13 +11,13 @@
 #include <map>
 #include <string>
 
-#include <executor/executor.hpp>
-#include <executor/executor_manager.hpp>
-#include <executor/types.hpp>
-#include <executor/interfaces.hpp>
-#include <executor/monitor/statistics_collector.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/executor_manager.hpp>
+#include <kairo/types.hpp>
+#include <kairo/interfaces.hpp>
+#include <kairo/monitor/statistics_collector.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message) \
     do { \
@@ -57,8 +57,8 @@ static bool test_get_gpu_status_unknown_returns_default() {
     return true;
 }
 
-#ifdef EXECUTOR_ENABLE_GPU
-#include "executor/gpu/cuda_executor.hpp"
+#ifdef KAIRO_ENABLE_GPU
+#include "kairo/gpu/cuda_executor.hpp"
 
 static bool test_gpu_monitor_stats_and_query_api() {
     std::cout << "Testing GPU monitor stats collection and query API (with CudaExecutor)..."
@@ -76,7 +76,7 @@ static bool test_gpu_monitor_stats_and_query_api() {
     gpu_config.max_queue_size = 1000;
     gpu_config.default_stream_count = 1;
 
-    bool registered = exec.register_gpu_executor("gpu_monitor_test", gpu_config);
+    auto registered = exec.register_gpu_executor("gpu_monitor_test", gpu_config);
     if (!registered) {
         std::cout << "  GPU monitor test: SKIPPED (GPU not available or failed to start)"
                   << std::endl;
@@ -153,11 +153,11 @@ int main() {
     bool ok = true;
     ok &= test_get_all_gpu_status_empty_when_no_gpu();
     ok &= test_get_gpu_status_unknown_returns_default();
-#ifdef EXECUTOR_ENABLE_GPU
+#ifdef KAIRO_ENABLE_GPU
     ok &= test_gpu_monitor_stats_and_query_api();
     ok &= test_statistics_collector_gpu_apis();
 #else
-    std::cout << "  EXECUTOR_ENABLE_GPU not defined, skipping CudaExecutor-based tests"
+    std::cout << "  KAIRO_ENABLE_GPU not defined, skipping CudaExecutor-based tests"
               << std::endl;
 #endif
     std::cout << (ok ? "=== All GPU monitor tests PASSED ===" : "=== Some tests FAILED ===")

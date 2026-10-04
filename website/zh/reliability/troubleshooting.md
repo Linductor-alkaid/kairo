@@ -9,7 +9,7 @@ description: 从任务不执行、排队变长、等待超时、关闭卡住、�
 
 发生故障时，不要先增加线程数、扩大队列或改成更高优先级。先记录同一时刻的生命周期、工作量和失败信息；否则修改配置后，最有价值的现场也会消失。
 
-优先采集完整 Executor 现场：
+优先采集完整 Kairo 现场：
 
 ```cpp
 const auto snapshot = executor.get_snapshot();
@@ -26,15 +26,15 @@ const auto snapshot = executor.get_snapshot();
 1. 保留并等待该次提交返回的 `future`，用有界 `wait_for()` 区分“尚未完成”和“已经以异常结束”。
 2. 检查 `CompletionStatus::is_initialized` 与 `is_running`。
 3. 检查 `submit_rejected_count` 是否增长，并读取最近的 `SubmitRejected` 事件。
-4. 如果使用任务依赖，确认所有 `TaskHandle` 有效、来自同一个 Executor，且前置任务本身能够结束。
+4. 如果使用任务依赖，确认所有 `TaskHandle` 有效、来自同一个 Kairo，且前置任务本身能够结束。
 5. 如果使用周期任务，改查 `get_periodic_task_status()` 的 `is_running`、`execution_count`、`failed_count` 和 `last_error_message`。
 
 ### 如何判读
 
 | 观察结果 | 更可能的原因 | 下一步 |
 | --- | --- | --- |
-| `is_initialized=false` | 尚未初始化，或首次提交路径没有成功建立默认执行器 | 在第一次提交前调用 `initialize_ex()` 并检查 `error_code`、`message`。 |
-| `is_running=false` | 已关闭，或初始化失败 | 不要复用已 shutdown 的实例；重建拥有独立 Executor 的业务组件。 |
+| `is_initialized=false` | 尚未初始化，或首次提交路径没有成功建立默认执行器 | 在第一次提交前调用 `initialize()` 并检查 `error_code`、`message`。 |
+| `is_running=false` | 已关闭，或初始化失败 | 不要复用已 shutdown 的实例；重建拥有独立 Kairo 的业务组件。 |
 | 拒绝计数增长 | 空任务、停止后提交或入口不可用 | 从最近失败事件定位调用点；让请求层返回明确失败。 |
 | `queued_tasks>0` 且 `active_tasks` 长期不变 | worker 被阻塞，或任务图等待无法满足的前置 | 检查正在运行任务的 I/O、锁和依赖所有权。 |
 | future 已就绪但 `get()` 抛异常 | 任务执行过，并非“没有执行” | 按业务异常处理，不要通过重复提交掩盖根因。 |
@@ -70,10 +70,10 @@ queue_size 持续增长
 
 ## 症状三：等待超时
 
-优先使用 `wait_for_completion_ex(timeout)`，不要只记录一个 `false`；在选择降级策略前同时采集 `get_snapshot()`：
+优先使用 `wait_for_completion(timeout)`，不要只记录一个 `false`；在选择降级策略前同时采集 `get_snapshot()`：
 
 ```cpp
-const auto result = executor.wait_for_completion_ex(shutdown_budget);
+const auto result = executor.wait_for_completion(shutdown_budget);
 if (!result.completed) {
     const auto snapshot = executor.get_snapshot();
     // 记录 result.message、result.status 和 snapshot，再执行预先定义的降级策略。
@@ -104,11 +104,11 @@ flowchart TD
     E --> F[销毁任务捕获的业务对象]
 ```
 
-最常见的原因不是 Executor 自身在“死锁”，而是业务任务永久阻塞、producer 在排空期间继续提交，或任务捕获对象先于任务被析构。
+最常见的原因不是 Kairo 自身在“死锁”，而是业务任务永久阻塞、producer 在排空期间继续提交，或任务捕获对象先于任务被析构。
 
 ### 现场检查
 
-1. 在调用 `shutdown()` 前执行一次短预算的 `wait_for_completion_ex()` 并记录快照。
+1. 在调用 `shutdown()` 前执行一次短预算的 `wait_for_completion()` 并记录快照。
 2. 确认 HTTP handler、设备 callback、timer 和消息 consumer 已停止产生新任务。
 3. 为网络、文件、设备读取和条件变量等待确认业务级超时或唤醒机制。
 4. 检查是否在 worker 内等待同一小线程池中的后续任务。
@@ -137,7 +137,7 @@ flowchart TD
 按“构建能力 → 运行时 → 设备 → 注册 → 单次提交”的顺序检查：
 
 1. 确认 CMake 已启用目标后端；没有编译 GPU 支持时，不要从驱动层开始排查。
-2. 调用 `register_gpu_executor_ex()`，记录 `ExecutorErrorCode` 和完整 `message`。
+2. 调用 `register_gpu_executor()`，记录 `ExecutorErrorCode` 和完整 `message`。
 3. `BackendUnavailable` 通常表示后端未编译、未实现、运行时不可用或没有可用设备；`InvalidConfig` 应先修配置；`StartFailed` 再进入设备和驱动诊断。
 4. 注册成功后，读取 `GpuExecutorStatus::is_running`、`queue_size`、`active_kernels`、`failed_kernels`、显存字段和 `last_error_message`。
 5. 对每次 `submit_gpu()` 保留 future 并调用 `get()`；状态计数不能替代单次 kernel 异常。

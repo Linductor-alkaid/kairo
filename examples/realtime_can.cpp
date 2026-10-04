@@ -19,11 +19,11 @@
 #include <thread>
 #include <unordered_map>
 
-#include <executor/executor.hpp>
-#include <executor/interfaces.hpp>
-#include <executor/types.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/interfaces.hpp>
+#include <kairo/types.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 // ========== SimpleCycleManager：基于 sleep_until 的 ICycleManager 实现 ==========
 
@@ -109,7 +109,7 @@ int main() {
     exec_config.queue_capacity = 100;
 
     auto& exec = Executor::instance();
-    auto init = exec.initialize_ex(exec_config);
+    auto init = exec.initialize(exec_config);
     if (!init) {
         std::cerr << "Failed to initialize executor: " << init.message << std::endl;
         return 1;

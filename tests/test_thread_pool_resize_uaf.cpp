@@ -30,14 +30,14 @@
 #include <thread>
 #include <vector>
 
-#include "executor/thread_pool/load_balancer.hpp"
-#include "executor/thread_pool/priority_scheduler.hpp"
-#include "executor/thread_pool/task_dispatcher.hpp"
-#include "executor/thread_pool/thread_pool.hpp"
-#include "executor/task/task.hpp"
-#include <executor/config.hpp>
+#include "kairo/thread_pool/load_balancer.hpp"
+#include "kairo/thread_pool/priority_scheduler.hpp"
+#include "kairo/thread_pool/task_dispatcher.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
+#include "kairo/task/task.hpp"
+#include <kairo/config.hpp>
 
-using namespace executor;
+using namespace kairo;
 
 #define TEST_ASSERT(condition, message)                                       \
     do {                                                                      \

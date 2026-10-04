@@ -13,7 +13,7 @@
 // wake_seq_ and observes the parked bit, so outliers should cluster near the
 // inter-arrival distribution and far above the median.
 
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -24,7 +24,7 @@
 #include <vector>
 #include <sys/prctl.h>
 
-using executor::LockFreeTaskExecutor;
+using kairo::LockFreeTaskExecutor;
 
 namespace {
 

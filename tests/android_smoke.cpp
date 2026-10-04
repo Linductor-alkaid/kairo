@@ -7,8 +7,8 @@
 #include <mutex>
 #include <thread>
 
-#include <executor/comm.hpp>
-#include <executor/executor.hpp>
+#include <kairo/comm.hpp>
+#include <kairo/executor.hpp>
 
 #define SMOKE_CHECK(condition, message)                                      \
     do {                                                                     \
@@ -21,9 +21,9 @@
 
 namespace {
 
-class BlockingSmokeWorker final : public executor::IBlockingIoWorker {
+class BlockingSmokeWorker final : public kairo::IBlockingIoWorker {
 public:
-    void run(executor::StopToken stop_token) override {
+    void run(kairo::StopToken stop_token) override {
         started_.store(true, std::memory_order_release);
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(lock, [this, stop_token] {
@@ -58,7 +58,7 @@ private:
 };
 
 bool smoke_async_submit() {
-    executor::Executor executor;
+    kairo::Executor executor;
     auto future = executor.submit_auto([] { return 42; });
     SMOKE_CHECK(future.get() == 42, "async task result mismatch");
     executor.shutdown();
@@ -66,14 +66,14 @@ bool smoke_async_submit() {
 }
 
 bool smoke_blocking_io_lifecycle() {
-    executor::Executor executor;
-    executor::BlockingIoConfig config;
+    kairo::Executor executor;
+    kairo::BlockingIoConfig config;
     config.thread_name = "android_smoke_io";
     config.startup_timeout = std::chrono::seconds(5);
 
     auto worker = std::make_unique<BlockingSmokeWorker>();
     auto* worker_view = worker.get();
-    executor::BlockingWorkerSpec spec{
+    kairo::BlockingWorkerSpec spec{
         "android_smoke_io", config, std::move(worker)};
     auto handle = executor.start_worker(std::move(spec));
 
@@ -89,7 +89,7 @@ bool smoke_blocking_io_lifecycle() {
 }
 
 bool smoke_comm_channel() {
-    executor::comm::MpscChannel<int> channel;
+    kairo::comm::MpscChannel<int> channel;
     SMOKE_CHECK(channel.try_send(7), "channel send should succeed");
     int value = 0;
     SMOKE_CHECK(channel.try_receive(value), "channel receive should succeed");
@@ -101,7 +101,7 @@ bool smoke_comm_channel() {
 
 bool smoke_mpsc_burst() {
     constexpr int kTotal = 20'000;
-    executor::comm::MpscChannel<int> channel;
+    kairo::comm::MpscChannel<int> channel;
     std::atomic<int> received{0};
     std::atomic<bool> producer_done{false};
 
@@ -131,7 +131,7 @@ bool smoke_mpsc_burst() {
 }
 
 int soak_seconds() {
-    const char* value = std::getenv("EXECUTOR_ANDROID_SOAK_SECONDS");
+    const char* value = std::getenv("KAIRO_ANDROID_SOAK_SECONDS");
     if (value == nullptr || *value == '\0') {
         return 0;
     }
@@ -150,7 +150,7 @@ bool smoke_mpsc_soak() {
     }
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
-    executor::comm::MpscChannel<int> channel;
+    kairo::comm::MpscChannel<int> channel;
     std::atomic<uint64_t> sent{0};
     std::atomic<uint64_t> received{0};
     std::atomic<bool> stop{false};

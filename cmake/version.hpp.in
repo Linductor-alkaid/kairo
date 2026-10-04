@@ -1,9 +1,9 @@
-// executor/version.hpp — 由 CMake configure_file 从 cmake/version.hpp.in 生成，
+// kairo/version.hpp — 由 CMake configure_file 从 cmake/version.hpp.in 生成，
 // 禁止手改（生成物不进源码树）。版本唯一事实来源：根 CMakeLists.txt 的
-// project(executor VERSION ...)（CR-085）；打包脚本同样从该处提取默认版本。
+// project(kairo VERSION ...)（CR-085）；打包脚本同样从该处提取默认版本。
 #pragma once
 
-#define EXECUTOR_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
-#define EXECUTOR_VERSION_MINOR @PROJECT_VERSION_MINOR@
-#define EXECUTOR_VERSION_PATCH @PROJECT_VERSION_PATCH@
-#define EXECUTOR_VERSION_STRING "@PROJECT_VERSION@"
+#define KAIRO_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define KAIRO_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define KAIRO_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define KAIRO_VERSION_STRING "@PROJECT_VERSION@"

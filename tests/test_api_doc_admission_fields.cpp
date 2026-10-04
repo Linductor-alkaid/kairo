@@ -3,9 +3,9 @@
 // 字段与语义宣称和实际公共结构一致（复用 test_api_doc_cancellation_fields
 // 模式，防止文档漂移）。
 
-#include <executor/config.hpp>
-#include <executor/executor.hpp>
-#include <executor/types.hpp>
+#include <kairo/config.hpp>
+#include <kairo/executor.hpp>
+#include <kairo/types.hpp>
 
 #include <gtest/gtest.h>
 
@@ -14,7 +14,7 @@
 #include <set>
 #include <string>
 
-using namespace executor;
+using namespace kairo;
 
 namespace {
 

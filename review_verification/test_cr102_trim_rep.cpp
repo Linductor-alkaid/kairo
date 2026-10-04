@@ -1,13 +1,13 @@
 // CR-102 rep variant: interleaved repeated measurement of tracked round-trip
 // throughput at retention capacities {1024, 8, 0}; reports every rep plus the
 // best (min-latency) rep per capacity to reduce scheduler noise.
-#include <executor/executor.hpp>
+#include <kairo/executor.hpp>
 
 #include <chrono>
 #include <cstdio>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 
 namespace {
 

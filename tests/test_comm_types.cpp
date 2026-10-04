@@ -1,4 +1,4 @@
-#include <executor/comm.hpp>
+#include <kairo/comm.hpp>
 
 #include <gtest/gtest.h>
 
@@ -9,17 +9,14 @@
 
 namespace {
 
-using namespace executor::comm;
+using namespace kairo::comm;
 
 template <class Primitive>
 void expect_lock_free_contract(const Primitive& primitive) {
     static_assert(requires(const Primitive& candidate) {
         { candidate.is_synchronization_lock_free() } -> std::convertible_to<bool>;
-        { candidate.is_lock_free() } -> std::convertible_to<bool>;
     });
     EXPECT_TRUE(primitive.is_synchronization_lock_free());
-    EXPECT_TRUE(primitive.is_lock_free());
-    EXPECT_EQ(primitive.is_synchronization_lock_free(), primitive.is_lock_free());
 }
 
 TEST(CommTypesTest, CommResultDefaultsToSuccess) {

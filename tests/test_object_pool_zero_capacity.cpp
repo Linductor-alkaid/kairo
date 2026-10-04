@@ -33,7 +33,7 @@ struct PoolValue {
 TEST(ObjectPoolZeroCapacity, ConstructorThrowsOnZero) {
     bool threw_invalid_argument = false;
     try {
-        executor::util::ObjectPool<PoolValue> pool(0);
+        kairo::util::ObjectPool<PoolValue> pool(0);
         // If we reach here, the fix is missing.
         ADD_FAILURE() << "ObjectPool(0) should have thrown std::invalid_argument";
     } catch (const std::invalid_argument&) {
@@ -52,7 +52,7 @@ TEST(ObjectPoolZeroCapacity, ConstructorThrowsOnZero) {
 //    path accidentally corrupted shared state (it shouldn't — we throw
 //    from a local ctor with no side effects yet), this would catch it.
 TEST(ObjectPoolZeroCapacity, NormalCapacityStillWorks) {
-    executor::util::ObjectPool<PoolValue> pool(8);
+    kairo::util::ObjectPool<PoolValue> pool(8);
     PoolValue* a = pool.acquire();
     ASSERT_NE(a, nullptr) << "Fresh pool of capacity 8 should hand out an object";
     a->x = 42;
@@ -71,7 +71,7 @@ TEST(ObjectPoolZeroCapacity, NormalCapacityStillWorks) {
 
 // 3. Default-constructed pool (capacity=1024) is unaffected by the fix.
 TEST(ObjectPoolZeroCapacity, DefaultCapacityUnaffected) {
-    executor::util::ObjectPool<PoolValue> pool;
+    kairo::util::ObjectPool<PoolValue> pool;
     PoolValue* p = pool.acquire();
     ASSERT_NE(p, nullptr);
     pool.release(p);
@@ -80,7 +80,7 @@ TEST(ObjectPoolZeroCapacity, DefaultCapacityUnaffected) {
 // 4. Exhausted pool returns nullptr (regression guard — the fix must not
 //    alter the steady-state contract of acquire()).
 TEST(ObjectPoolZeroCapacity, ExhaustionReturnsNullptr) {
-    executor::util::ObjectPool<PoolValue> pool(3);
+    kairo::util::ObjectPool<PoolValue> pool(3);
     PoolValue* objs[3];
     for (int i = 0; i < 3; ++i) {
         objs[i] = pool.acquire();

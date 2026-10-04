@@ -30,7 +30,7 @@ if (!admission.accepted) {
 直接操作执行器仍适合需要精细生命周期或 benchmark 控制的场景：
 
 ```cpp
-executor::LockFreeTaskExecutor queue(1024);
+kairo::LockFreeTaskExecutor queue(1024);
 queue.start();
 
 if (!queue.push_task([] { process_event(); })) {
@@ -39,7 +39,7 @@ if (!queue.push_task([] { process_event(); })) {
 queue.stop();
 ```
 
-完整示例：[`examples/lockfree_task_executor_example.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/examples/lockfree_task_executor_example.cpp)。它不是普通 `Executor` 的“更快替代品”：没有 future 返回值、任务依赖、统一 failure callback 或多 worker 执行能力。多数业务任务仍应先使用 Facade。
+完整示例：[`examples/lockfree_task_executor_example.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/lockfree_task_executor_example.cpp)。它不是普通 `Executor` 的“更快替代品”：没有 future 返回值、任务依赖、统一 failure callback 或多 worker 执行能力。多数业务任务仍应先使用 Facade。
 
 ## 生命周期与可观察性
 
@@ -50,7 +50,7 @@ queue.stop();
 监控线程推荐使用 `get_status_snapshot()` 取得一份按值可复制的 `QueueStats`：
 
 ```cpp
-executor::LockFreeTaskExecutor exec(4096, 2, /*enable_stats=*/true);
+kairo::LockFreeTaskExecutor exec(4096, 2, /*enable_stats=*/true);
 exec.start();
 
 std::thread monitor([&] {
@@ -75,7 +75,7 @@ std::thread monitor([&] {
 | `cancelled_reservation_count` | 消费者在有界等待（默认 64 次 yield）后取消了 reservation | 检查生产者是否在 `Writing` 窗口被抢占或持有锁。 |
 | `submission_rejection` | 执行器入口拒绝：空任务、已停止、对象池耗尽 | 多为上游逻辑或 `stop()` 竞态，少量空任务是调用方 bug。 |
 
-持续 `reserved_count` 升高而 `ready_count` 不动说明生产者卡在预留窗口；持续 `cancelled_reservation_count` 升高说明消费者侧取消恢复频繁；`submission_rejection` 持续增长而 `contention_rejection` 为零则把注意力放在调用方与生命周期，而不是队列本身。完整字段表与默认 64 次 yield 预算见 [`docs/API.md` §5.5](https://github.com/Linductor-alkaid/executor/blob/master/docs/API.md)（“状态快照与背压诊断”章节）。新测试 `tests/test_lockfree_queue_status.cpp` 覆盖了按值复制与并发采样不阻塞生产者的契约。
+持续 `reserved_count` 升高而 `ready_count` 不动说明生产者卡在预留窗口；持续 `cancelled_reservation_count` 升高说明消费者侧取消恢复频繁；`submission_rejection` 持续增长而 `contention_rejection` 为零则把注意力放在调用方与生命周期，而不是队列本身。完整字段表与默认 64 次 yield 预算见 [`docs/API.md` §5.5](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md)（“状态快照与背压诊断”章节）。新测试 `tests/test_lockfree_queue_status.cpp` 覆盖了按值复制与并发采样不阻塞生产者的契约。
 
 ## 当前内部结构
 
@@ -195,7 +195,7 @@ consumer pop
 
 基准中的 `size()`、`pending_count()` 和 queue stats 是观察值，不要用它们替代完成计数或 future 对账。
 
-对应源码入口：[`src/executor/lockfree_task_executor.cpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/lockfree_task_executor.cpp)、[`include/executor/lockfree_task_executor.hpp`](https://github.com/Linductor-alkaid/executor/blob/master/include/executor/lockfree_task_executor.hpp)、[`src/executor/util/lockfree_queue.hpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/executor/util/lockfree_queue.hpp) 和 [`src/util/object_pool.hpp`](https://github.com/Linductor-alkaid/executor/blob/master/src/util/object_pool.hpp)。
+对应源码入口：[`src/kairo/lockfree_task_executor.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/lockfree_task_executor.cpp)、[`include/kairo/lockfree_task_executor.hpp`](https://github.com/Linductor-alkaid/kairo/blob/master/include/kairo/lockfree_task_executor.hpp)、[`src/kairo/util/lockfree_queue.hpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/kairo/util/lockfree_queue.hpp) 和 [`src/util/object_pool.hpp`](https://github.com/Linductor-alkaid/kairo/blob/master/src/util/object_pool.hpp)。
 
 ## 下一步阅读
 

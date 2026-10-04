@@ -16,7 +16,7 @@
 //
 // 用法: ./cr005 [运行秒数=480] [间隔下限us=8000] [间隔上限us=15000]
 
-#include "executor/lockfree_task_executor.hpp"
+#include "kairo/lockfree_task_executor.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -27,7 +27,7 @@
 #include <thread>
 #include <vector>
 
-using executor::LockFreeTaskExecutor;
+using kairo::LockFreeTaskExecutor;
 
 namespace {
 

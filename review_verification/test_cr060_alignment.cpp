@@ -5,7 +5,7 @@
 // Setup: raw_alloc = std::aligned_alloc(256, ...) so every raw block start is
 // 256-byte aligned. Then any misalignment observed in the returned pointer is
 // attributable solely to the +8 header offset inside GpuMemoryManager.
-#include "executor/gpu/gpu_memory_manager.hpp"
+#include "kairo/gpu/gpu_memory_manager.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -13,7 +13,7 @@
 #include <vector>
 #include <cstring>
 
-using executor::gpu::GpuMemoryManager;
+using kairo::gpu::GpuMemoryManager;
 
 namespace {
 

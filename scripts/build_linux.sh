@@ -1,6 +1,6 @@
 #!/bin/bash
 # Linux 构建脚本
-# 用于构建 executor 库的静态库和动态库
+# 用于构建 kairo 库的静态库和动态库
 
 set -e  # 遇到错误立即退出
 
@@ -48,7 +48,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "========================================"
-echo "Executor Linux Build Script"
+echo "Kairo Linux Build Script"
 echo "========================================"
 echo "Build Type: $BUILD_TYPE"
 echo "Build Static: $BUILD_STATIC"
@@ -85,9 +85,9 @@ if [ "$BUILD_STATIC" = "true" ]; then
     echo "Configuring static library build..."
     cmake -B "$STATIC_BUILD_DIR" \
         -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-        -DEXECUTOR_BUILD_SHARED=OFF \
-        -DEXECUTOR_BUILD_TESTS="$BUILD_TESTS" \
-        -DEXECUTOR_BUILD_EXAMPLES="$BUILD_EXAMPLES" \
+        -DKAIRO_BUILD_SHARED=OFF \
+        -DKAIRO_BUILD_TESTS="$BUILD_TESTS" \
+        -DKAIRO_BUILD_EXAMPLES="$BUILD_EXAMPLES" \
         -DCMAKE_INSTALL_PREFIX="$STATIC_BUILD_DIR/install"
     
     if [ $? -ne 0 ]; then
@@ -129,9 +129,9 @@ if [ "$BUILD_SHARED" = "true" ]; then
     echo "Configuring shared library build..."
     cmake -B "$SHARED_BUILD_DIR" \
         -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-        -DEXECUTOR_BUILD_SHARED=ON \
-        -DEXECUTOR_BUILD_TESTS="$BUILD_TESTS" \
-        -DEXECUTOR_BUILD_EXAMPLES="$BUILD_EXAMPLES" \
+        -DKAIRO_BUILD_SHARED=ON \
+        -DKAIRO_BUILD_TESTS="$BUILD_TESTS" \
+        -DKAIRO_BUILD_EXAMPLES="$BUILD_EXAMPLES" \
         -DCMAKE_INSTALL_PREFIX="$SHARED_BUILD_DIR/install"
     
     if [ $? -ne 0 ]; then

@@ -4,11 +4,11 @@
 #include <memory>
 #include <stdexcept>
 
-#include "executor/gpu/cuda_executor.hpp"
+#include "kairo/gpu/cuda_executor.hpp"
 
-using executor::gpu::CudaExecutor;
-using executor::gpu::GpuBackend;
-using executor::gpu::GpuExecutorConfig;
+using kairo::gpu::CudaExecutor;
+using kairo::gpu::GpuBackend;
+using kairo::gpu::GpuExecutorConfig;
 
 namespace {
 
@@ -44,7 +44,7 @@ struct ThrowingHostCallbackShim {
 }  // namespace
 
 TEST(CudaStreamCallbackTest, ThrowingCallbackDoesNotTerminate) {
-#ifndef EXECUTOR_ENABLE_CUDA
+#ifndef KAIRO_ENABLE_CUDA
     GTEST_SKIP() << "CUDA support not enabled";
 #else
     auto config = make_cuda_config();
@@ -67,7 +67,7 @@ TEST(CudaStreamCallbackTest, ThrowingCallbackDoesNotTerminate) {
 }
 
 TEST(CudaStreamCallbackTest, NonThrowingCallbackCompletesNormally) {
-#ifndef EXECUTOR_ENABLE_CUDA
+#ifndef KAIRO_ENABLE_CUDA
     GTEST_SKIP() << "CUDA support not enabled";
 #else
     auto config = make_cuda_config();

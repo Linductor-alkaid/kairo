@@ -12,7 +12,7 @@
 // NOTE: waiters use try_wait_for_completion which also calls
 // dispatch_pending_tasks() between slices, so the delta is an upper bound of
 // the notify cost (includes lock contention from the waiting path itself).
-#include "executor/thread_pool/thread_pool.hpp"
+#include "kairo/thread_pool/thread_pool.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -21,7 +21,7 @@
 #include <thread>
 #include <vector>
 
-using namespace executor;
+using namespace kairo;
 namespace chrono = std::chrono;
 
 static double bench_once(ThreadPool& pool, int n) {
