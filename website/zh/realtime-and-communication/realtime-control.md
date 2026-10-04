@@ -38,7 +38,7 @@ realtime started=yes, command=queued, cycles=observed, command ran=yes
 ## 生命周期与队列
 
 1. 填写最小 `RealtimeThreadConfig`：名称、周期和 `cycle_callback`。
-2. 用 `_ex` 变体注册并启动；失败时读取 `ExecutorResult::error_code` 和 `message`。
+2. `register_realtime_task()` / `start_realtime_task()` 直接返回 `ExecutorResult`；失败时读取 `error_code` 和 `message`。
 3. 通过 `push_realtime_task()` 或 `try_push_realtime_task()` 投递常规控制工作；返回 `false` 表示未入队。
 4. 用 `get_realtime_executor_status()` 和 `get_realtime_task_list()` 观察运行状态，完成后调用 `stop_realtime_task()`。
 

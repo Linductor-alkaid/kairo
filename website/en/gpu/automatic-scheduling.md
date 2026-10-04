@@ -1,6 +1,6 @@
 ---
 title: CPU/GPU Automatic Selection
-description: Use cpu_gpu_task to express independent paths, configure fallback, and understand the legacy submit_auto boundary.
+description: Use cpu_gpu_task to express independent paths, configure fallback, and understand explicit GPU-unavailable failures.
 ---
 
 # CPU/GPU Automatic Selection
@@ -45,27 +45,13 @@ The public `Executor` routing path currently uses only explicit preference and t
 
 `CpuGpuTask` supplies `data_size`, `compute_intensity`, and `prefer_gpu()` task characteristics. The Facade's actual choice uses explicit GPU preference and thresholds. A GPU enters the candidate set only when it is registered, running, error-free, and below known hard capacity.
 
-## Compatibility path: legacy four-argument overload
+## Migrating from the legacy four-argument overload (removed in 0.6.0)
 
-`0.3.x` retains this overload for existing code. Its CPU branch invokes one callable with a null stream, and an unready GPU does not implicitly fall back to CPU:
-
-```cpp
-auto data = std::make_shared<WorkData>(prepare_work());
-auto future = executor.submit_auto(work, "cuda0",
-    [data](void* stream) {
-        if (stream == nullptr) {
-            run_cpu(*data);
-        } else {
-            run_gpu(stream, *data);
-        }
-    }, gpu_task_config);
-```
-
-Use it only for incremental migration. When the paths need different inputs or lifetimes, use `cpu_gpu_task()` above. This overload receives no compile-time deprecation marker before the next breaking major version.
+0.3.x-0.5.x kept a four-argument `submit_auto(characteristics, gpu_name, kernel, gpu_config)` overload: one callable ran its CPU branch with a null stream and its GPU branch otherwise. 0.6.0 removed it - the two paths are now expressed as the two independent callables of `cpu_gpu_task()` (previous section). To migrate, move the null-stream branch into the CPU callable and the other branch into the GPU callable, splitting inputs and lifetimes as needed.
 
 ## No implicit fallback
 
-The new dual-path `submit_auto()` follows `FallbackPolicy`: only `AllowCpu` falls back; `NoFallback` and the legacy overload fail explicitly. First call `register_gpu_executor()` and inspect status before admitting GPU characteristics or `prefer_gpu`.
+The dual-path `submit_auto()` follows `FallbackPolicy`: only `AllowCpu` falls back; `NoFallback` fails explicitly (the pre-0.6.0 legacy overload was removed). First call `register_gpu_executor()` and inspect status before admitting GPU characteristics or `prefer_gpu`.
 
 ## Tune configuration from measurement
 

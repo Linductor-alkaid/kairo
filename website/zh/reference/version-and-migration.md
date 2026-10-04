@@ -7,7 +7,7 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
 
 ## 当前版本说明
 
-项目 CMake 与最新发布记录的版本均为 `v0.5.3`。本站以该稳定版为基线，同时跟随 `master` 的后续开发；未在稳定 tag 中发布的能力不构成版本承诺。首发不维护历史版本站点；发布时应以 tag 重新核对页面。
+项目 CMake 与最新发布记录的版本均为 `v0.6.0`。本站以该稳定版为基线，同时跟随 `master` 的后续开发；未在稳定 tag 中发布的能力不构成版本承诺。首发不维护历史版本站点；发布时应以 tag 重新核对页面。
 
 | 需要确认什么 | 入口 |
 | --- | --- |
@@ -15,6 +15,15 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
 | 从旧 API 的推荐迁移路径 | [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) |
 | 选项、编译器与后端前置 | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | 当前完整签名 | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
+
+## 0.6.0：更名 kairo、兼容层清理与 Scheduling Runtime
+
+v0.6.0 是破坏性变更窗口，包含三部分：
+
+- **项目更名**：Executor → kairo（命名空间 `kairo::`、include `<kairo/...>`、CMake `KAIRO_*`、包名 `libkairo`）；`Executor` 保留为领域类名。
+- **兼容层清理**：`initialize_ex` 等 `_ex` 变体接管主名并删除旧 bool/void 版本；定时器字符串 ID 体系（`cancel_task(task_id)`）由 `TimerHandle` 取代；`IRealtimeExecutor::push_task()` 改返回 `ExecutorResult`。完整对照表见 [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) 的"从 0.5.x 升级到 0.6.0"一节。
+- **Scheduling Runtime**：调度决策解耦为可注入的 `IScheduler`；任务可声明 deadline（同优先级内 EDF、提交时过期拒绝、错过记 `DeadlineMissed`）、QoS（`BestEffort/Standard/Interactive/Critical` 排队优先级 preset）、affinity（advisory）与资源需求（可行性核对）。入门见[声明任务的期限、优先级与资源](/zh/tutorial/scheduling-runtime)，设计见 `docs/design/scheduling_runtime.md`。
+
 
 ## 0.5.3：评审修复与定时器事件驱动
 
@@ -24,25 +33,9 @@ v0.5.3 是稳定性与性能维护版本，公开 API 签名不变。落地 2026
 
 v0.5.2 把任务图依赖等待演进为 dependency-driven scheduling：`submit_after` 的 dependent 在依赖未就绪时不再入队占用 worker，parked 超时与 shutdown 结算语义详见 [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) 的"从 0.5.0 升级到 0.5.2"一节。公开 API 签名不变（新增诊断接口 `closure_graveyard_size()`）。
 
-## `bool` 到 `_ex` 的迁移
+## 诊断结果 API（原 `bool` → `_ex` 迁移的终点）
 
-旧入口保持兼容，适合调用方只需成功/失败的场景；新代码在需要诊断、日志或可靠回退时优先使用 `_ex`，读取 `ExecutorResult::error_code` 与 `message`。
-
-<div class="migration-table">
-
-| 迁移 | 适用情况 |
-| --- | --- |
-| `initialize(config)` → `initialize(config)` | 配置错误、重复初始化或 shutdown 后调用需要区分原因。 |
-| `register_realtime_task(name, config)` → `register_realtime_task(name, config)` | 需要区分非法配置、重名、权限/启动问题。 |
-| `start_realtime_task(name)` → `start_realtime_task(name)` | 需要区分不存在、重复启动与平台启动失败。 |
-| `register_gpu_executor(name, config)` → `register_gpu_executor(name, config)` | 需要区分无效配置与 `BackendUnavailable`。 |
-| `wait_for_completion()` → `wait_for_completion_for()` / `_ex()` | 不可无限等待，或超时后需要状态快照。 |
-| `IRealtimeExecutor::push_task()` → `Executor::try_push_realtime_task()` | 希望得到拒绝返回、failure event 和背压计数。 |
-
-</div>
-
-`_ex` 不是“总是更好”的第二套业务 API：若调用方只需布尔结果，兼容入口仍有效。迁移的价值在于把失败原因接到业务日志、告警或降级策略，而非改变任务执行模型。
-
+0.2.x–0.5.x 期间，诊断型结果以 `_ex` 后缀 API 与旧 `bool`/`void` 入口并存。0.6.0 已完成收敛：**`_ex` 变体接管主名**（如 `initialize_ex` → `initialize`），旧弱版本与 `_ex` 拼写一并移除，所有关键边界直接返回 `ExecutorResult` / `WaitResult`。从 0.5.x 迁移时按 MIGRATION.md 的对照表改名即可；从更早版本升级的调用方先按各版本小节迁移到 0.5.x 形态，再应用 0.6.0 对照表。
 ## 0.3.1：从后端优先到意图优先
 
 新代码的默认阅读和接入顺序是先使用 `submit_auto(lambda)`，再在业务明确需要 CPU/GPU 双实现、有界 admission 或长期 worker 生命周期时进入专用路径：
@@ -96,14 +89,14 @@ delayed 任务的行为变化见仓库 [MIGRATION.md](https://github.com/Linduct
 
 1. 阅读目标版本 CHANGELOG，并确认本页所述能力已经在目标 tag 中存在。
 2. 用目标编译器、操作系统与 GPU/实时权限重新配置并构建。
-3. 将初始化、实时/GPU 注册等关键边界换为 `_ex`；为 `future`、返回值和状态计数保留观察路径。
+3. 按 MIGRATION.md 0.6.0 对照表更新 API 名称；为 `future`、返回值和状态计数保留观察路径。
 4. 对实时配置复查亲和性、内存锁与 timer slack 的实际应用状态；对 GPU 复查后端、驱动和设备。
 5. 运行测试和教程 smoke tests，再在目标负载下复测超时、背压与性能。
 
 ## 术语约定
 
 - **稳定公开 API**：`include/kairo/` 下安装并受兼容约束的声明。
-- **兼容入口**：为保留既有调用而存在的 `bool` / `void` API；不等于废弃。
+- **兼容入口**：0.5.x 及以前为保留既有调用而存在的 `bool` / `void` API；0.6.0 起已全部移除。
 - **开发快照能力**：`master` 中已有但尚未标记到稳定发布版本的内容。
 - **测试钩子和内部实现**：测试注入 API、`src/` 类型和实现细节，不作为普通集成依赖。
 

@@ -7,7 +7,7 @@ description: Entry points for the development snapshot, releases, and API migrat
 
 ## Current scope
 
-The latest release record is `v0.5.3`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
+The latest release record is `v0.6.0`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
 
 | What to check | Source of truth |
 | --- | --- |
@@ -15,6 +15,15 @@ The latest release record is `v0.5.3`. This site uses that stable version as its
 | Recommended migrations from older APIs | [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) |
 | Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | Complete current signatures | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
+
+## 0.6.0: renamed to kairo, compatibility layer removed, Scheduling Runtime
+
+v0.6.0 is the breaking-change window with three parts:
+
+- **Rename**: Executor -> kairo (namespace `kairo::`, includes `<kairo/...>`, CMake `KAIRO_*`, package `libkairo`); `Executor` remains the domain class name.
+- **Compatibility-layer removal**: the `_ex` variants take over the primary names (`initialize_ex` -> `initialize`) and the old bool/void entries are gone; the timer string-id era (`cancel_task(task_id)`) is replaced by `TimerHandle`; `IRealtimeExecutor::push_task()` now returns `ExecutorResult`. See the migration tables in [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md).
+- **Scheduling Runtime**: scheduling decisions moved behind an injectable `IScheduler`; tasks declare deadline (EDF within a priority class, expired-at-submission rejection, missed -> `DeadlineMissed`), QoS (`BestEffort/Standard/Interactive/Critical` queue-priority preset), affinity (advisory) and resource requirements (feasibility check). Start with [Declare Deadlines, Priorities, and Resources](/en/tutorial/scheduling-runtime); design in `docs/design/scheduling_runtime.md`.
+
 
 ## 0.5.3: review fixes and the event-driven timer
 
@@ -24,20 +33,9 @@ v0.5.3 is a stability-and-performance maintenance release with unchanged public 
 
 v0.5.2 moves task-graph dependency waiting to dependency-driven scheduling: `submit_after` dependents no longer enter the pool (and occupy workers) while prerequisites are unresolved. See the "upgrading from 0.5.0 to 0.5.2" section of [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) for the parked timeout and shutdown settlement semantics. Public API signatures are unchanged (one new diagnostic, `closure_graveyard_size()`).
 
-## Moving from `bool` to `_ex`
+## Diagnostic result APIs (endpoint of the `bool` -> `_ex` migration)
 
-The legacy entry points remain compatible when a caller only needs success or failure. New code that must log, alert, or fall back safely should prefer the diagnostic `_ex` variants and inspect `ExecutorResult::error_code` and `message`.
-
-| Migration | Use it when |
-| --- | --- |
-| `initialize(config)` → `initialize(config)` | Configuration, repeated initialization, or post-shutdown failures need distinct causes. |
-| `register_realtime_task(...)` → `register_realtime_task(...)` | You need to distinguish invalid configuration, duplicate names, or platform startup failures. |
-| `register_gpu_executor(...)` → `register_gpu_executor(...)` | You need to distinguish invalid configuration from `BackendUnavailable`. |
-| `wait_for_completion()` → `wait_for_completion_for()` / `_ex()` | Waiting must be bounded or timeout status must be recorded. |
-| `IRealtimeExecutor::push_task()` → `Executor::try_push_realtime_task()` | Rejection, backpressure, and failure events must be observable. |
-
-`_ex` is not a second business API that is always superior. Its value is connecting a failure reason to logs, alerts, or a fallback path.
-
+Through 0.2.x-0.5.x, diagnostic results shipped as `_ex`-suffixed APIs beside the old `bool`/`void` entries. 0.6.0 completed the convergence: **the `_ex` variants took over the primary names** (`initialize_ex` -> `initialize`) and both the weak versions and the `_ex` spellings were removed; key boundaries now return `ExecutorResult` / `WaitResult` directly. When migrating from 0.5.x, rename per the MIGRATION.md tables; older callers should first follow the per-version sections to reach the 0.5.x shape, then apply the 0.6.0 tables.
 ## 0.3.1: from backend-first to intent-first
 
 New code begins with `submit_auto(lambda)`, then enters a specialist path only when the business explicitly requires independent CPU/GPU implementations, bounded admission, or a long-lived worker lifecycle:
