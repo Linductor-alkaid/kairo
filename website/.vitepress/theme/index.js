@@ -6,26 +6,29 @@ import './custom.css'
 const zoomStep = 0.25
 const minZoom = 0.5
 const maxZoom = 3
-const siteBase = '/executor'
+const siteBase = '/kairo'
 
 function withSiteBase(path) {
   return `${siteBase}${path}`
 }
 
 function normalizeRoutePath(path) {
-  const cleanPath = path.replace(/\.html$/, '').replace(/^\/executor(?=\/|$)/, '') || '/'
-  const localePath = cleanPath
-    .replace(/^\/en\/zh(?=\/|$)/, '/zh')
-    .replace(/^\/zh\/en(?=\/|$)/, '/en')
-  return localePath.endsWith('/') || localePath === '/' ? localePath : localePath.replace(/\/$/, '')
+  const cleanPath = path.replace(/\.html$/, '').replace(/^\/kairo(?=\/|$)/, '') || '/'
+  return cleanPath.endsWith('/') || cleanPath === '/' ? cleanPath : cleanPath.replace(/\/$/, '')
 }
 
 function switchLocalePath(path) {
   if (path === '/') return '/en/'
   if (path === '/en/' || path === '/en') return '/'
+  // 站务页（decisions/maintenance/translation-status）的中文版在 root，
+  // 英文版在 /en/ 下，与前述内容目录方向相反。
+  if (path.startsWith('/en/decisions') || path.startsWith('/en/maintenance') ||
+      path.startsWith('/en/translation-status')) {
+    return path.replace(/^\/en/, '') || '/'
+  }
   if (path.startsWith('/zh/')) return path.replace(/^\/zh(?=\/)/, '/en')
   if (path.startsWith('/en/')) return path.replace(/^\/en(?=\/)/, '/zh')
-  return '/en/'
+  return `/en${path}`
 }
 
 function requestedPath(routePath) {
