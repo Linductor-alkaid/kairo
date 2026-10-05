@@ -65,38 +65,48 @@ ProcessorGroupApi& processor_group_api() {
     return g_processor_group_api_override != nullptr ? *g_processor_group_api_override
                                                      : real_api;
 }
-}  // namespace
 
-void set_processor_group_api_for_test(ProcessorGroupApi* api) {
-    g_processor_group_api_override = api;
+// 把 std::thread::native_handle_type 折算成 Win32 HANDLE：MSVC 与 MinGW
+// win32 线程模型下它本身就是 HANDLE（void*）；MinGW posix 线程模型
+// （winpthreads）下它是 pthread_t——winpthreads 内部对象标识（整数类型），
+// 不是 Win32 HANDLE，须经 pthread_gethandle() 取其底层句柄。返回的句柄
+// 所有权归 winpthreads，这里只使用、不关闭。
+// 不主动包含 pthread.h：posix 模型下 <thread> 已把它带进来并定义
+// __WINPTHREADS_VERSION_MAJOR；win32 模型与 MSVC 下没有它，走恒等分支。
+#if defined(__MINGW32__) && defined(__WINPTHREADS_VERSION_MAJOR)
+HANDLE to_win32_thread_handle(std::thread::native_handle_type handle) {
+    return static_cast<HANDLE>(pthread_gethandle(handle));
 }
+#else
+HANDLE to_win32_thread_handle(std::thread::native_handle_type handle) {
+    return static_cast<HANDLE>(handle);
+}
+#endif
 
-bool set_thread_priority(std::thread::native_handle_type handle, int priority) {
-    // Windows优先级映射
-    // priority范围：-2到2，对应THREAD_PRIORITY_IDLE到THREAD_PRIORITY_TIME_CRITICAL
-    int win_priority;
-    
+// Windows 优先级映射：通用优先级值 → THREAD_PRIORITY_* 常量。
+int map_priority_to_win32(int priority) {
     if (priority <= -15) {
-        win_priority = THREAD_PRIORITY_IDLE;
+        return THREAD_PRIORITY_IDLE;
     } else if (priority <= -10) {
-        win_priority = THREAD_PRIORITY_LOWEST;
+        return THREAD_PRIORITY_LOWEST;
     } else if (priority <= -5) {
-        win_priority = THREAD_PRIORITY_BELOW_NORMAL;
+        return THREAD_PRIORITY_BELOW_NORMAL;
     } else if (priority <= 0) {
-        win_priority = THREAD_PRIORITY_NORMAL;
+        return THREAD_PRIORITY_NORMAL;
     } else if (priority <= 5) {
-        win_priority = THREAD_PRIORITY_ABOVE_NORMAL;
+        return THREAD_PRIORITY_ABOVE_NORMAL;
     } else if (priority <= 10) {
-        win_priority = THREAD_PRIORITY_HIGHEST;
+        return THREAD_PRIORITY_HIGHEST;
     } else {
-        win_priority = THREAD_PRIORITY_TIME_CRITICAL;
+        return THREAD_PRIORITY_TIME_CRITICAL;
     }
-    
-    return SetThreadPriority(handle, win_priority) != 0;
 }
 
-bool set_cpu_affinity(std::thread::native_handle_type handle,
-                      const std::vector<int>& cpu_ids) {
+// 把逻辑 CPU 编号列表折算成单组 (group, mask) 亲和性请求。逻辑 CPU 编号 =
+// group * 64 + 组内序号，单线程亲和性只能用一个 (group, mask) 表达，因此
+// 请求必须全部落在同一处理器组内；跨组或指向未激活 CPU 的请求整体拒绝。
+bool compute_group_affinity(const std::vector<int>& cpu_ids,
+                            ProcessorGroupAffinity* out) {
     if (cpu_ids.empty()) {
         return false;
     }
@@ -107,9 +117,6 @@ bool set_cpu_affinity(std::thread::native_handle_type handle,
         return false;
     }
 
-    // 逻辑 CPU 编号 = group * 64 + 组内序号。单线程亲和性只能用一个
-    // (group, mask) 表达，因此请求必须全部落在同一处理器组内；跨组或指向
-    // 未激活 CPU 的请求整体拒绝。
     unsigned long long mask = 0;
     int requested_group = -1;
     for (int cpu_id : cpu_ids) {
@@ -131,10 +138,44 @@ bool set_cpu_affinity(std::thread::native_handle_type handle,
         mask |= (1ULL << index_in_group);
     }
 
+    out->mask = mask;
+    out->group = static_cast<unsigned short>(requested_group);
+    return true;
+}
+}  // namespace
+
+void set_processor_group_api_for_test(ProcessorGroupApi* api) {
+    g_processor_group_api_override = api;
+}
+
+bool set_thread_priority(std::thread::native_handle_type handle, int priority) {
+    return SetThreadPriority(
+               to_win32_thread_handle(handle), map_priority_to_win32(priority)) != 0;
+}
+
+bool set_current_thread_priority(int priority) {
+    // GetCurrentThread() 是仅在本线程内有效的伪句柄，无需打开/关闭。
+    return SetThreadPriority(GetCurrentThread(), map_priority_to_win32(priority)) != 0;
+}
+
+bool set_cpu_affinity(std::thread::native_handle_type handle,
+                      const std::vector<int>& cpu_ids) {
     ProcessorGroupAffinity affinity{};
-    affinity.mask = mask;
-    affinity.group = static_cast<unsigned short>(requested_group);
-    return api.set_thread_group_affinity(handle, &affinity) != 0;
+    if (!compute_group_affinity(cpu_ids, &affinity)) {
+        return false;
+    }
+    return processor_group_api().set_thread_group_affinity(
+               to_win32_thread_handle(handle), &affinity) != 0;
+}
+
+bool set_current_thread_affinity(const std::vector<int>& cpu_ids) {
+    ProcessorGroupAffinity affinity{};
+    if (!compute_group_affinity(cpu_ids, &affinity)) {
+        return false;
+    }
+    // 伪句柄语义同 set_current_thread_priority。
+    return processor_group_api().set_thread_group_affinity(
+               GetCurrentThread(), &affinity) != 0;
 }
 
 int get_current_thread_priority() {
@@ -182,10 +223,20 @@ std::vector<int> get_current_thread_affinity() {
 }
 
 void set_current_thread_name(const std::string& name) {
-    // Windows 通过 SetThreadDescription 设置线程名（需要 Win10 1607+）
+    // Windows 通过 SetThreadDescription 设置线程名（需要 Win10 1607+）。
+    // MSVC SDK 声明了该 API，但 MinGW-w64 头文件不一定有；且静态导入会让
+    // Win10 1607 之前的系统直接加载失败。统一经 GetProcAddress 动态解析，
+    // 解析不到就放弃设置（诊断信息，best-effort）。
+    using SetThreadDescriptionFn = HRESULT(WINAPI*)(HANDLE, PCWSTR);
+    static const SetThreadDescriptionFn set_thread_description = reinterpret_cast<
+        SetThreadDescriptionFn>(reinterpret_cast<void*>(GetProcAddress(
+        GetModuleHandleW(L"kernel32.dll"), "SetThreadDescription")));
+    if (set_thread_description == nullptr) {
+        return;
+    }
     // 将窄字符串转换为宽字符串
     std::wstring wname(name.begin(), name.end());
-    SetThreadDescription(GetCurrentThread(), wname.c_str());
+    (void)set_thread_description(GetCurrentThread(), wname.c_str());
 }
 
 bool set_current_thread_timer_slack_ns(uint64_t /*slack_ns*/) {
@@ -297,6 +348,14 @@ bool set_cpu_affinity(std::thread::native_handle_type handle,
 #else
     return pthread_setaffinity_np(handle, sizeof(cpu_set_t), &cpuset) == 0;
 #endif
+}
+
+bool set_current_thread_priority(int priority) {
+    return set_thread_priority(pthread_self(), priority);
+}
+
+bool set_current_thread_affinity(const std::vector<int>& cpu_ids) {
+    return set_cpu_affinity(pthread_self(), cpu_ids);
 }
 
 int get_current_thread_priority() {

@@ -5,12 +5,6 @@
 #include <exception>
 #include <utility>
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <pthread.h>
-#endif
-
 namespace kairo {
 
 BlockingIoExecutor::BlockingIoExecutor(
@@ -153,13 +147,8 @@ void BlockingIoExecutor::run(StopToken stop_token) noexcept {
     util::set_current_thread_name(config_.thread_name);
 
     if (!config_.cpu_affinity.empty()) {
-#ifdef _WIN32
-        auto self_handle = static_cast<std::thread::native_handle_type>(GetCurrentThread());
-#else
-        auto self_handle = pthread_self();
-#endif
         cpu_affinity_applied_.store(
-            util::set_cpu_affinity(self_handle, config_.cpu_affinity),
+            util::set_current_thread_affinity(config_.cpu_affinity),
             std::memory_order_release);
     }
     // 引用计数租约：run() 返回（worker 退出、执行器停止）时释放，多个

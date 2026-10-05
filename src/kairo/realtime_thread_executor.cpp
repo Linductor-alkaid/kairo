@@ -11,10 +11,6 @@
 // Wraps at hw_concurrency so threads spread across all available CPUs.
 static std::atomic<unsigned> g_next_rt_cpu_hint{0};
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 namespace kairo {
 
 namespace {
@@ -98,13 +94,10 @@ bool RealtimeThreadExecutor::start() {
 #endif
         
         // 自适应 priority: 用户未显式设 (== 0) 时, 按周期建议
-        // 使用 pthread_self()/GetCurrentThread() 而非 thread_.native_handle()，
-        // 避免与主线程的 thread_ move-assign 产生 data race.
-#ifdef _WIN32
-        auto self_handle = static_cast<std::thread::native_handle_type>(GetCurrentThread());
-#else
-        auto self_handle = pthread_self();
-#endif
+        // 线程体内经 set_current_thread_* 自应用：不用 thread_.native_handle()
+        // （避免与主线程的 thread_ move-assign 产生 data race），也不把
+        // Win32 伪 HANDLE / pthread_self 硬塞进 std::thread::native_handle_type
+        // （MinGW posix 线程模型下二者类型不相容，无法转换）。
         if (config_.thread_priority == 0 && config_.cycle_period_ns > 0) {
 #ifndef __ANDROID__
             int auto_priority = 0;
@@ -115,7 +108,7 @@ bool RealtimeThreadExecutor::start() {
             }  // > 10ms 保持 0 (普通调度够用)
             if (auto_priority > 0) {
                 priority_applied_.store(
-                    util::set_thread_priority(self_handle, auto_priority),
+                    util::set_current_thread_priority(auto_priority),
                     std::memory_order_release);
             }
 #else
@@ -126,7 +119,7 @@ bool RealtimeThreadExecutor::start() {
         } else if (config_.thread_priority != 0) {
             // 用户显式设了, 尊重覆盖
             priority_applied_.store(
-                util::set_thread_priority(self_handle, config_.thread_priority),
+                util::set_current_thread_priority(config_.thread_priority),
                 std::memory_order_release);
         }
 
@@ -141,12 +134,12 @@ bool RealtimeThreadExecutor::start() {
                     g_next_rt_cpu_hint.fetch_add(1, std::memory_order_relaxed);
                 const int cpu = allowed_cpus[hint % allowed_cpus.size()];
                 cpu_affinity_applied_.store(
-                    util::set_cpu_affinity(self_handle, {cpu}),
+                    util::set_current_thread_affinity({cpu}),
                     std::memory_order_release);
             }
         } else {
             cpu_affinity_applied_.store(
-                util::set_cpu_affinity(self_handle, config_.cpu_affinity),
+                util::set_current_thread_affinity(config_.cpu_affinity),
                 std::memory_order_release);
         }
 
