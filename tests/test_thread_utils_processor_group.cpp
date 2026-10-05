@@ -84,8 +84,16 @@ public:
     ~ApiRestoreGuard() { set_processor_group_api_for_test(nullptr); }
 };
 
-void* test_thread_handle() {
-    return static_cast<void*>(GetCurrentThread());
+// 替身不读句柄值，只要求类型是 set_cpu_affinity 的形参类型。MSVC 与 MinGW
+// win32 线程模型下 native_handle_type 就是 void*，直接用 GetCurrentThread()
+// 伪句柄；MinGW posix 线程模型（winpthreads）下它是 pthread_t（整数），不能
+// 从伪 HANDLE 转换——改用 pthread_self()，其值也是真实合法句柄。
+std::thread::native_handle_type test_thread_handle() {
+#if defined(__MINGW32__) && defined(__WINPTHREADS_VERSION_MAJOR)
+    return pthread_self();
+#else
+    return static_cast<std::thread::native_handle_type>(GetCurrentThread());
+#endif
 }
 
 TEST(ThreadUtilsProcessorGroup, MapsCpu63ToGroup0LastBit) {

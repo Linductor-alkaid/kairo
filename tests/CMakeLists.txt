@@ -164,8 +164,11 @@ endif()
 # 既有的 Windows 移植债务（POSIX 专用 API、按直接源码编译的 CUDA 链接
 # 配置、facade record_* 符号在 MSVC 下未解析），补齐前先在 MSVC 排除，
 # 其余 ~110 个测试进入 Windows 门禁（此前只有 6 个 standalone）。
+# MinGW-w64 交叉门禁（posix/win32 线程模型）同样排除：setenv、
+# clock_gettime 等 POSIX 专用 API 在 MinGW 运行时同样缺位或随线程模型
+# 缺位（winpthreads 提供 clock_gettime，win32 模型没有）。
 # 跟踪: 见 PR #174 讨论中的 Windows 测试移植 follow-up。
-if(MSVC)
+if(MSVC OR MINGW)
     list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/test_gpu_loader_failure\\.cpp$")
     list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/test_gpu_memory_validation\\.cpp$")
     list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/test_realtime_thread_executor\\.cpp$")
@@ -175,6 +178,14 @@ if(MSVC)
     # 直接针对 ThreadPool（不经本 PR 改动路径），此前从未在 Windows 运行过，
     # 需要 Windows 环境实机调试，补齐前先排除。
     list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/test_thread_pool_monitor_concurrent_set\\.cpp$")
+endif()
+
+# test_lockfree_queue_size 取 __gcov_dump_one 弱符号地址判空（ELF 下未定义
+# 弱引用落地为 null）；MinGW 的 PE/COFF 对取地址产生 .refptr 强引用，链接
+# 期无法解析。仅 MinGW 排除，MSVC（编译器分支不含该弱符号）与 Linux 不受
+# 影响。跟踪: 同上 PR #174 Windows 测试移植 follow-up。
+if(MINGW)
+    list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/test_lockfree_queue_size\\.cpp$")
 endif()
 
 # 如果没有测试文件，创建一个占位符说明

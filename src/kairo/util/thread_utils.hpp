@@ -10,8 +10,15 @@ namespace util {
 
 /**
  * @brief 设置线程优先级
- * 
- * @param handle 线程原生句柄
+ *
+ * 给定线程不是调用线程时使用（例如线程池父线程设置新 worker）。设置
+ * 调用线程自身的优先级请用 set_current_thread_priority()。
+ *
+ * @param handle 线程原生句柄（std::thread::native_handle() 的返回值）。
+ *               Windows 实现按线程模型折算成 Win32 HANDLE：MSVC 与 MinGW
+ *               win32 线程模型下它本身就是 HANDLE；MinGW posix 线程模型
+ *               （winpthreads）下它是 pthread_t，内部经 pthread_gethandle()
+ *               取底层句柄，句柄所有权归 winpthreads，这里只使用不关闭。
  * @param priority 优先级
  *                Linux: SCHED_FIFO优先级范围1-99，普通优先级范围-20到19
  *                Windows: THREAD_PRIORITY_* 常量（如THREAD_PRIORITY_NORMAL）
@@ -21,15 +28,40 @@ bool set_thread_priority(std::thread::native_handle_type handle, int priority);
 
 /**
  * @brief 设置CPU亲和性
- * 
- * 将线程绑定到指定的CPU核心上。
- * 
- * @param handle 线程原生句柄
+ *
+ * 将线程绑定到指定的CPU核心上。给定线程不是调用线程时使用；设置调用
+ * 线程自身的亲和性请用 set_current_thread_affinity()。
+ *
+ * @param handle 线程原生句柄（同 set_thread_priority 的折算规则）
  * @param cpu_ids CPU核心ID列表（从0开始）
  * @return 成功返回true，失败返回false
  */
 bool set_cpu_affinity(std::thread::native_handle_type handle,
                       const std::vector<int>& cpu_ids);
+
+/**
+ * @brief 设置调用线程自身的优先级
+ *
+ * 语义与 set_thread_priority(handle, priority) 相同，但目标恒为调用线程：
+ * 平台自取线程标识（Win32 用 GetCurrentThread() 伪句柄，POSIX 用
+ * pthread_self()），调用方无需也无法构造 native_handle_type——Win32 伪
+ * HANDLE 在 MinGW posix 线程模型下根本无法转换成该类型。
+ *
+ * @param priority 优先级（取值范围同 set_thread_priority）
+ * @return 成功返回true，失败返回false
+ */
+bool set_current_thread_priority(int priority);
+
+/**
+ * @brief 设置调用线程自身的CPU亲和性
+ *
+ * 语义与 set_cpu_affinity(handle, cpu_ids) 相同，但目标恒为调用线程
+ * （平台自取线程标识，同 set_current_thread_priority）。
+ *
+ * @param cpu_ids CPU核心ID列表（从0开始）
+ * @return 成功返回true，失败返回false
+ */
+bool set_current_thread_affinity(const std::vector<int>& cpu_ids);
 
 /**
  * @brief 获取当前线程的优先级
