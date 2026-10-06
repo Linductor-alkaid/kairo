@@ -50,6 +50,10 @@ enum class ExecutionBackend : uint8_t {
 
 /**
  * @brief 路由决定的主要依据。
+ *
+ * 0.6.1 语义：`RoutingDecision::status` 是结果的权威判据；reason 表达
+ * 导致该结果的主要原因。新增的 `DeadlineExpired` / `AffinityMismatch`
+ * 使拒绝与降级原因可被程序化判别，不再依赖解析 detail 字符串。
  */
 enum class RoutingReason : uint8_t {
     DefaultPolicy,
@@ -61,8 +65,87 @@ enum class RoutingReason : uint8_t {
     BackendNotRunning,
     CapacityPressure,
     FallbackPolicy,
-    Rejected
+    Rejected,
+    // ---- 0.6.1 Scheduling Runtime 结构化诊断 ----
+    DeadlineExpired,    // 提交时点 deadline 已过 → status == Rejected
+    AffinityMismatch    // 请求核集合与目标后端绑核不相交（advisory）
+                        // → status == AcceptedDegraded 且 diagnostics 含
+                        //    RoutingDiagnostics::AffinityMismatch
 };
+
+/**
+ * @brief 路由决策的结果状态（0.6.1，权威判据）。
+ *
+ * 消费方应依据 status 而非枚举 reason 组合判断任务是否被接受；
+ * reason 只解释"为什么"。历史上需要枚举 reason 的判断
+ * （Rejected / BackendUnavailable / BackendNotRunning / CapacityPressure）
+ * 统一收敛为 `status == Rejected`。
+ */
+enum class RoutingStatus : uint8_t {
+    Accepted,          // 按决策投递，无降级诊断
+    AcceptedDegraded,  // 接受但携带结构化降级诊断（AffinityMismatch /
+                       // FallbackPolicy 回退）
+    Rejected           // 拒绝；任务不会以该决策投递（future 以异常就绪 /
+                       // DispatchResult::accepted == false）
+};
+
+/**
+ * @brief 路由决策的结构化诊断位（bitmask，可叠加）。
+ *
+ * `reason` 只能表达单一主要原因；diagnostics 保留并发存在的次要
+ * 诊断。0.6.1 定义两个位。
+ */
+namespace RoutingDiagnostics {
+constexpr uint32_t None = 0;
+/** 请求核集合与目标后端 bound_cpus 不相交（advisory，任务仍被接受）。 */
+constexpr uint32_t AffinityMismatch = 1u << 0;
+/** 拒绝由声明的 ResourceRequirements 触发（设备不符 / 内存超量）。 */
+constexpr uint32_t ResourceInfeasible = 1u << 1;
+}  // namespace RoutingDiagnostics
+
+/** @brief RoutingStatus 的稳定名称（诊断与测试输出）。 */
+inline const char* routing_status_to_string(RoutingStatus status) noexcept {
+    switch (status) {
+    case RoutingStatus::Accepted:
+        return "Accepted";
+    case RoutingStatus::AcceptedDegraded:
+        return "AcceptedDegraded";
+    case RoutingStatus::Rejected:
+    default:
+        return "Rejected";
+    }
+}
+
+/** @brief RoutingReason 的稳定名称（诊断与测试输出）。 */
+inline const char* routing_reason_to_string(RoutingReason reason) noexcept {
+    switch (reason) {
+    case RoutingReason::DefaultPolicy:
+        return "DefaultPolicy";
+    case RoutingReason::ExplicitIntent:
+        return "ExplicitIntent";
+    case RoutingReason::PreferredExecutor:
+        return "PreferredExecutor";
+    case RoutingReason::GpuHeuristic:
+        return "GpuHeuristic";
+    case RoutingReason::AdaptiveHistory:
+        return "AdaptiveHistory";
+    case RoutingReason::BackendUnavailable:
+        return "BackendUnavailable";
+    case RoutingReason::BackendNotRunning:
+        return "BackendNotRunning";
+    case RoutingReason::CapacityPressure:
+        return "CapacityPressure";
+    case RoutingReason::FallbackPolicy:
+        return "FallbackPolicy";
+    case RoutingReason::DeadlineExpired:
+        return "DeadlineExpired";
+    case RoutingReason::AffinityMismatch:
+        return "AffinityMismatch";
+    case RoutingReason::Rejected:
+    default:
+        return "Rejected";
+    }
+}
 
 /**
  * @brief 自动路由的不可变输入选项。
@@ -112,6 +195,11 @@ struct RoutingDecision {
     ExecutionBackend selected_backend = ExecutionBackend::DefaultAsync;
     std::string selected_executor_name;
     RoutingReason reason = RoutingReason::DefaultPolicy;
+    // 0.6.1：结果的权威判据（accepted / degraded / rejected）。所有产出
+    // RoutingDecision 的代码路径都必须让它与实际投递结果一致。
+    RoutingStatus status = RoutingStatus::Accepted;
+    // 0.6.1：结构化次要诊断（RoutingDiagnostics 位组合）。
+    uint32_t diagnostics = RoutingDiagnostics::None;
     bool fell_back = false;
     std::string detail;
     std::chrono::steady_clock::time_point timestamp =

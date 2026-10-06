@@ -354,7 +354,9 @@ TEST(SchedulingDeadlineAdmission, DefaultSchedulerRejectsExpiredDeadline) {
     options.deadline = Clock::now() - std::chrono::milliseconds(1);
 
     const auto decision = scheduler.route(make_request(options, false), {});
-    EXPECT_EQ(decision.reason, RoutingReason::Rejected);
+    // 0.6.1：过期 deadline 的拒绝原因细化为结构化 DeadlineExpired。
+    EXPECT_EQ(decision.reason, RoutingReason::DeadlineExpired);
+    EXPECT_EQ(decision.status, RoutingStatus::Rejected);
     EXPECT_NE(decision.detail.find("deadline already missed"), std::string::npos)
         << "detail: " << decision.detail;
 }
@@ -507,8 +509,13 @@ TEST(SchedulingAffinityAdvisory, DisjointCpusAcceptedWithMismatchWarning) {
         found = true;
         EXPECT_NE(decision.detail.find("AffinityMismatch"), std::string::npos)
             << "detail: " << decision.detail;
-        EXPECT_EQ(decision.reason, RoutingReason::DefaultPolicy)
+        // 0.6.1：advisory mismatch 不拒绝，但以结构化形式降级——
+        // status = AcceptedDegraded，reason = AffinityMismatch，
+        // diagnostics 携带 AffinityMismatch 位。
+        EXPECT_EQ(decision.status, RoutingStatus::AcceptedDegraded)
             << "advisory mismatch must not reject";
+        EXPECT_EQ(decision.reason, RoutingReason::AffinityMismatch);
+        EXPECT_NE(decision.diagnostics & RoutingDiagnostics::AffinityMismatch, 0u);
     }
     EXPECT_TRUE(found) << "routing decision for affinity-far not recorded";
 }

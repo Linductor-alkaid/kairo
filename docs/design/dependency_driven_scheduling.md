@@ -156,7 +156,7 @@ executor snapshot。变化仅在**入队决策**：
 
 ### 5.5 shutdown 与 drain
 
-- `shutdown(true)`：`wait_for_completion_ex` 的在途计数**已包含**
+- `shutdown(true)`：`wait_for_completion` 的在途计数**已包含**
   `DependencyBlocked` 任务（`record_in_flight_task_pending` 在
   allocate_task_handle 即登记），语义自动正确——依赖正常推进后 parked 逐个
   ready、入队、执行，等待自然收敛；worker 不再被阻塞任务占用后，收敛速度
@@ -223,7 +223,7 @@ drain），由此产生一条新的时序约束与一个此前潜藏的生命周
 
 超时预算自**提交时刻**起算，parked 期间同样可触发。实现为 facade 侧一次性
 定时器（`ensure_timers().schedule_once`，时长取 `ExecutorConfig::
-task_timeout_ms`，经 `initialize_ex` 记录于 `default_task_timeout_ms_`）：
+task_timeout_ms`，经 `initialize` 记录于 `default_task_timeout_ms_`）：
 到点以 `TimedOutException` 调用 on_timeout 拷贝，经 `try_timeout_before_start`
 phase CAS 仲裁——与池自身的队列计时器（出队后才武装）构成双计时器，
 **恰好一个赢家**，后到者在 CAS 落败处直接返回。定时器不随任务提前终态

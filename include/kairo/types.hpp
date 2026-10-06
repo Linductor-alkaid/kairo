@@ -183,7 +183,8 @@ enum class FailureKind {
     WaitTimeout,       // 等待完成超时
     TuningFallback,    // 平台调优失败并安全回退
     CapacityExhausted, // 总量有界 admission 拒绝（max_in_flight_tasks 耗尽）
-    DeadlineMissed     // 任务开始执行时已超过声明的 deadline（仍会执行）
+    DeadlineMissed,    // 任务开始执行时已超过声明的 deadline（仍会执行）
+    None               // 0.6.1：无失败（SchedulingFeedback::success 的哨兵）
 };
 
 /**
@@ -213,6 +214,37 @@ struct ExecutorFailureStatus {
     uint64_t capacity_exhausted_count = 0;  // max_in_flight_tasks 拒绝数
     uint64_t deadline_missed_count = 0;     // 开始执行时已错过声明 deadline 的任务数
     uint64_t total_count = 0;
+};
+
+/**
+ * @brief Scheduling Runtime 累计调度指标（0.6.1）
+ *
+ * `Executor::get_scheduling_metrics()` 的快照类型。计数对象是**路由
+ * 决策**而非任务：一次提交可能产生多条决策（如 GPU 提交异常后回退会
+ * 追加一条 AcceptedDegraded 决策）。计数从 Executor 构造起单调累计，
+ * 无需预先配置任何观测开关。
+ *
+ * 字段语义与 `RoutingDecision::status / reason / diagnostics` 一一对应：
+ * - `accepted*`/`rejected*` 按 status 分类；
+ * - `deadline_rejected` / `backend_unavailable_rejected` /
+ *   `capacity_rejected` 按 reason 细分拒绝原因（resource_rejected 与
+ *   backend_unavailable/capacity 存在交集：声明 ResourceRequirements
+ *   触发的拒绝带 ResourceInfeasible 诊断位）；
+ * - `affinity_mismatch` 统计诊断位，无论最终接受或降级；
+ * - `deadline_missed` 与 `ExecutorFailureStatus::deadline_missed_count`
+ *   同源（执行时错过，任务仍执行）。
+ */
+struct SchedulingMetrics {
+    uint64_t accepted_count = 0;                  // status == Accepted
+    uint64_t accepted_degraded_count = 0;         // status == AcceptedDegraded
+    uint64_t rejected_count = 0;                  // status == Rejected
+    uint64_t deadline_rejected_count = 0;         // reason == DeadlineExpired
+    uint64_t backend_unavailable_rejected_count = 0;  // reason == BackendUnavailable
+    uint64_t capacity_rejected_count = 0;         // reason == CapacityPressure
+    uint64_t resource_rejected_count = 0;         // diagnostics 含 ResourceInfeasible
+    uint64_t affinity_mismatch_count = 0;         // diagnostics 含 AffinityMismatch
+    uint64_t deadline_missed_count = 0;           // 执行时已错过（不中断执行）
+    uint64_t feedback_reported_count = 0;         // on_task_completed 反馈次数
 };
 
 /**

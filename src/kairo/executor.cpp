@@ -1510,6 +1510,7 @@ DispatchResult Executor::dispatch_auto(TaskOptions options, std::function<void()
 
     if (!task) {
         result.decision.reason = RoutingReason::Rejected;
+        result.decision.status = RoutingStatus::Rejected;
         result.decision.detail = "dispatch task is empty";
         result.message = result.decision.detail;
         record_routing_decision(result.decision);
@@ -1517,10 +1518,8 @@ DispatchResult Executor::dispatch_auto(TaskOptions options, std::function<void()
         return result;
     }
 
-    if (result.decision.reason == RoutingReason::Rejected ||
-        result.decision.reason == RoutingReason::BackendUnavailable ||
-        result.decision.reason == RoutingReason::BackendNotRunning ||
-        result.decision.reason == RoutingReason::CapacityPressure) {
+    // 0.6.1：status 是权威判据（收敛了原来按 reason 枚举组合判断的写法）。
+    if (result.decision.status == RoutingStatus::Rejected) {
         result.message = result.decision.detail;
         record_routing_decision(result.decision);
         record_submit_rejected(result.executor_name, result.decision.task_name, result.message);
@@ -1532,6 +1531,7 @@ DispatchResult Executor::dispatch_auto(TaskOptions options, std::function<void()
                           : manager_->try_push_realtime_task(result.executor_name, std::move(task));
     if (!result.accepted) {
         result.decision.reason = RoutingReason::Rejected;
+        result.decision.status = RoutingStatus::Rejected;
         result.decision.detail = "bounded executor rejected dispatch (stopped, full, or object pool exhausted)";
         result.message = result.decision.detail;
         record_submit_rejected(result.executor_name, result.decision.task_name, result.message);
@@ -1675,10 +1675,27 @@ RoutingDecision Executor::route_task(const TaskOptions& options,
     // 相交性检查）才执行采集，其余保持纯策略判定。
     const bool needs_capabilities =
         cpu_gpu_task || !options.affinity.cpus.empty();
-    return task_scheduler_->route(
+    RoutingDecision decision = task_scheduler_->route(
         TaskRouter::Request{options, cpu_gpu_task, gpu_selected},
         needs_capabilities ? manager_->get_executor_capabilities()
                            : std::vector<ExecutorCapability>{});
+    // 0.6.1 兼容归一化：0.6.0 风格的自定义调度器只设置 reason（拒绝类
+    // reason ∈ {Rejected, BackendUnavailable, BackendNotRunning,
+    // CapacityPressure}）而不设置 status。这类决策统一升级为
+    // status == Rejected，保证 future/result 一致性不因版本升级而漂移。
+    if (decision.status != RoutingStatus::Rejected) {
+        switch (decision.reason) {
+        case RoutingReason::Rejected:
+        case RoutingReason::BackendUnavailable:
+        case RoutingReason::BackendNotRunning:
+        case RoutingReason::CapacityPressure:
+            decision.status = RoutingStatus::Rejected;
+            break;
+        default:
+            break;
+        }
+    }
+    return decision;
 }
 
 void Executor::set_scheduler(std::unique_ptr<IScheduler> scheduler) {
@@ -1687,9 +1704,17 @@ void Executor::set_scheduler(std::unique_ptr<IScheduler> scheduler) {
     } else {
         task_scheduler_ = std::make_unique<DefaultScheduler>();
     }
+    // 0.6.1：缓存 feedback 开关。wants_feedback() == false（默认，含
+    // DefaultScheduler）时 submit_auto 不附加测量包装，反馈通道零开销。
+    scheduling_feedback_enabled_.store(task_scheduler_->wants_feedback(),
+                                       std::memory_order_release);
 }
 
 void Executor::record_routing_decision(RoutingDecision decision) {
+    // 0.6.1 调度指标：无条件累加（与下方 CR-106 观测开关解耦——健康度
+    // 计数不应要求预先配置）。relaxed 足够：字段间无顺序要求，快照读取
+    // 接受最终一致。
+    count_routing_metrics(decision);
     // CR-106: 观测未配置（容量 0 且无回调）时零开销返回——路由诊断是纯
     // 可观测性设施，不该向提交热路径收税。routing_observed_ 由容量/回调
     // 的设置点维护，热路径只付一次 acquire load。
@@ -1727,6 +1752,71 @@ void Executor::record_routing_decision(RoutingDecision decision) {
 size_t Executor::recent_failure_capacity() const {
     std::lock_guard<std::mutex> lock(failure_mutex_);
     return recent_failure_capacity_;
+}
+
+void Executor::count_routing_metrics(const RoutingDecision& decision) {
+    constexpr auto relaxed = std::memory_order_relaxed;
+    switch (decision.status) {
+    case RoutingStatus::Accepted:
+        scheduling_counters_.accepted.fetch_add(1, relaxed);
+        break;
+    case RoutingStatus::AcceptedDegraded:
+        scheduling_counters_.accepted_degraded.fetch_add(1, relaxed);
+        break;
+    case RoutingStatus::Rejected:
+        scheduling_counters_.rejected.fetch_add(1, relaxed);
+        switch (decision.reason) {
+        case RoutingReason::DeadlineExpired:
+            scheduling_counters_.deadline_rejected.fetch_add(1, relaxed);
+            break;
+        case RoutingReason::BackendUnavailable:
+            scheduling_counters_.backend_unavailable_rejected.fetch_add(1, relaxed);
+            break;
+        case RoutingReason::CapacityPressure:
+            scheduling_counters_.capacity_rejected.fetch_add(1, relaxed);
+            break;
+        default:
+            break;
+        }
+        if (decision.diagnostics & RoutingDiagnostics::ResourceInfeasible) {
+            scheduling_counters_.resource_rejected.fetch_add(1, relaxed);
+        }
+        break;
+    default:
+        break;
+    }
+    if (decision.diagnostics & RoutingDiagnostics::AffinityMismatch) {
+        scheduling_counters_.affinity_mismatch.fetch_add(1, relaxed);
+    }
+}
+
+SchedulingMetrics Executor::get_scheduling_metrics() const {
+    constexpr auto relaxed = std::memory_order_relaxed;
+    SchedulingMetrics metrics;
+    metrics.accepted_count = scheduling_counters_.accepted.load(relaxed);
+    metrics.accepted_degraded_count = scheduling_counters_.accepted_degraded.load(relaxed);
+    metrics.rejected_count = scheduling_counters_.rejected.load(relaxed);
+    metrics.deadline_rejected_count = scheduling_counters_.deadline_rejected.load(relaxed);
+    metrics.backend_unavailable_rejected_count =
+        scheduling_counters_.backend_unavailable_rejected.load(relaxed);
+    metrics.capacity_rejected_count = scheduling_counters_.capacity_rejected.load(relaxed);
+    metrics.resource_rejected_count = scheduling_counters_.resource_rejected.load(relaxed);
+    metrics.affinity_mismatch_count = scheduling_counters_.affinity_mismatch.load(relaxed);
+    metrics.deadline_missed_count = scheduling_counters_.deadline_missed.load(relaxed);
+    metrics.feedback_reported_count = scheduling_counters_.feedback_reported.load(relaxed);
+    return metrics;
+}
+
+void Executor::report_scheduling_feedback(const SchedulingFeedback& feedback) {
+    // 0.6.1 feedback 通道：交付注入的 IScheduler 并计数。on_task_completed
+    // 在 worker 线程同步调用，其异常必须被隔离——反馈不能杀死任务执行；
+    // 抛出时该条反馈的语义即"已尝试交付"。
+    scheduling_counters_.feedback_reported.fetch_add(1, std::memory_order_relaxed);
+    try {
+        task_scheduler_->on_task_completed(feedback);
+    } catch (...) {
+        // Scheduling feedback must not affect worker threads.
+    }
 }
 
 void Executor::record_failure(ExecutorFailureEvent event) {

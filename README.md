@@ -124,7 +124,7 @@ You can also integrate the source tree with `add_subdirectory(path/to/kairo)`. S
 
 | Goal | Documentation |
 | --- | --- |
-| Decide whether Executor fits your project | [What is Executor?](website/en/getting-started/what-is-executor.md) |
+| Decide whether Executor fits your project | [What is Executor?](website/en/getting-started/what-is-kairo.md) |
 | Go from build to a real first task | [Quick start](website/en/quick-start/build.md) |
 | Understand primary types and full contracts | [API reference](docs/API.md) |
 | Add realtime threads and communication | [Realtime and communication](website/en/realtime-and-communication/index.md) |

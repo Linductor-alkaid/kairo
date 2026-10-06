@@ -30,6 +30,7 @@ const char* failure_kind_to_string(FailureKind kind) {
     case FailureKind::TuningFallback: return "TuningFallback";
     case FailureKind::CapacityExhausted: return "CapacityExhausted";
     case FailureKind::DeadlineMissed: return "DeadlineMissed";
+    case FailureKind::None: return "None";
     default: return "Unknown";
     }
 }

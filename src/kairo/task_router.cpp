@@ -35,21 +35,28 @@ RoutingDecision TaskRouter::route(
     decision.selected_backend = ExecutionBackend::DefaultAsync;
     decision.selected_executor_name = "default";
 
-    const auto reject = [&](RoutingReason reason, std::string detail) {
+    // 0.6.1：每条返回路径显式声明 RoutingStatus。status 是结果的权威
+    // 判据，reason 只解释原因；两条诊断路径（fallback / heuristic-CPU）
+    // 不再伪装成 "reject"。
+    const auto finalize = [&](RoutingReason reason, RoutingStatus status,
+                              std::string detail) {
         decision.reason = reason;
+        decision.status = status;
         decision.detail = std::move(detail);
         return decision;
     };
 
     if (!request.cpu_gpu_task) {
         if (request.options.intent == ExecutionIntent::Auto) {
-            return reject(RoutingReason::DefaultPolicy, "default async policy");
+            return finalize(RoutingReason::DefaultPolicy, RoutingStatus::Accepted,
+                            "default async policy");
         }
         if (request.options.intent == ExecutionIntent::GeneralCpu) {
-            return reject(RoutingReason::ExplicitIntent, "GeneralCpu selects default async executor");
+            return finalize(RoutingReason::ExplicitIntent, RoutingStatus::Accepted,
+                            "GeneralCpu selects default async executor");
         }
-        return reject(RoutingReason::Rejected,
-                      "task intent requires a typed submission API");
+        return finalize(RoutingReason::Rejected, RoutingStatus::Rejected,
+                        "task intent requires a typed submission API");
     }
 
     const std::string requested_gpu = request.options.preferred_executor.value_or("");
@@ -72,34 +79,42 @@ RoutingDecision TaskRouter::route(
 
     if (request.options.fallback == FallbackPolicy::RequireRequestedBackend) {
         if (requested_gpu.empty()) {
-            return reject(RoutingReason::Rejected,
-                          "RequireRequestedBackend requires preferred_executor");
+            return finalize(RoutingReason::Rejected, RoutingStatus::Rejected,
+                            "RequireRequestedBackend requires preferred_executor");
         }
         if (!gpu_available) {
-            return reject(unavailable_reason(), "requested GPU executor is unavailable, stopped, or at capacity");
+            return finalize(unavailable_reason(), RoutingStatus::Rejected,
+                            "requested GPU executor is unavailable, stopped, or at capacity");
         }
         decision.selected_backend = ExecutionBackend::Gpu;
         decision.selected_executor_name = gpu->name;
-        return reject(RoutingReason::PreferredExecutor, "required GPU executor is available");
+        return finalize(RoutingReason::PreferredExecutor, RoutingStatus::Accepted,
+                        "required GPU executor is available");
     }
 
     if (!gpu_available) {
         if (request.options.fallback == FallbackPolicy::AllowCpu) {
             decision.fell_back = true;
-            return reject(RoutingReason::FallbackPolicy,
-                          "GPU unavailable; falling back to default async executor");
+            return finalize(RoutingReason::FallbackPolicy, RoutingStatus::AcceptedDegraded,
+                            "GPU unavailable; falling back to default async executor");
         }
-        return reject(unavailable_reason(), "no GPU executor is available for CpuOrGpu task");
+        return finalize(unavailable_reason(), RoutingStatus::Rejected,
+                        "no GPU executor is available for CpuOrGpu task");
     }
 
     if (request.gpu_selected && !*request.gpu_selected) {
-        return reject(RoutingReason::GpuHeuristic, "GPU scheduler selected CPU");
+        // 启发式选择 CPU 是 CpuOrGpu 的正常结果之一，不是降级。
+        return finalize(RoutingReason::GpuHeuristic, RoutingStatus::Accepted,
+                        "GPU scheduler selected CPU");
     }
 
     decision.selected_backend = ExecutionBackend::Gpu;
     decision.selected_executor_name = gpu->name;
-    return reject(request.options.preferred_executor ? RoutingReason::PreferredExecutor : RoutingReason::GpuHeuristic,
-                  request.options.preferred_executor ? "preferred GPU executor selected" : "GPU scheduler selected GPU");
+    return finalize(request.options.preferred_executor ? RoutingReason::PreferredExecutor
+                                                       : RoutingReason::GpuHeuristic,
+                    RoutingStatus::Accepted,
+                    request.options.preferred_executor ? "preferred GPU executor selected"
+                                                       : "GPU scheduler selected GPU");
 }
 
 RoutingDecision TaskRouter::route_dispatch(
@@ -110,19 +125,21 @@ RoutingDecision TaskRouter::route_dispatch(
     decision.requested_intent = options.intent;
     decision.selected_backend = ExecutionBackend::LockFree;
 
-    const auto reject = [&](RoutingReason reason, std::string detail) {
+    const auto finalize = [&](RoutingReason reason, RoutingStatus status,
+                              std::string detail) {
         decision.reason = reason;
+        decision.status = status;
         decision.detail = std::move(detail);
         return decision;
     };
     if (options.intent != ExecutionIntent::LowLatency &&
         options.intent != ExecutionIntent::RealtimeQueue) {
-        return reject(RoutingReason::Rejected,
-                      "dispatch_auto only supports LowLatency or RealtimeQueue");
+        return finalize(RoutingReason::Rejected, RoutingStatus::Rejected,
+                        "dispatch_auto only supports LowLatency or RealtimeQueue");
     }
     if (!options.preferred_executor || options.preferred_executor->empty()) {
-        return reject(RoutingReason::Rejected,
-                      "bounded dispatch requires preferred_executor");
+        return finalize(RoutingReason::Rejected, RoutingStatus::Rejected,
+                        "bounded dispatch requires preferred_executor");
     }
     decision.selected_executor_name = *options.preferred_executor;
     const ExecutionBackend backend = options.intent == ExecutionIntent::LowLatency
@@ -132,15 +149,19 @@ RoutingDecision TaskRouter::route_dispatch(
     const auto* capability = find_capability(
         capabilities, backend, decision.selected_executor_name);
     if (!capability || !capability->registered) {
-        return reject(RoutingReason::BackendUnavailable, "requested bounded executor is not registered");
+        return finalize(RoutingReason::BackendUnavailable, RoutingStatus::Rejected,
+                        "requested bounded executor is not registered");
     }
     if (!capability->running) {
-        return reject(RoutingReason::BackendNotRunning, "requested bounded executor is not running");
+        return finalize(RoutingReason::BackendNotRunning, RoutingStatus::Rejected,
+                        "requested bounded executor is not running");
     }
     if (capability->capacity_hint != 0 && capability->pending_work >= capability->capacity_hint) {
-        return reject(RoutingReason::CapacityPressure, "requested bounded executor is at capacity");
+        return finalize(RoutingReason::CapacityPressure, RoutingStatus::Rejected,
+                        "requested bounded executor is at capacity");
     }
-    return reject(RoutingReason::PreferredExecutor, "requested bounded executor selected");
+    return finalize(RoutingReason::PreferredExecutor, RoutingStatus::Accepted,
+                    "requested bounded executor selected");
 }
 
 }  // namespace kairo

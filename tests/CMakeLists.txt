@@ -423,6 +423,13 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
             LABELS "benchmark;batch"
             TIMEOUT 120
         )
+    # 调度路径基线（0.6.1 Scheduling Runtime：submit_auto 裸/全 spec/
+    # feedback 包装、EDF 堆操作、DefaultScheduler route、能力快照采集）
+    elseif(TEST_NAME STREQUAL "benchmark_scheduling_paths")
+        set_tests_properties(${TEST_NAME} PROPERTIES
+            LABELS "benchmark;scheduling;baseline"
+            TIMEOUT 120
+        )
     # 无锁任务执行器基准测试（高吞吐量压测，需要更长超时）
     elseif(TEST_NAME STREQUAL "benchmark_lockfree_task_executor")
         set_tests_properties(${TEST_NAME} PROPERTIES

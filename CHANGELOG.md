@@ -4,6 +4,69 @@
 
 ---
 
+## [0.6.1] - 2026-10-06
+
+0.6.1 不扩张调度策略维度，对 0.6.0 建立的 Scheduling Runtime 边界做
+**稳定化、可观测性补全与工程验证**。全部为 additive extension：不改变
+提交协议、调度模型语义，也不包含任何自适应调度行为。设计文档：
+`docs/design/scheduling_runtime.md` §6。
+
+### Scheduling Runtime 可观测性
+
+- **结构化路由决策**：`RoutingDecision` 新增 `status`
+  （`Accepted` / `AcceptedDegraded` / `Rejected`，接受/拒绝的权威判据）、
+  `diagnostics` 位掩码（`RoutingDiagnostics::AffinityMismatch` /
+  `ResourceInfeasible`）与稳定 reason code——过期 deadline 拒绝从泛化
+  `Rejected` 细化为 `DeadlineExpired`，affinity 不相交从 detail 前缀
+  升级为 `AcceptedDegraded` + `AffinityMismatch`。`detail` 仅供人阅读，
+  不再是程序判断调度结果的唯一接口。新增
+  `routing_status_to_string()` / `routing_reason_to_string()`。
+- **0.6.0 风格自定义调度器兼容**：只设置拒绝类 reason、未设置 status
+  的决策由 `Executor::route_task()` 归一化为 `Rejected`，行为不漂移。
+- **调度指标**：`Executor::get_scheduling_metrics()` 返回
+  `SchedulingMetrics` 单调计数（accepted / accepted_degraded /
+  rejected / deadline_rejected / backend_unavailable_rejected /
+  capacity_rejected / resource_rejected / affinity_mismatch /
+  deadline_missed / feedback_reported）。计数在
+  `record_routing_decision` 内以 relaxed 原子无条件累加，不受 CR-106
+  观测开关影响，无需预先配置即可读取调度健康度。
+- **执行期反馈（measurement contract）**：`SchedulingFeedback` 扩展
+  backend / executor_name / queue_wait_ns / execution_duration_ns /
+  had_deadline / deadline_missed / failure_kind（success 时
+  `FailureKind::None`）；`IScheduler::wants_feedback()`（默认 false，
+  `DefaultScheduler` 不消费）作为热路径开关——关闭时反馈通道零开销，
+  开启时按任务付 2 次时钟采样 + 一次 worker 线程同步
+  `on_task_completed()`（异常隔离）。覆盖实际开始执行的默认池任务；
+  v0.7.0 前不实现任何基于反馈的自适应策略。
+
+### 契约锁定与文档治理
+
+- deadline 准入边界锁定：严格已过（`now > deadline`）才拒绝，恰好相等
+  接受；错过仍"记录 miss 但执行"。
+- capability snapshot 弱一致语义文档化：未知即宽容（跳过检查）、已知
+  但不满足即结构化拒绝（`ResourceInfeasible` 诊断位）、admission
+  feasibility 不等于 execution guarantee（TOCTOU 由后端执行失败报告）。
+- CpuGpuTask 的 heuristic-CPU + 非 AllowCpu fallback 组合在记录决策前
+  修正为 `Rejected`，计数与最终投递结果一致（0.6.0 会先记录 Accepted
+  再拒绝）。
+- 新增 `scripts/check_docs_drift.sh` 并接入 docs CI：扫描当前文档层的
+  旧命名（`executor::` / `<executor/`）、旧 CMake 用法、0.6.0 已删除
+  API 与失效相对链接；历史快照（横幅标记）与 `docs/archive/` 豁免。
+  修复了扫描发现的 8 处真实漂移（README 失效链接、API.md 相对路径、
+  design/performance 文档旧 API 名等）。
+
+### 测试与基准
+
+- 新增 `tests/test_scheduling_contract_v061.cpp`（独立验证代理编写）：
+  结构化决策/指标/反馈断言、set_scheduler 时序与所有权、shutdown
+  竞争、高并发 route()、deadline 边界与同时 deadline EDF 稳定性、
+  capability 缺失退化、旧式拒绝归一化。
+- 新增 `tests/benchmark_scheduling_paths.cpp`：submit_auto 裸/全
+  spec/feedback 包装、EDF 堆操作、DefaultScheduler route 纯策略 vs
+  能力快照路径、能力快照采集的调度路径基线。
+
+---
+
 ## [0.6.0] - 2026-10-03
 
 0.6.0 是破坏性变更窗口，包含三部分：项目更名（Executor → kairo）、历史

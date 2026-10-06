@@ -9,12 +9,34 @@
 namespace kairo {
 
 /**
- * @brief 调度器的任务终态反馈（低频，诊断/学习用途）。
+ * @brief 调度器的任务终态反馈（0.6.1 measurement contract）。
+ *
+ * 0.6.1 只建立 measurement 与 feedback contract，不实现 adaptive
+ * scheduling：DefaultScheduler 不消费反馈（wants_feedback() == false），
+ * 也不根据反馈调整策略。
+ *
+ * 覆盖范围：实际开始执行的任务（默认异步池路径）。提交前被拒绝 /
+ * admission 拒绝 / 排队期超时的提交不会产生反馈——这些终态由
+ * RoutingDecision、SchedulingMetrics 与 failure 体系观测。
+ *
+ * 线程约定：on_task_completed() 在执行任务的 worker 线程上同步调用；
+ * 实现必须快速返回且不得抛出异常（抛出会被隔离，但会丢失该条反馈）。
  */
 struct SchedulingFeedback {
     std::string task_id;
     QosClass qos = QosClass::Standard;
     bool success = false;
+
+    // ---- 0.6.1 执行期测量 ----
+    ExecutionBackend backend = ExecutionBackend::DefaultAsync;  // 最终使用的后端
+    std::string executor_name;                 // 最终使用的执行器名（"default"）
+    int64_t queue_wait_ns = 0;                 // 提交 → 开始执行（steady 时钟）
+    int64_t execution_duration_ns = 0;         // 开始执行 → 终态（steady 时钟）
+    bool had_deadline = false;                 // 声明过 deadline（区分"未声明"
+                                                // 与"声明且未错过"）
+    bool deadline_missed = false;              // 开始执行时已错过（仍执行）
+    FailureKind failure_kind = FailureKind::None;  // success == false 时的失败
+                                                    // 分类；success 时为 None
 };
 
 /**
@@ -46,6 +68,16 @@ public:
     virtual void on_task_completed(const SchedulingFeedback& feedback) {
         (void)feedback;
     }
+
+    /**
+     * @brief 是否需要执行期反馈（0.6.1 热路径开关）。
+     *
+     * 返回 false（默认）时，submit_auto 不为任务附加测量包装，反馈通道
+     * 零开销；返回 true 时每个实际执行的任务会以 2 次 steady 时钟采样 +
+     * 一次 on_task_completed() 调用为代价产生 SchedulingFeedback。
+     * Executor 在 set_scheduler() 时缓存该值；须在首次提交前设置。
+     */
+    virtual bool wants_feedback() const noexcept { return false; }
 };
 
 /**
