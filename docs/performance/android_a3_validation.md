@@ -1,7 +1,7 @@
 # Android A3 验证记录
 
 本文记录阶段 A3 在当前可用环境中完成的设备侧/架构侧验证。验证目标是：
-Android 原生 smoke、Blocking I/O 生命周期、`executor::comm`、MPSC 并发和
+Android 原生 smoke、Blocking I/O 生命周期、`kairo::comm`、MPSC 并发和
 ARM64 弱内存序路径。本文只陈述已执行结果，不替代正式发布时的真机矩阵。
 
 ## 验证环境

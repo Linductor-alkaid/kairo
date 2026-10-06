@@ -31,13 +31,15 @@ custom scheduler routes=1
 ## What each declaration means
 
 - `qos(QosClass::Interactive)` - a queue-priority preset (`BestEffort/Standard/Interactive/Critical` -> `LOW/NORMAL/HIGH/CRITICAL`) applied when no explicit `priority()` is set. It is not a latency or bandwidth guarantee; deterministic cycles still require the RealtimeQueue intent.
-- `deadline(time_point)` - real scheduling input, not a timeout. Within the same priority class, tasks order by earliest deadline first (EDF). A deadline already in the past is rejected at submission. A task that starts after its deadline still runs and records `FailureKind::DeadlineMissed` - cancellation remains a request, never an interrupt.
-- `affinity(AffinityHint{{0, 1}})` - advisory. The scheduler compares the request against each backend's bound CPU set and records an `AffinityMismatch` warning in the routing decision when they do not intersect. OS threads are never rebound per task.
-- `resources(ResourceRequirements{...})` - a feasibility check against capability snapshots: a wrong `gpu_device` rejects with `BackendUnavailable`, memory above availability rejects with `CapacityPressure`. It is not a reservation; concurrent submissions can still compete at execution time.
+- `deadline(time_point)` - real scheduling input, not a timeout. Within the same priority class, tasks order by earliest deadline first (EDF). A deadline already strictly in the past is rejected at submission with the structured reason `RoutingReason::DeadlineExpired` (0.6.1). A task that starts after its deadline still runs and records `FailureKind::DeadlineMissed` - cancellation remains a request, never an interrupt.
+- `affinity(AffinityHint{{0, 1}})` - advisory. The scheduler compares the request against each backend's bound CPU set; on mismatch the task is still accepted, but the decision is marked degraded (0.6.1): `status = AcceptedDegraded`, `reason = AffinityMismatch`, plus the `AffinityMismatch` diagnostics bit and a human-readable detail. OS threads are never rebound per task.
+- `resources(ResourceRequirements{...})` - a feasibility check against capability snapshots: a wrong `gpu_device` rejects with `BackendUnavailable`, memory above availability rejects with `CapacityPressure` (both carry the `ResourceInfeasible` diagnostics bit, 0.6.1). It is not a reservation; concurrent submissions can still compete at execution time.
 
 ## Injecting a custom scheduler
 
 Scheduling decisions live behind `IScheduler` (`<kairo/scheduler.hpp>`). `DefaultScheduler` composes intent routing with the model constraints above; `executor.set_scheduler(std::make_unique<MyScheduler>())` replaces it (before the first submission; pass `nullptr` to restore). Schedulers only produce decisions - the facade still executes submissions through each backend's own protocol.
+
+Every decision carries a machine-readable outcome (0.6.1): `RoutingDecision::status` (`Accepted` / `AcceptedDegraded` / `Rejected`) is the authoritative accept/reject check, `reason` and the `diagnostics` bitmask explain why, and `detail` stays human-readable. Aggregate health is available without touching scheduler internals via `get_scheduling_metrics()` (accepted/degraded/rejected counts, deadline rejections, misses, affinity mismatches, resource rejections). A scheduler that overrides `wants_feedback()` to true additionally receives per-task completion measurements (`queue_wait_ns`, `execution_duration_ns`, backend used, deadline miss, failure kind) through `on_task_completed()`; `DefaultScheduler` does not consume feedback.
 
 ## Inputs, ownership, and failure
 

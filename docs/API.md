@@ -358,7 +358,12 @@ if (!admission.accepted) {
 
 0.6.0 起调度决策由可注入的 `IScheduler`（`include/kairo/scheduler.hpp`）
 产出，默认实现 `DefaultScheduler` 在意图路由之上叠加调度模型约束。
-设计见 [docs/design/scheduling_runtime.md](design/scheduling_runtime.md)。
+0.6.1 起路由结果以结构化形式表达：`RoutingDecision::status`
+（`Accepted` / `AcceptedDegraded` / `Rejected`）是接受/拒绝的权威判据，
+`reason`（含 `DeadlineExpired` / `AffinityMismatch`）与 `diagnostics`
+位掩码（`AffinityMismatch` / `ResourceInfeasible`）解释原因，`detail`
+仅供人阅读。设计见
+[docs/design/scheduling_runtime.md](design/scheduling_runtime.md)。
 
 ```cpp
 auto decision_done = std::chrono::steady_clock::now() + std::chrono::seconds(1);
@@ -366,7 +371,7 @@ auto task = kairo::task([] { return compute(); })
     .name("inference")
     .qos(kairo::QosClass::Interactive)          // 未显式 priority 时映射排队优先级
     .deadline(decision_done)                     // 同优先级内 EDF；错过记 DeadlineMissed
-    .affinity(kairo::AffinityHint{{0, 1}})       // advisory；不匹配进诊断 detail
+    .affinity(kairo::AffinityHint{{0, 1}})       // advisory；不匹配进结构化诊断
     .resources(kairo::ResourceRequirements{.memory_bytes = 1u << 28,
                                            .gpu_device = 0});
 auto result = ex.submit_auto(task);
@@ -374,14 +379,35 @@ auto result = ex.submit_auto(task);
 
 | 模型 | 语义 | 违约行为 |
 |------|------|----------|
-| `deadline` | 同优先级内 EDF 排序（层次 `priority → EDF → FIFO`，非全局 EDF）；开始执行时已错过记录 `FailureKind::DeadlineMissed`（`deadline_missed_count`），任务仍执行 | 提交时已过期 → 拒绝（`RoutingReason::Rejected`） |
+| `deadline` | 同优先级内 EDF 排序（层次 `priority → EDF → FIFO`，非全局 EDF）；开始执行时已错过记录 `FailureKind::DeadlineMissed`（`deadline_missed_count`），任务仍执行 | 提交时已过期（严格已过，恰好相等不拒） → 拒绝（`RoutingReason::DeadlineExpired`） |
 | `qos` | `BestEffort/Standard/Interactive/Critical` 映射默认排队优先级（LOW/NORMAL/HIGH/CRITICAL）；显式 `priority()` 优先。QoS 是排队优先级 preset，不提供抢占/延迟界/带宽保证 | 严格优先级无 aging（CR-024）：BestEffort 可被饿死 |
-| `affinity` | per-task advisory；与后端 `bound_cpus` 不相交时写入 `RoutingDecision.detail` 警告，不拒绝 | 不重新绑定 OS 线程；不提供独占核保留 |
-| `resources` | GPU `device`/`memory_bytes` 声明与能力快照核对（feasibility hint，非资源保证；存在 TOCTOU 窗口） | device 不符 → `BackendUnavailable`；内存不足 → `CapacityPressure` |
+| `affinity` | per-task advisory；与后端 `bound_cpus` 不相交时任务仍被接受，决策标记 `status = AcceptedDegraded` + `reason = AffinityMismatch` + `diagnostics` 位 | 不重新绑定 OS 线程；不提供独占核保留 |
+| `resources` | GPU `device`/`memory_bytes` 声明与能力快照核对（feasibility hint，非资源保证；存在 TOCTOU 窗口；capability 未知时跳过检查——permissive fallback） | device 不符 → `BackendUnavailable`；内存不足 → `CapacityPressure`；两者均携带 `ResourceInfeasible` 诊断位 |
 
 自定义调度器：`ex.set_scheduler(std::make_unique<MyScheduler>())`
 （须在首次提交前调用；`nullptr` 恢复默认）。调度器只产出决策，
-投递仍由 Executor 按既有后端协议执行。
+投递仍由 Executor 按既有后端协议执行。0.6.0 风格的拒绝（只设
+`reason = Rejected` 等拒绝类 reason、未设 `status`）仍被
+`route_task` 归一化为 `status = Rejected`，不会因升级而漂移。
+
+**调度指标（0.6.1）**：`ex.get_scheduling_metrics()` 返回
+`SchedulingMetrics` 单调计数快照——按 status 分类的
+`accepted_count` / `accepted_degraded_count` / `rejected_count`，按
+reason 细分的 `deadline_rejected_count` /
+`backend_unavailable_rejected_count` / `capacity_rejected_count`，
+诊断位驱动的 `resource_rejected_count` / `affinity_mismatch_count`，
+以及 `deadline_missed_count` / `feedback_reported_count`。计数对象
+是路由决策（一次提交可能产生多条决策，如 GPU 提交异常后回退），
+无需配置观测开关即可读取。
+
+**执行期反馈（0.6.1）**：`IScheduler::wants_feedback()` 返回 true 的
+调度器会通过 `on_task_completed(SchedulingFeedback)` 收到实际执行
+任务的终态测量：最终 backend/executor、`queue_wait_ns`、
+`execution_duration_ns`、`had_deadline`/`deadline_missed`、
+`success` 与 `failure_kind`。反馈在 worker 线程同步交付；覆盖范围是
+默认异步池路径（提交前被拒/admission 拒绝/排队期超时的提交不产生
+反馈，由决策与指标体系观测）。DefaultScheduler 不消费反馈，
+0.6.1 也不包含任何基于反馈的自适应调度行为。
 
 ### 3.9 延迟与周期任务
 
@@ -2137,4 +2163,4 @@ exec.stop_realtime_task("can_channel_0");
 - **实时场景**：`register_realtime_task` + `start_realtime_task`，在 `cycle_callback` 中做周期逻辑；与线程池之间通过无锁队列等交换数据（见示例 `realtime_can`）。
 - **GPU 场景**：`register_gpu_executor` + `submit_gpu`，kernel 与内存/流由 `IGpuExecutor` 管理（见示例 `gpu_basic`、`gpu_multi_device`，设计 [gpu_executor.md](design/gpu_executor.md)）。
 
-更多示例见 [examples/](examples/) 与 [架构总纲](design/executor.md)。
+更多示例见 [examples/](../examples/) 与 [架构总纲](design/executor.md)。

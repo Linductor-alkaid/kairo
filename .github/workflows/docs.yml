@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Docs drift scan (stale naming / dropped APIs / broken links)
+        run: scripts/check_docs_drift.sh
       - uses: actions/setup-node@v4
         with:
           node-version: 24

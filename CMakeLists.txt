@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(kairo LANGUAGES CXX VERSION 0.6.0)
+project(kairo LANGUAGES CXX VERSION 0.6.1)
 
 # CR-085: 版本单一来源。project(VERSION) 是唯一事实来源；这里生成代码侧可
 # include 的 kairo/version.hpp（构建树经 kairo 目标的 BUILD_INTERFACE

@@ -521,6 +521,15 @@ public:
     ExecutorFailureStatus get_failure_status() const;
 
     /**
+     * @brief 获取 Scheduling Runtime 累计调度指标（0.6.1）
+     *
+     * 按 RoutingDecision 的 status/reason/diagnostics 分类的单调计数，
+     * 外加执行期 deadline miss 与 feedback 反馈次数。无需配置任何观测
+     * 开关即可读取（提交路径只付 relaxed 原子累加的成本）。
+     */
+    SchedulingMetrics get_scheduling_metrics() const;
+
+    /**
      * @brief 获取最近失败事件
      *
      * @param max_count 最多返回事件数；0 表示返回当前缓冲区内全部事件。
@@ -747,6 +756,12 @@ private:
      */
     void record_failure(ExecutorFailureEvent event);
     void record_routing_decision(RoutingDecision decision);
+    // 0.6.1：SchedulingMetrics 无锁累加（record_routing_decision 无条件
+    // 调用，先于 CR-106 观测开关）。
+    void count_routing_metrics(const RoutingDecision& decision);
+    // 0.6.1：把 SchedulingFeedback 交付给注入的 IScheduler（异常隔离 +
+    // feedback 计数）。在 worker 线程同步调用。
+    void report_scheduling_feedback(const SchedulingFeedback& feedback);
     RoutingDecision route_task(const TaskOptions& options,
                                bool cpu_gpu_task,
                                std::optional<bool> gpu_selected = std::nullopt) const;
@@ -1080,6 +1095,29 @@ private:
     // 初始容量 kDefaultRecentRoutingCapacity > 0，故初始为观测态。
     std::atomic<bool> routing_observed_{true};
     TaskRouter task_router_;
+
+    // 0.6.1 Scheduling Runtime 指标：无锁单调计数。与 record_routing_decision
+    // 的 CR-106 观测开关无关（调度健康度必须无需预先配置即可观察），提交
+    // 路径上每条决策只付若干次 relaxed 原子累加。独占缓存行避免与相邻
+    // 热点字段伪共享。
+    struct alignas(64) SchedulingMetricsCounters {
+        std::atomic<uint64_t> accepted{0};
+        std::atomic<uint64_t> accepted_degraded{0};
+        std::atomic<uint64_t> rejected{0};
+        std::atomic<uint64_t> deadline_rejected{0};
+        std::atomic<uint64_t> backend_unavailable_rejected{0};
+        std::atomic<uint64_t> capacity_rejected{0};
+        std::atomic<uint64_t> resource_rejected{0};
+        std::atomic<uint64_t> affinity_mismatch{0};
+        std::atomic<uint64_t> deadline_missed{0};
+        std::atomic<uint64_t> feedback_reported{0};
+    };
+    SchedulingMetricsCounters scheduling_counters_;
+
+    // 0.6.1 feedback 热路径开关：仅当注入的 IScheduler 声明
+    // wants_feedback() 时，submit_auto 才为任务附加测量包装（时间戳采样
+    // + 终态回调）。set_scheduler() 时缓存，读取付一次 relaxed load。
+    std::atomic<bool> scheduling_feedback_enabled_{false};
 
     mutable std::mutex task_graph_mutex_;
     // PR-3：task_graph_cv_ 已退役——dependency-driven 调度下不再有 worker
@@ -2872,7 +2910,9 @@ auto Executor::submit_auto(TaskBuilder<Function> task)
                              : default_priority_for_qos(options.qos));
     const auto decision = route_task(options, false);
     record_routing_decision(decision);
-    if (decision.reason == RoutingReason::Rejected) {
+    // 0.6.1：status 是接受/拒绝的权威判据（DeadlineExpired 等拒绝原因
+    // 不再共用 RoutingReason::Rejected）。
+    if (decision.status == RoutingStatus::Rejected) {
         const std::string message = "submit_auto: " + decision.detail;
         record_submit_rejected("default", options.name, message);
         std::promise<typename std::invoke_result<Function&>::type> promise;
@@ -2886,16 +2926,19 @@ auto Executor::submit_auto(TaskBuilder<Function> task)
         options.name.empty() ? "submit_auto" : options.name;
     using return_type = typename std::invoke_result<Function&>::type;
     std::function<return_type()> function = std::move(task).function();
+    const bool feedback_enabled =
+        scheduling_feedback_enabled_.load(std::memory_order_relaxed);
     if (options.deadline) {
         meta.deadline_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
             options.deadline->time_since_epoch()).count();
-        // deadline miss 观测：开始执行时已错过 → DeadlineMissed 诊断；
-        // 契约是不中断已开始执行的任务，因此原任务仍会运行。
+        // deadline miss 观测：开始执行时已错过 → DeadlineMissed 诊断 +
+        // 调度指标计数；契约是不中断已开始执行的任务，因此原任务仍会运行。
         function = [this, deadline_ns = meta.deadline_ns, deadline_task_id,
                     function = std::move(function)]() mutable -> return_type {
             const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
             if (now_ns > deadline_ns) {
+                scheduling_counters_.deadline_missed.fetch_add(1, std::memory_order_relaxed);
                 ExecutorFailureEvent event;
                 event.kind = FailureKind::DeadlineMissed;
                 event.executor_name = "default";
@@ -2907,6 +2950,50 @@ auto Executor::submit_auto(TaskBuilder<Function> task)
                 function();
             } else {
                 return function();
+            }
+        };
+    }
+    if (feedback_enabled) {
+        // 0.6.1 measurement contract：测量包装按需附加（wants_feedback()）。
+        // queue wait 从提交时点起算；终态在 worker 线程同步反馈。
+        const int64_t submit_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        const int64_t deadline_ns = meta.deadline_ns;
+        function = [this, submit_ns, deadline_ns, qos = options.qos,
+                    feedback_task_id = deadline_task_id,
+                    function = std::move(function)]() mutable -> return_type {
+            const auto steady_ns_now = [] {
+                return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                           std::chrono::steady_clock::now().time_since_epoch())
+                    .count();
+            };
+            const int64_t start_ns = steady_ns_now();
+            SchedulingFeedback feedback;
+            feedback.task_id = feedback_task_id;
+            feedback.qos = qos;
+            feedback.backend = ExecutionBackend::DefaultAsync;
+            feedback.executor_name = "default";
+            feedback.queue_wait_ns = start_ns - submit_ns;
+            feedback.had_deadline = deadline_ns > 0;
+            feedback.deadline_missed = deadline_ns > 0 && start_ns > deadline_ns;
+            const auto finish = [&](bool success, FailureKind kind) {
+                feedback.success = success;
+                feedback.failure_kind = kind;
+                feedback.execution_duration_ns = steady_ns_now() - start_ns;
+                report_scheduling_feedback(feedback);
+            };
+            try {
+                if constexpr (std::is_void_v<return_type>) {
+                    function();
+                    finish(true, FailureKind::None);
+                } else {
+                    auto result = function();
+                    finish(true, FailureKind::None);
+                    return result;
+                }
+            } catch (...) {
+                finish(false, FailureKind::TaskException);
+                throw;
             }
         };
     }
@@ -2935,7 +3022,6 @@ std::future<void> Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction> tas
         decision = route_task(
             options, true, scheduler_.decide(task.characteristics()) == gpu::ExecutorChoice::GPU);
     }
-    record_routing_decision(decision);
 
     const auto reject = [this, &task_name, &decision](const std::string& message) {
         record_submit_rejected(decision.selected_executor_name.empty()
@@ -2946,9 +3032,17 @@ std::future<void> Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction> tas
         return promise.get_future();
     };
 
-    if (decision.reason == RoutingReason::Rejected ||
-        (decision.selected_backend == ExecutionBackend::DefaultAsync && !decision.fell_back &&
-         options.fallback != FallbackPolicy::AllowCpu)) {
+    // 0.6.1：启发式选择 CPU + 非 AllowCpu fallback = 拒绝投递。该组合
+    // 语义在 facade 层裁决，此处把 status 修正为 Rejected 后再记录，
+    // 保证 SchedulingMetrics 与 recent decisions 反映最终结果（0.6.0
+    // 会先记录 Accepted 决策再拒绝，计数与结果不一致）。
+    if (decision.selected_backend == ExecutionBackend::DefaultAsync && !decision.fell_back &&
+        options.fallback != FallbackPolicy::AllowCpu) {
+        decision.status = RoutingStatus::Rejected;
+    }
+    record_routing_decision(decision);
+
+    if (decision.status == RoutingStatus::Rejected) {
         return reject("submit_auto: " + decision.detail);
     }
 
@@ -2966,6 +3060,7 @@ std::future<void> Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction> tas
             fallback.selected_backend = ExecutionBackend::DefaultAsync;
             fallback.selected_executor_name = "default";
             fallback.reason = RoutingReason::FallbackPolicy;
+            fallback.status = RoutingStatus::AcceptedDegraded;
             fallback.fell_back = true;
             fallback.detail = std::string("GPU submission rejected; falling back to CPU: ") + error.what();
             fallback.timestamp = std::chrono::steady_clock::now();

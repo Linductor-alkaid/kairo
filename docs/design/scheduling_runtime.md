@@ -1,10 +1,16 @@
-# Scheduling Runtime（0.6.0）
+# Scheduling Runtime（0.6.0 / 0.6.1）
 
 ## 1. 目标与边界
 
-0.6.0 把"何时执行、在哪里执行、以何种准入执行"的调度决策从 `Executor`
+0.6.0 把“何时执行、在哪里执行、以何种准入执行”的调度决策从 `Executor`
 facade 的内联代码中解耦为可注入的调度器组件，并建立统一的任务调度模型：
 **deadline / QoS / affinity / resource**。
+
+0.6.1 不扩张调度策略维度，而是对 0.6.0 建立的边界做**稳定化、可观测性
+补全与工程验证**：结构化路由决策（§6.1）、调度指标（§6.2）、执行期
+反馈通道（§6.3）、capability snapshot 弱一致语义（§6.4）与调度路径
+基准（tests/benchmark_scheduling_paths.cpp）。所有新增均为 additive
+extension，不改变 0.6.0 已发布的提交协议与调度模型语义。
 
 解耦边界（沿用 `unified_facade_and_auto_routing.md` 的原则）：
 
@@ -23,16 +29,20 @@ class IScheduler {
     virtual RoutingDecision route(const TaskRouter::Request&,
                                   const std::vector<ExecutorCapability>&) = 0;
     virtual void on_task_completed(const SchedulingFeedback&);
+    virtual bool wants_feedback() const noexcept;  // 0.6.1；默认 false
 };
 
 Executor::set_scheduler(std::unique_ptr<IScheduler>);  // nullptr 恢复默认
 ```
 
 - `DefaultScheduler`：意图路由（TaskRouter）+ 调度模型约束检查（§3）。
+  `wants_feedback()` 返回 false（0.6.1 契约：默认调度器不消费反馈，
+  也不依据反馈调整策略）。
 - 注入时机：须在首次提交前；运行中替换需调用方自行同步。
+  `set_scheduler()` 在注入时缓存 `wants_feedback()` 到原子开关。
 - `route()` 在多提交线程并发调用，实现必须自身线程安全。
-- 反馈通道现状（0.6.0）：failure event 回调 + routing observation；
-  `on_task_completed` 为预留接口（DefaultScheduler 无操作）。
+- `on_task_completed()` 在 worker 线程同步调用（§6.3）；实现必须
+  快速返回且不抛异常（抛出被隔离，反馈语义即“已尝试交付”）。
 
 ### 2.2 提交协议扩展
 
@@ -54,11 +64,13 @@ Executor::set_scheduler(std::unique_ptr<IScheduler>);  // nullptr 恢复默认
   deadline 紧迫的任务仍可能被持续产生的 CRITICAL/HIGH 任务饿死——
   在既有 priority 契约存在的前提下，让 deadline 跨越优先级改变全局
   调度序反而会破坏原有语义。
-- **准入**：提交时点已过期的 deadline 被明确拒绝
-  （`RoutingReason::Rejected`，detail "deadline already missed"）。
+- **准入（0.6.1 锁定）**：提交时点已**严格过期**（now > deadline）的
+  deadline 被拒绝——`status = Rejected` + `reason = DeadlineExpired`；
+  恰好等于 deadline 的提交被接受。
 - **错过观测**：任务开始执行时已错过 → `FailureKind::DeadlineMissed`
-  事件 + `ExecutorFailureStatus::deadline_missed_count`。契约保持
-  "取消/超时是请求不是中断"：错过的任务仍会执行。
+  事件 + `ExecutorFailureStatus::deadline_missed_count` +
+  `SchedulingMetrics::deadline_missed_count`。契约保持
+  “取消/超时是请求不是中断”：错过的任务仍会执行。
 - 不改变 `ThreadPoolConfig::task_timeout_ms` 软超时语义。
 
 ### 3.2 QoS
@@ -81,8 +93,11 @@ Executor::set_scheduler(std::unique_ptr<IScheduler>);  // nullptr 恢复默认
 
 - `AffinityHint { cpus }` 是 per-task advisory 约束。
 - DefaultScheduler 检查请求核集合与目标后端 `bound_cpus`（能力快照
-  新维度）的相交性：不相交时任务仍被接受，但
-  `RoutingDecision.detail` 附加 `AffinityMismatch` 警告。
+  新维度）的相交性：不相交时任务**仍被接受**，但决策降级为结构化
+  诊断（0.6.1）：`status = AcceptedDegraded`、
+  `reason = AffinityMismatch`（若决策尚未因回退降级）、
+  `diagnostics |= RoutingDiagnostics::AffinityMismatch`，`detail`
+  保留人读描述。已拒绝的决策不再附加 affinity 警告。
 - 线程绑核是后端启动期属性（ThreadPoolConfig::cpu_affinity 等）；
   per-task hint 不会重新绑定 OS 线程，也不提供独占核保留。
 
@@ -91,11 +106,12 @@ Executor::set_scheduler(std::unique_ptr<IScheduler>);  // nullptr 恢复默认
 - `ResourceRequirements { memory_bytes, gpu_device }` 声明式需求。
 - GPU 相关提交（CpuOrGpu 意图 / CpuGpuTask）的检查：
   - 声明 `gpu_device` 与目标执行器实际设备不符 → 拒绝
-    （`BackendUnavailable`）；
-  - 声明内存超过设备可用量 → 拒绝（`CapacityPressure`；总量未知时
-    跳过检查）。
+    （`BackendUnavailable` + `ResourceInfeasible` 诊断位）；
+  - 声明内存超过设备可用量 → 拒绝（`CapacityPressure` +
+    `ResourceInfeasible` 诊断位）。
 - 能力快照 `ExecutorCapability` 新增 `gpu_device`、
   `gpu_memory_total_bytes`、`gpu_memory_free_bytes`、`bound_cpus`。
+- 弱一致语义见 §6.4。
 
 ## 4. 数据流
 
@@ -103,19 +119,21 @@ Executor::set_scheduler(std::unique_ptr<IScheduler>);  // nullptr 恢复默认
 submit_auto(TaskBuilder)
   → QoS→priority 映射（未显式设置时）
   → task_scheduler_->route(options, capabilities)   ← 可注入
-      ├─ deadline 过期拒绝
-      ├─ GPU device/memory 可行性
-      ├─ TaskRouter 意图路由
-      └─ AffinityMismatch 诊断
+      ├─ deadline 过期拒绝（DeadlineExpired）
+      ├─ GPU device/memory 可行性（ResourceInfeasible 诊断位）
+      ├─ TaskRouter 意图路由（status: Accepted/Degraded/Rejected）
+      └─ AffinityMismatch 结构化降级诊断
+  → record_routing_decision（无条件累加 SchedulingMetrics）
   → admission（总量有界，不变式不变）
   → try_submit_priority_task(priority, fn, on_timeout, meta)
       → ThreadPool: Task{deadline_ns, qos} → PriorityScheduler 堆序（EDF）
+      → [wants_feedback()] 测量包装：queue wait / duration / 终态
   → worker 执行前 deadline 检查 → DeadlineMissed 诊断（不中断）
 ```
 
 ## 5. 演进方向（非本版承诺）
 
-以下扩展点在 0.6.0 中只保留接口/文档空间，不提前实现：
+以下扩展点只保留接口/文档空间，不提前实现：
 
 - **deadline policy**：当前固定为 admit→EDF→miss-observe。未来可增加
   `RunAnyway / DropIfLate / CancelIfLate` 之类的 per-task deadline
@@ -129,17 +147,108 @@ submit_auto(TaskBuilder)
   pressure、locality、transfer cost 等，应把 route() 内部重构为
   `约束过滤 → candidate generation → scoring/ranking → selection`
   的 pipeline。`IScheduler` 对外接口保持不变，防止策略巨石。
-- **feedback 闭环**：`on_task_completed(SchedulingFeedback)` 视为
-  Scheduling Runtime 的正式组成部分（非纯诊断回调）。字段可逐步
-  扩展 queue latency、execution time、selected backend、deadline
-  missed、failure kind、实际资源用量，形成
-  `decision → execution → measurement → feedback → next decision`
-  闭环，支撑 adaptive/load-aware scheduler。
+- **feedback 闭环（v0.7.0 Runtime-aware Scheduling）**：0.6.1 已建立
+  measurement contract（§6.3）；利用 queue depth、backend load、
+  historical latency、resource pressure 的动态评分属于后续版本。
 - **独占核 reservation**：CPU reservation / exclusive ownership 语义
   随 resource reservation 机制一起引入（见 3.4）。
 
-## 6. 测试与验证
+## 6. 0.6.1：结构化诊断、指标与反馈
+
+### 6.1 结构化路由决策
+
+`RoutingDecision` 新增三个字段（additive，0.6.0 字段全部保留）：
+
+| 字段 | 语义 |
+|------|------|
+| `RoutingStatus status` | 结果的**权威判据**：`Accepted` / `AcceptedDegraded` / `Rejected`。消费方据此判断任务是否被接受，不再枚举 reason 组合。 |
+| `RoutingReason reason` | 导致该结果的主要原因。新增 `DeadlineExpired`（过期 deadline 拒绝）与 `AffinityMismatch`（降级诊断）。 |
+| `uint32_t diagnostics` | `RoutingDiagnostics` 位掩码：`AffinityMismatch`、`ResourceInfeasible`。保留并发存在的次要诊断（reason 只能表达单一主因）。 |
+
+约定：
+
+- 拒绝类 reason（`Rejected` / `BackendUnavailable` / `BackendNotRunning`
+  / `CapacityPressure` / `DeadlineExpired`）只出现在
+  `status == Rejected` 的决策上；接受类 reason（`DefaultPolicy` /
+  `ExplicitIntent` / `PreferredExecutor` / `GpuHeuristic` /
+  `AdaptiveHistory`）只出现在 Accepted；降级原因（`AffinityMismatch` /
+  `FallbackPolicy`）表达 AcceptedDegraded 的首要降级因素。
+- 0.6.0 风格的自定义调度器（只设拒绝类 reason、未设 status）由
+  `Executor::route_task()` 归一化为 `status = Rejected`，行为不漂移。
+- facade 内所有“记录的决策必须反映最终投递结果”：CpuGpuTask 的
+  heuristic-CPU + 非 AllowCpu fallback 组合在记录前修正为
+  `status = Rejected`（0.6.0 会记录 Accepted 决策后拒绝，计数与
+  结果不一致）。
+- `routing_status_to_string()` / `routing_reason_to_string()` 提供稳定
+  名称。
+
+### 6.2 调度指标（SchedulingMetrics）
+
+`Executor::get_scheduling_metrics()` 返回无锁单调计数快照
+（`include/kairo/types.hpp`）。计数在 `record_routing_decision()` 内
+无条件累加（先于 CR-106 观测开关判断），提交路径只付若干次 relaxed
+原子加；计数器结构体独占缓存行（alignas(64)）避免伪共享。
+
+计数对象是**路由决策**而非任务（一次提交可能产生多条决策，如 GPU
+提交异常后的回退会追加一条 AcceptedDegraded 决策）。字段与
+status/reason/diagnostics 一一对应，另有 `deadline_missed_count`
+（执行期错过，与 failure 体系同源）与 `feedback_reported_count`。
+
+### 6.3 执行期反馈（SchedulingFeedback）
+
+`SchedulingFeedback`（0.6.0：task_id/qos/success）扩展执行期测量：
+`backend` / `executor_name` / `queue_wait_ns` /
+`execution_duration_ns` / `had_deadline` / `deadline_missed` /
+`failure_kind`（success 时为 `FailureKind::None`）。
+
+- **开关**：`IScheduler::wants_feedback()`（默认 false）。false 时
+  submit_auto 不附加测量包装——反馈通道零开销；true 时每个实际执行的
+  任务付 2 次 steady 时钟采样 + 一次 `on_task_completed()` 同步调用。
+  Executor 在 `set_scheduler()` 时缓存该值。
+- **覆盖范围**：实际开始执行的默认异步池任务。提交前被拒 / admission
+  拒绝 / 排队期软超时（`on_timeout` 先于执行）的提交不产生反馈——
+  这些终态由 RoutingDecision、SchedulingMetrics 与 failure 体系观测。
+  GPU / lockfree / realtime 路径的反馈接入属后续版本。
+- **线程模型**：worker 线程同步调用，实现不得抛异常（隔离处理）、
+  不得阻塞（会占用 worker）。
+- **0.6.1 边界**：只建立 measurement contract。DefaultScheduler 不
+  消费反馈；任何基于 queue pressure、historical latency 或 backend
+  utilization 的自适应调度行为都属于 v0.7.0+。
+
+### 6.4 capability snapshot 弱一致语义
+
+`ExecutorCapability` 是**建议性快照**，不引入锁或全局资源管理器：
+
+- **未知即宽容**：`bound_cpus` 为空 / `gpu_device < 0` /
+  `gpu_memory_total_bytes == 0` 表示快照未知，对应检查跳过（permissive
+  fallback），行为稳定可预测；
+- **已知但不满足 → 明确拒绝**：结构化 reason + `ResourceInfeasible`
+  诊断位；
+- **admission 之后资源状态变化**（TOCTOU 窗口）：由后端执行失败
+  （`FailureKind::GpuFailure` 等）负责报告——admission feasibility
+  不等于 execution guarantee；
+- `ResourceRequirements` 因此是 feasibility hint，**不是资源预留**；
+  真正的 reservation layer 属后续版本（§5）。
+
+### 6.5 调度路径基准
+
+`tests/benchmark_scheduling_paths.cpp` 建立以下基线（目的在于发现
+回归与明显的分配/锁/字符串构造问题，不在本版做激进优化）：
+
+1. 普通优先级提交 vs 携带 SchedulingSpec（deadline/QoS/affinity）提交；
+2. EDF enqueue/dequeue（PriorityScheduler 堆操作）；
+3. DefaultScheduler::route 的纯策略路径 vs 能力快照路径；
+4. 能力快照采集（get_executor_capabilities）；
+5. 开启 feedback 时的测量包装开销。
+
+成功调度的普通路径不为诊断构造字符串：结构化 reason/status 的
+引入正是为了把 detail 字符串从程序判断接口的位置上移除。
+
+## 7. 测试与验证
 
 行为测试由 Independent-Verification-Agent 独立编写与执行，覆盖：
 EDF 排序、deadline 拒绝/错过计数、QoS 映射、affinity 诊断、
-resource 拒绝、自定义 IScheduler 注入生效、以及全量行为回归。
+resource 拒绝、自定义 IScheduler 注入、以及全量行为回归；0.6.1 追加
+契约加固（set_scheduler 时序、所有权与销毁、shutdown 竞争、旧式
+拒绝归一化、高并发 route()、deadline 边界与同时 deadline、
+capability 缺失退化）、结构化决策/指标/反馈断言与调度基准。
