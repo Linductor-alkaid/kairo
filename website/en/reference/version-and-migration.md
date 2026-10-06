@@ -7,7 +7,7 @@ description: Entry points for the development snapshot, releases, and API migrat
 
 ## Current scope
 
-The latest release record is `v0.6.0`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
+The latest release record is `v0.6.1`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
 
 | What to check | Source of truth |
 | --- | --- |
@@ -15,6 +15,16 @@ The latest release record is `v0.6.0`. This site uses that stable version as its
 | Recommended migrations from older APIs | [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) |
 | Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | Complete current signatures | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
+
+## 0.6.1: Scheduling Runtime observability and docs governance
+
+v0.6.1 is an additive stabilization release - no breaking changes, no new scheduling strategies:
+
+- **Structured routing decisions**: `RoutingDecision::status` (`Accepted` / `AcceptedDegraded` / `Rejected`) is the authoritative accept/reject check; new reason codes `DeadlineExpired` / `AffinityMismatch` and a `diagnostics` bitmask (`AffinityMismatch`, `ResourceInfeasible`) explain the cause; `detail` stays human-readable. Custom 0.6.0-style schedulers (rejection reason without status) are normalized automatically.
+- **Scheduling metrics**: `get_scheduling_metrics()` exposes always-on counters (accepted / degraded / rejected, deadline rejections and misses, affinity mismatches, resource rejections, feedback reports) without touching scheduler internals.
+- **Feedback measurement contract**: schedulers overriding `wants_feedback()` receive per-task completion measurements (`queue_wait_ns`, `execution_duration_ns`, backend, deadline miss, failure kind) via `on_task_completed()`. `DefaultScheduler` does not consume feedback; adaptive scheduling is v0.7.0+ scope.
+- **Deadline admission locked**: strictly past deadlines reject (equality accepted); misses still execute and record `DeadlineMissed`.
+- **Docs governance**: `scripts/check_docs_drift.sh` runs in CI to catch stale naming, dropped APIs, and broken links.
 
 ## 0.6.0: renamed to kairo, compatibility layer removed, Scheduling Runtime
 

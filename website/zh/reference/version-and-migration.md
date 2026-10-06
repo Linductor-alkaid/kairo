@@ -7,7 +7,7 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
 
 ## 当前版本说明
 
-项目 CMake 与最新发布记录的版本均为 `v0.6.0`。本站以该稳定版为基线，同时跟随 `master` 的后续开发；未在稳定 tag 中发布的能力不构成版本承诺。首发不维护历史版本站点；发布时应以 tag 重新核对页面。
+项目 CMake 与最新发布记录的版本均为 `v0.6.1`。本站以该稳定版为基线，同时跟随 `master` 的后续开发；未在稳定 tag 中发布的能力不构成版本承诺。首发不维护历史版本站点；发布时应以 tag 重新核对页面。
 
 | 需要确认什么 | 入口 |
 | --- | --- |
@@ -15,6 +15,16 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
 | 从旧 API 的推荐迁移路径 | [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) |
 | 选项、编译器与后端前置 | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | 当前完整签名 | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
+
+## 0.6.1：Scheduling Runtime 可观测性与文档治理
+
+v0.6.1 是纯增量的稳定化版本——无破坏性变更，也不引入新调度策略：
+
+- **结构化路由决策**：`RoutingDecision::status`（`Accepted` / `AcceptedDegraded` / `Rejected`）是接受/拒绝的权威判据；新增 reason code `DeadlineExpired` / `AffinityMismatch` 与 `diagnostics` 位掩码（`AffinityMismatch`、`ResourceInfeasible`）解释原因；`detail` 仅供人阅读。0.6.0 风格自定义调度器（只设拒绝 reason 未设 status）会被自动归一化。
+- **调度指标**：`get_scheduling_metrics()` 无需侵入调度器内部即可读取 always-on 计数（接受/降级/拒绝、deadline 拒绝与错过、affinity 不匹配、resource 拒绝、反馈数）。
+- **反馈测量契约**：覆写 `wants_feedback()` 的调度器会经 `on_task_completed()` 收到逐任务完成测量（`queue_wait_ns`、`execution_duration_ns`、backend、deadline miss、failure kind）。`DefaultScheduler` 不消费反馈；自适应调度属 v0.7.0+。
+- **deadline 准入锁定**：严格已过才拒绝（恰好相等接受）；错过仍执行并记录 `DeadlineMissed`。
+- **文档治理**：`scripts/check_docs_drift.sh` 进入 CI，拦截旧命名、已删除 API 与失效链接。
 
 ## 0.6.0：更名 kairo、兼容层清理与 Scheduling Runtime
 
