@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../kairo/util/cpu_pause.hpp"
+
 #include <cstddef>
 #include <thread>
 #include <cstdint>
@@ -8,17 +10,6 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
-
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-#  if defined(_MSC_VER)
-#    include <intrin.h>
-#  else
-#    include <immintrin.h>
-#  endif
-#  define KAIRO_POOL_PAUSE() _mm_pause()
-#else
-#  define KAIRO_POOL_PAUSE() std::this_thread::yield()
-#endif
 
 namespace kairo {
 namespace util {
@@ -102,7 +93,8 @@ public:
      */
     T* acquire() {
         uint64_t head = head_.load(std::memory_order_acquire);
-        uint32_t backoff = 1;
+        // 指数退避序列与原实现一致：1, 2, 4, ... 封顶 32。
+        PauseBackoff backoff{1, 32};
         while (true) {
             const uint32_t index = index_of(head);
             if (index == kNilIndex) {
@@ -122,10 +114,7 @@ public:
             // 退避时长（封顶 ~1µs）内在持续争用下 head_ 已被推进数十次，
             // 带陈旧期望值重试是确定性失败——偶发参与者（如 RT 线程）
             // 会因此饿死秒级（实测 20s+）。重读是共享读，不独占缓存行。
-            for (uint32_t i = 0; i < backoff; ++i) {
-                KAIRO_POOL_PAUSE();
-            }
-            backoff = backoff < 32u ? backoff * 2 : 32u;
+            backoff.pause();
             head = head_.load(std::memory_order_acquire);
         }
     }
@@ -204,7 +193,7 @@ public:
                     std::memory_order_release, std::memory_order_relaxed)) {
                 return;
             }
-            KAIRO_POOL_PAUSE();
+            KAIRO_CPU_PAUSE();
         }
     }
 

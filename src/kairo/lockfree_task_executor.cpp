@@ -1,19 +1,11 @@
 #include "kairo/lockfree_task_executor.hpp"
+#include "util/admission_gate.hpp"
+#include "util/cpu_pause.hpp"
 #include "util/lockfree_queue.hpp"
 #include "util/object_pool.hpp"
 #include <chrono>
 #include <thread>
 #include <vector>
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-#  if defined(_MSC_VER)
-#    include <intrin.h>
-#  else
-#    include <immintrin.h>
-#  endif
-#  define KAIRO_PAUSE() _mm_pause()
-#else
-#  define KAIRO_PAUSE() std::this_thread::yield()
-#endif
 
 namespace kairo {
 namespace {
@@ -48,7 +40,7 @@ LockFreeTaskExecutor::~LockFreeTaskExecutor() {
 
 bool LockFreeTaskExecutor::start() {
     std::lock_guard<std::mutex> lock(stop_mutex_);
-    if (push_gate_.load(std::memory_order_acquire) & kPushGateClosedBit) {
+    if (util::admission_is_closed(push_gate_)) {
         return false;
     }
 
@@ -83,14 +75,14 @@ bool LockFreeTaskExecutor::stop_and_join() {
         // registered before this RMW — and is waited for below — or observes
         // the closed bit and rejects without touching the pool, queue, or
         // any other member.
-        push_gate_.fetch_or(kPushGateClosedBit, std::memory_order_acq_rel);
+        util::admission_close(push_gate_);
         if (std::this_thread::get_id() == worker_id_) {
             self_stop_requested_.store(true, std::memory_order_release);
             running_.store(false, std::memory_order_release);
             return false;
         }
 
-        while ((push_gate_.load(std::memory_order_acquire) & kPushGateActiveMask) != 0) {
+        while (util::admission_has_active(push_gate_)) {
             std::this_thread::yield();
         }
         running_.store(false, std::memory_order_release);
@@ -405,30 +397,17 @@ bool LockFreeTaskExecutor::enter_push() {
     // P-001: admission is a single RMW — the closed check and the active
     // count increment cannot be interleaved with stop_and_join()'s close, so
     // a producer that wins this CAS is guaranteed to be waited for.
-    uint32_t state = push_gate_.load(std::memory_order_relaxed);
-    while (true) {
-        if (state & kPushGateClosedBit) {
-            return false;
-        }
-        if ((state & kPushGateActiveMask) == kPushGateActiveMask) {
-            // Overflow guard: refuse rather than let the +1 spill into the
-            // closed bit. 2^31 concurrent producers is unreachable in
-            // practice; this only keeps the encoding sound.
-            return false;
-        }
-        if (push_gate_.compare_exchange_weak(
-                state, static_cast<uint32_t>(state + 1),
-                std::memory_order_acq_rel, std::memory_order_relaxed)) {
-            if (admission_registered_hook_) {
-                admission_registered_hook_(admission_registered_context_);
-            }
-            return true;
-        }
+    if (!util::admission_enter(push_gate_)) {
+        return false;
     }
+    if (admission_registered_hook_) {
+        admission_registered_hook_(admission_registered_context_);
+    }
+    return true;
 }
 
 void LockFreeTaskExecutor::leave_push() {
-    push_gate_.fetch_sub(1, std::memory_order_release);
+    util::admission_leave(push_gate_);
 }
 
 void LockFreeTaskExecutor::worker_thread() {
@@ -463,7 +442,7 @@ void LockFreeTaskExecutor::worker_thread() {
             static constexpr uint32_t kSleepThresh = kYieldThresh + 50;
             idle_count_++;
             if (idle_count_ <= kPauseSpins) {
-                KAIRO_PAUSE();
+                KAIRO_CPU_PAUSE();
             } else if (idle_count_ <= kYieldThresh) {
                 std::this_thread::yield();
             } else if (idle_count_ <= kSleepThresh) {

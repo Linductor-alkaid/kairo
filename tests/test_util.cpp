@@ -27,7 +27,7 @@ using namespace kairo::util;
 bool test_lockfree_queue_basic() {
     std::cout << "Testing LockFreeQueue basic operations..." << std::endl;
 
-    PAUSE_INSTRUCTION();
+    KAIRO_CPU_PAUSE();
     
     LockFreeQueue<int> queue(8);
     

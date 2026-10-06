@@ -1,6 +1,8 @@
 // Lock-free queue implementation.
 #pragma once
 
+#include "cpu_pause.hpp"
+
 #include <atomic>
 #include <cstddef>
 #include <limits>
@@ -9,15 +11,6 @@
 #include <memory>
 #include <stdexcept>
 #include <thread>
-
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-#include <emmintrin.h>
-#define PAUSE_INSTRUCTION() _mm_pause()
-#elif defined(__aarch64__) || defined(__arm__)
-#define PAUSE_INSTRUCTION() __asm__ volatile("yield" ::: "memory")
-#else
-#define PAUSE_INSTRUCTION() do {} while(0)
-#endif
 
 namespace kairo {
 namespace util {
@@ -102,8 +95,9 @@ public:
 
     bool push(const T& item) {
         size_t pos;
-        size_t backoff = 1;
-        constexpr size_t MAX_BACKOFF = 16;
+        // 指数退避序列与原实现一致：multiplier, 2*multiplier, ... 封顶
+        // 16*multiplier（backoff 单元从 1 翻倍至 16，每次乘退避倍数）。
+        PauseBackoff backoff{backoff_multiplier_, 16 * backoff_multiplier_};
         constexpr int MAX_RETRIES = 64;
 
         for (int retry = 0; retry < MAX_RETRIES; ++retry) {
@@ -143,11 +137,7 @@ public:
                     return true;
                 }
                 // CAS 失败，指数退避（应用退避倍数）
-                size_t scaled_backoff = backoff * backoff_multiplier_;
-                for (size_t i = 0; i < scaled_backoff; ++i) {
-                    PAUSE_INSTRUCTION();
-                }
-                backoff = backoff < MAX_BACKOFF ? backoff * 2 : MAX_BACKOFF;
+                backoff.pause();
             } else if (diff < 0) {
                 record_push_failure(LockFreeQueueFailReason::QueueFull);
                 return false;
@@ -190,8 +180,7 @@ public:
     bool push_batch_exact(const T* items, size_t count) {
         if (count == 0) return true;
         if (items == nullptr) return false;
-        size_t backoff = 1;
-        constexpr size_t kMaxBackoff = 16;
+        PauseBackoff backoff{backoff_multiplier_, 16 * backoff_multiplier_};
         for (int retry = 0; retry < 64; ++retry) {
             size_t pos = enqueue_pos_.load(std::memory_order_acquire);
             size_t deq = dequeue_pos_.load(std::memory_order_acquire);
@@ -259,8 +248,7 @@ public:
                 }
                 return true;
             }
-            for (size_t i = 0; i < backoff * backoff_multiplier_; ++i) PAUSE_INSTRUCTION();
-            backoff = backoff < kMaxBackoff ? backoff * 2 : kMaxBackoff;
+            backoff.pause();
         }
         record_push_failure(LockFreeQueueFailReason::Contention);
         return false;
@@ -552,7 +540,7 @@ private:
             // path for genuinely stalled producers without rejecting normal
             // submissions due to scheduler timing.
             std::this_thread::yield();
-            PAUSE_INSTRUCTION();
+            KAIRO_CPU_PAUSE();
         }
         size_t expected = state_tag(position, SlotState::Reserved);
         while (expected == state_tag(position, SlotState::Reserved)) {

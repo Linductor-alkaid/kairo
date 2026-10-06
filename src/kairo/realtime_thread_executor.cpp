@@ -1,5 +1,6 @@
 #include "realtime_thread_executor.hpp"
 #include <kairo/comm/realtime_memory.hpp>
+#include "util/admission_gate.hpp"
 #include "util/timer_period_guard.hpp"
 #include <stdexcept>
 #include <algorithm>
@@ -75,7 +76,7 @@ bool RealtimeThreadExecutor::start() {
     // P-002: (re)open the admission gate. stop_and_join() closes it, so a
     // restart after a completed stop must accept submissions again. The
     // active count is preserved (a completed stop waited it down to zero).
-    push_gate_.fetch_and(kPushGateActiveMask, std::memory_order_acq_rel);
+    util::admission_reopen(push_gate_);
 
     // 创建实时线程
     auto thread_entry = [this]() {
@@ -232,7 +233,7 @@ bool RealtimeThreadExecutor::stop_and_join() {
             // P-002: close the admission gate even on self-stop so submissions
             // past the stop request reject atomically; the external
             // stop_and_join() that must follow is idempotent.
-            push_gate_.fetch_or(kPushGateClosedBit, std::memory_order_acq_rel);
+            util::admission_close(push_gate_);
             self_stop_requested_.store(true, std::memory_order_release);
             stopping_.store(true, std::memory_order_release);
             running_.store(false, std::memory_order_release);
@@ -253,7 +254,7 @@ bool RealtimeThreadExecutor::stop_and_join() {
         // lifecycle flags. A producer either registered before this RMW — and
         // is waited for after the join — or rejects without touching the
         // object pool or queue, so no task can appear after the final drain.
-        push_gate_.fetch_or(kPushGateClosedBit, std::memory_order_acq_rel);
+        util::admission_close(push_gate_);
         stopping_.store(true, std::memory_order_release);
         running_.store(false, std::memory_order_release);
         stop_cycle = config_.cycle_manager &&
@@ -283,14 +284,14 @@ bool RealtimeThreadExecutor::stop_and_join() {
         // P-002: even without a worker thread to join, wait out producers that
         // registered before the gate closed so stop_and_join() keeps its
         // "no producer is inside push_task() on return" contract.
-        while ((push_gate_.load(std::memory_order_acquire) & kPushGateActiveMask) != 0) {
+        while (util::admission_has_active(push_gate_)) {
             std::this_thread::yield();
         }
         stopping_.store(false, std::memory_order_release);
         return true;
     }
     std::lock_guard<std::mutex> lock(stop_mutex_);
-    while ((push_gate_.load(std::memory_order_acquire) & kPushGateActiveMask) != 0) {
+    while (util::admission_has_active(push_gate_)) {
         std::this_thread::yield();
     }
     drain_stopped_queue();
@@ -305,30 +306,17 @@ bool RealtimeThreadExecutor::enter_push() {
     // P-002: admission is a single RMW — the closed check and the active
     // count increment cannot be interleaved with stop_and_join()'s close, so
     // a producer that wins this CAS is guaranteed to be waited for.
-    uint32_t state = push_gate_.load(std::memory_order_relaxed);
-    while (true) {
-        if (state & kPushGateClosedBit) {
-            return false;
-        }
-        if ((state & kPushGateActiveMask) == kPushGateActiveMask) {
-            // Overflow guard: refuse rather than let the +1 spill into the
-            // closed bit. 2^31 concurrent producers is unreachable in
-            // practice; this only keeps the encoding sound.
-            return false;
-        }
-        if (push_gate_.compare_exchange_weak(
-                state, static_cast<uint32_t>(state + 1),
-                std::memory_order_acq_rel, std::memory_order_relaxed)) {
-            if (admission_registered_hook_) {
-                admission_registered_hook_(admission_registered_context_);
-            }
-            return true;
-        }
+    if (!util::admission_enter(push_gate_)) {
+        return false;
     }
+    if (admission_registered_hook_) {
+        admission_registered_hook_(admission_registered_context_);
+    }
+    return true;
 }
 
 void RealtimeThreadExecutor::leave_push() {
-    push_gate_.fetch_sub(1, std::memory_order_release);
+    util::admission_leave(push_gate_);
 }
 
 void RealtimeThreadExecutor::set_admission_registered_hook_for_test(
