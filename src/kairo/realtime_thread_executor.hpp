@@ -207,8 +207,8 @@ private:
     // previous unconditional fetch_add let stop observe a zero count while a
     // producer sat before the increment, letting stop drain, return, and the
     // destructor free the object under it.
-    static constexpr uint32_t kPushGateClosedBit = uint32_t{1} << 31;
-    static constexpr uint32_t kPushGateActiveMask = kPushGateClosedBit - 1;
+    // The RMW protocol lives in util/admission_gate.hpp (shared with
+    // LockFreeTaskExecutor); storage stays here as a plain atomic.
     std::atomic<uint32_t> push_gate_{0};
     AdmissionRegisteredHook admission_registered_hook_{nullptr};
     void* admission_registered_context_{nullptr};

@@ -255,8 +255,9 @@ private:
     // check-increment-recheck enter_push() let stop observe a zero count
     // while a producer sat between its stopped_ load and the fetch_add,
     // letting stop return and the destructor free the object under it.
-    static constexpr uint32_t kPushGateClosedBit = uint32_t{1} << 31;
-    static constexpr uint32_t kPushGateActiveMask = kPushGateClosedBit - 1;
+    // The RMW protocol itself lives in src/kairo/util/admission_gate.hpp
+    // (shared with RealtimeThreadExecutor); storage stays here because this
+    // is a public header and cannot depend on internal src/ headers.
     std::atomic<uint32_t> push_gate_{0};
     std::atomic<uint64_t> processed_count_{0};
     // P-260618-006: 累计异常计数, 始终累计, worker 线程写, 读取方任意线程.
