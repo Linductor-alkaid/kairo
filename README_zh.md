@@ -99,6 +99,7 @@ Kairo 有意保持以下边界：
 - 它不能安全地强制终止任意正在运行的 C++ 函数；取消（`request_task_cancel` / `StopToken`）是协作请求而非抢占，长期工作必须轮询停止令牌；`TaskOptions::deadline` 仍只是路由/诊断提示，不会自动触发取消。
 - `submit_periodic()` 是普通线程池上的软周期任务，不等同于专用实时线程。
 - 默认异步提交默认不限制总量在途数；需要结构化过载拒绝时显式配置 `max_in_flight_tasks`（覆盖普通/优先级/批量/串行等 facade 提交，不含 timer 派发与 realtime/GPU，见 `docs/API.md` §3.10）。`queue_capacity` 只是每 worker 本地队列参数，不是背压边界。
+- Facade 定时句柄（`TimerHandle`）把到期工作派发到普通线程池；它不绑定外部事件循环（asio strand），必须在同一 strand 上执行并销毁的定时器仍由应用自行管理。见[外部事件循环互操作指南](docs/external_event_loop_interop.md)。
 
 自 0.4.0 起，通信组件为关键同步路径提供固定存储和原子实现，但“同步无锁”不覆盖 payload 操作、callback、缺页或 OS 调度。`Topic<T>` 属于普通控制面，不是实时原语。精确保证见[迁移说明](docs/MIGRATION.md)。
 
@@ -123,7 +124,7 @@ target_link_libraries(myapp PRIVATE kairo::executor)
 
 | 目标 | 文档 |
 | --- | --- |
-| 判断 Executor 是否适合项目 | [Executor 是什么](website/zh/getting-started/what-is-executor.md) |
+| 判断 Executor 是否适合项目 | [Kairo 是什么](website/zh/getting-started/what-is-kairo.md) |
 | 从构建到第一个真实任务 | [快速开始](website/zh/quick-start/build.md) |
 | 理解主要类型和完整契约 | [API 文档](docs/API.md) |
 | 接入实时线程和通信组件 | [实时与通信](website/zh/realtime-and-communication/index.md) |
@@ -131,10 +132,10 @@ target_link_libraries(myapp PRIVATE kairo::executor)
 | 从旧版本升级 | [迁移指南](docs/MIGRATION.md) |
 | 查看版本变化 | [CHANGELOG](CHANGELOG.md) |
 
-更多可运行代码见 [examples](examples/) 和 [tutorial](examples/tutorial/)。使用 AI 辅助接入时，可让 agent 先读取 [Executor integration skill](docs/skill/kairo-integration/SKILL.md)。
+更多可运行代码见 [examples](examples/) 和 [tutorial](examples/tutorial/)。使用 AI 辅助接入时，可让 agent 先读取 [Kairo integration skill](docs/skill/kairo-integration/SKILL.md)。
 
 ## 版本与许可
 
-当前版本：**v0.5.3**
+当前版本：**v0.6.1**
 
 Kairo 使用 [MIT License](LICENSE)。

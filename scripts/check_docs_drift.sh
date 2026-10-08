@@ -56,7 +56,7 @@ done < <(find include src tests examples -type f \( -name '*.hpp' -o -name '*.h'
 
 # ---------------------------------------------------------------- 文档目录
 echo "-- scanning current-layer docs for stale naming / dropped symbols --"
-doc_files=$(find docs README.md -type f -name '*.md' 2>/dev/null; \
+doc_files=$(find docs README.md README_zh.md -type f -name '*.md' 2>/dev/null; \
             find website/en website/zh -type f -name '*.md' 2>/dev/null)
 
 for file in $doc_files; do
