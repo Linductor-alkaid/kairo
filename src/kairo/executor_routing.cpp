@@ -183,6 +183,7 @@ RoutingDecision Executor::route_task(const TaskOptions& options,
         case RoutingReason::BackendUnavailable:
         case RoutingReason::BackendNotRunning:
         case RoutingReason::CapacityPressure:
+        case RoutingReason::LoadShedding:
             decision.status = RoutingStatus::Rejected;
             break;
         default:
@@ -269,6 +270,10 @@ void Executor::count_routing_metrics(const RoutingDecision& decision) {
         case RoutingReason::CapacityPressure:
             scheduling_counters_.capacity_rejected.fetch_add(1, relaxed);
             break;
+        case RoutingReason::LoadShedding:
+            // 0.7.0 M3：QoS 感知降载的结构化拒绝。
+            scheduling_counters_.load_shedding_rejected.fetch_add(1, relaxed);
+            break;
         default:
             break;
         }
@@ -281,6 +286,10 @@ void Executor::count_routing_metrics(const RoutingDecision& decision) {
     }
     if (decision.diagnostics & RoutingDiagnostics::AffinityMismatch) {
         scheduling_counters_.affinity_mismatch.fetch_add(1, relaxed);
+    }
+    // 0.7.0 M3：历史驱动的自适应决策（含确认启发式的"维持"结果）。
+    if (decision.diagnostics & RoutingDiagnostics::AdaptiveHistory) {
+        scheduling_counters_.adaptive_history.fetch_add(1, relaxed);
     }
 }
 
@@ -298,6 +307,12 @@ SchedulingMetrics Executor::get_scheduling_metrics() const {
     metrics.affinity_mismatch_count = scheduling_counters_.affinity_mismatch.load(relaxed);
     metrics.deadline_missed_count = scheduling_counters_.deadline_missed.load(relaxed);
     metrics.feedback_reported_count = scheduling_counters_.feedback_reported.load(relaxed);
+    metrics.adaptive_history_count =
+        scheduling_counters_.adaptive_history.load(relaxed);
+    metrics.load_shedding_rejected_count =
+        scheduling_counters_.load_shedding_rejected.load(relaxed);
+    metrics.priority_promoted_count =
+        scheduling_counters_.priority_promoted.load(relaxed);
     return metrics;
 }
 

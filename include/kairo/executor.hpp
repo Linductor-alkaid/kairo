@@ -1122,6 +1122,10 @@ private:
         std::atomic<uint64_t> affinity_mismatch{0};
         std::atomic<uint64_t> deadline_missed{0};
         std::atomic<uint64_t> feedback_reported{0};
+        // 0.7.0 M3 AdaptiveScheduler：自适应决策计数。
+        std::atomic<uint64_t> adaptive_history{0};
+        std::atomic<uint64_t> load_shedding_rejected{0};
+        std::atomic<uint64_t> priority_promoted{0};
     };
     SchedulingMetricsCounters scheduling_counters_;
 
@@ -2922,10 +2926,20 @@ template<typename Function>
 auto Executor::submit_auto(TaskBuilder<Function> task)
     -> std::future<typename std::invoke_result<Function&>::type> {
     const auto& options = task.options();
-    // 0.6.0 QoS：未显式设置 priority 时按 QoS 类别映射默认排队优先级
-    const int effective_priority = static_cast<int>(
-        options.priority_set ? options.priority
-                             : default_priority_for_qos(options.qos));
+    // 0.6.0 QoS：未显式设置 priority 时按 QoS 类别映射默认排队优先级；
+    // 0.7.0 M3：调度器可对默认优先级做有界咨询（AdaptiveScheduler 的
+    // QoS→priority 动态映射）；显式 priority 永远原样生效。
+    const int qos_default_priority =
+        static_cast<int>(default_priority_for_qos(options.qos));
+    const int effective_priority =
+        options.priority_set
+            ? static_cast<int>(options.priority)
+            : task_scheduler_->effective_priority_for(options,
+                                                      qos_default_priority);
+    if (!options.priority_set && effective_priority != qos_default_priority) {
+        scheduling_counters_.priority_promoted.fetch_add(
+            1, std::memory_order_relaxed);
+    }
     const auto decision = route_task(options, false);
     record_routing_decision(decision);
     // 0.6.1：status 是接受/拒绝的权威判据（DeadlineExpired 等拒绝原因
@@ -3054,7 +3068,14 @@ std::future<void> Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction> tas
     // 语义在 facade 层裁决，此处把 status 修正为 Rejected 后再记录，
     // 保证 SchedulingMetrics 与 recent decisions 反映最终结果（0.6.0
     // 会先记录 Accepted 决策再拒绝，计数与结果不一致）。
+    // 0.7.0 M3 豁免：history 驱动的 AdaptiveHistory CPU 选择是 CpuOrGpu
+    // 意图内的正常结果（两侧皆可），不适用启发式 CPU 拒绝规则；该规则
+    // 对启发式路径逐位不变。
+    const bool adaptive_cpu_choice =
+        decision.reason == RoutingReason::AdaptiveHistory &&
+        (decision.diagnostics & RoutingDiagnostics::AdaptiveHistory) != 0;
     if (decision.selected_backend == ExecutionBackend::DefaultAsync && !decision.fell_back &&
+        !adaptive_cpu_choice &&
         options.fallback != FallbackPolicy::AllowCpu) {
         decision.status = RoutingStatus::Rejected;
     }
@@ -3064,13 +3085,94 @@ std::future<void> Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction> tas
         return reject("submit_auto: " + decision.detail);
     }
 
+    // 0.7.0 M3：CpuGpuTask 两侧的测量包装。0.6.1 的测量通道只覆盖
+    // TaskBuilder 路径，CPU/GPU 端到端时延历史（AdaptiveScheduler 的
+    // 学习输入）由此补齐；wants_feedback() == false 时零开销。
+    const bool feedback_enabled =
+        scheduling_feedback_enabled_.load(std::memory_order_relaxed);
+    const auto steady_ns_now = [] {
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                   std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    };
+    const int64_t submit_ns = feedback_enabled ? steady_ns_now() : 0;
+    const int64_t deadline_ns =
+        options.deadline
+            ? std::chrono::duration_cast<std::chrono::nanoseconds>(
+                  options.deadline->time_since_epoch()).count()
+            : 0;
+
     if (decision.selected_backend == ExecutionBackend::DefaultAsync) {
+        if (feedback_enabled) {
+            return submit(
+                [this, steady_ns_now, submit_ns, deadline_ns, qos = options.qos,
+                 feedback_task_id = task_name,
+                 inner = std::move(task).take_cpu()]() mutable {
+                    const int64_t start_ns = steady_ns_now();
+                    SchedulingFeedback feedback;
+                    feedback.task_id = feedback_task_id;
+                    feedback.qos = qos;
+                    feedback.backend = ExecutionBackend::DefaultAsync;
+                    feedback.executor_name = "default";
+                    feedback.queue_wait_ns = start_ns - submit_ns;
+                    feedback.had_deadline = deadline_ns > 0;
+                    feedback.deadline_missed =
+                        deadline_ns > 0 && start_ns > deadline_ns;
+                    const auto finish = [&](bool success, FailureKind kind) {
+                        feedback.success = success;
+                        feedback.failure_kind = kind;
+                        feedback.execution_duration_ns = steady_ns_now() - start_ns;
+                        report_scheduling_feedback(feedback);
+                    };
+                    try {
+                        inner();
+                        finish(true, FailureKind::None);
+                    } catch (...) {
+                        finish(false, FailureKind::TaskException);
+                        throw;
+                    }
+                });
+        }
         return submit(std::move(task).take_cpu());
     }
 
     const auto& gpu_name = decision.selected_executor_name;
     try {
         auto gpu_config = task.gpu_config();
+        if (feedback_enabled) {
+            // 泛型转发包装：GPU callable 可为 (void* stream) 或无参形态，
+            // 包装按执行器的调用形态原样转发。
+            return submit_gpu(
+                gpu_name,
+                [this, steady_ns_now, submit_ns, deadline_ns, qos = options.qos,
+                 executor = gpu_name, feedback_task_id = task_name,
+                 inner = std::move(task).take_gpu()](auto&&... args) mutable {
+                    const int64_t start_ns = steady_ns_now();
+                    SchedulingFeedback feedback;
+                    feedback.task_id = feedback_task_id;
+                    feedback.qos = qos;
+                    feedback.backend = ExecutionBackend::Gpu;
+                    feedback.executor_name = executor;
+                    feedback.queue_wait_ns = start_ns - submit_ns;
+                    feedback.had_deadline = deadline_ns > 0;
+                    feedback.deadline_missed =
+                        deadline_ns > 0 && start_ns > deadline_ns;
+                    const auto finish = [&](bool success, FailureKind kind) {
+                        feedback.success = success;
+                        feedback.failure_kind = kind;
+                        feedback.execution_duration_ns = steady_ns_now() - start_ns;
+                        report_scheduling_feedback(feedback);
+                    };
+                    try {
+                        inner(std::forward<decltype(args)>(args)...);
+                        finish(true, FailureKind::None);
+                    } catch (...) {
+                        finish(false, FailureKind::TaskException);
+                        throw;
+                    }
+                },
+                gpu_config);
+        }
         return submit_gpu(gpu_name, std::move(task).take_gpu(), gpu_config);
     } catch (const std::exception& error) {
         if (options.fallback == FallbackPolicy::AllowCpu) {

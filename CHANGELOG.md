@@ -104,6 +104,39 @@ v0.7.0 前置清债（M0，`docs/design/roadmap_v0.7.md` §2.1）：在引入任
   调度器的差值在调度噪声内不可分辨（±40ns）。基准结果记录于
   `docs/performance/m2_feedback_aggregator_results.md`。
 
+- **AdaptiveScheduler（M3，opt-in 自适应，DefaultScheduler 不变）**：
+  新增公开头 `include/kairo/adaptive_scheduler.hpp`。复用 M1 pipeline
+  产出 0.6.1 基线决策、内嵌 M2 FeedbackAggregator 作决策输入，实现
+  roadmap §2.4 收窄后的三类可解释决策：
+  - **CPU/GPU 历史选择**（CpuOrGpu）：端到端时延 EWMA 两侧对比，
+    双侧样本 ≥ `min_samples` 才采信历史（不足回退 0.6.1 启发式），
+    切换需优于在用侧 `(1 - hysteresis_margin)`（防震荡）；命中历史
+    → `RoutingReason::AdaptiveHistory` + 诊断位 + detail 携带两侧
+    EWMA 数值。`submit_auto(CpuGpuTask)` 补齐 CPU/GPU 两侧测量包装
+    （此前该路径不产生反馈）；`RequireRequestedBackend` 不做历史
+    翻转；facade 对"启发式选 CPU + 非 AllowCpu 拒绝"规则豁免
+    AdaptiveHistory 决策（启发式路径逐位不变）。
+  - **QoS 感知降载**：按 QoS 类对 queue-wait 直方图做**窗口差分**后
+    求 p99，连续 `shed_breach_windows` 个评估窗口超目标 → 开闸，对
+    严格更低 QoS 的提交返回结构化拒绝（新增
+    `RoutingReason::LoadShedding` + 诊断位）；连续 `shed_close_windows`
+    个恢复窗口才关闸（开/关对称滞回）；证据不足 fail-open。与
+    `max_in_flight_tasks` 硬上界共存。
+  - **QoS→priority 有界提升**：`IScheduler` 新增
+    `effective_priority_for()`（默认原样返回）；长期超阈的 QoS 类
+    默认优先级 +1 级（封顶 CRITICAL），显式 priority 永不被覆盖，
+    被调整提交计数 `priority_promoted_count`。
+  `SchedulingMetrics` 新增 `adaptive_history_count` /
+  `load_shedding_rejected_count` / `priority_promoted_count`；`Executor`
+  的 `route_task` 归一化与指标计数同步扩展。新增
+  `benchmark_adaptive_scheduler`（验收线内置）：route 纯策略路径配对差
+  18.8ns（线 ≤150ns）、CpuOrGpu 冷路径 30.5ns（线 ≤250ns）、
+  on_task_completed 转发 22.6ns（线 ≤150ns）、effective_priority_for
+  0.74ns；降载场景 Interactive 探针端到端 p99 自适应 1.3-4.2ms vs
+  DefaultScheduler 10.8-16.9ms（绑核配对，160-168 次结构化拒绝）。
+  基准结果
+  记录于 `docs/performance/m3_adaptive_scheduler_results.md`。
+
 ### 性能
 
 - M0 前后基准对比记录见

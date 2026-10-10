@@ -437,6 +437,20 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
             LABELS "benchmark;scheduling"
             TIMEOUT 120
         )
+    # 自适应调度器基准（0.7.0 M3：route 开销验收线、降载场景端到端对比）
+    elseif(TEST_NAME STREQUAL "benchmark_adaptive_scheduler")
+        set_tests_properties(${TEST_NAME} PROPERTIES
+            LABELS "benchmark;scheduling"
+            TIMEOUT 300
+        )
+    # 自适应调度器行为测试（0.7.0 M3）：状态机窗口推进依赖内嵌聚合器
+    # 100ms 合并门限的真实流逝（见 tests/test_adaptive_scheduler.cpp 文件头
+    # 说明），整体时长超出默认 30s 档。
+    elseif(TEST_NAME STREQUAL "test_adaptive_scheduler")
+        set_tests_properties(${TEST_NAME} PROPERTIES
+            LABELS "unit;scheduling"
+            TIMEOUT 300
+        )
     # 无锁任务执行器基准测试（高吞吐量压测，需要更长超时）
     elseif(TEST_NAME STREQUAL "benchmark_lockfree_task_executor")
         set_tests_properties(${TEST_NAME} PROPERTIES

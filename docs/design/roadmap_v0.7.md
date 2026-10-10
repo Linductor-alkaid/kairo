@@ -8,6 +8,7 @@
 > feat/optional-priority-aging、perf/dependency-topo-order）。
 > **M1 pipeline 化已落地**（§2.2，分支 refactor/scheduler-route-pipeline）。
 > **M2 反馈聚合层已落地**（§2.3，分支 feat/feedback-aggregator）。
+> **M3 AdaptiveScheduler MVP 已落地**（§2.4，分支 feat/adaptive-scheduler）。
 > 输入：`docs/design/scheduling_runtime.md` §5/§6、`docs/CODE_REVIEW_2026-09-30.md`
 > 未结项、`CHANGELOG.md` 0.6.x 边界声明。
 
@@ -101,7 +102,7 @@ constraint filter → candidate generation → scoring/ranking → selection
   内置于 `benchmark_feedback_aggregator`）；facade 端到端聚合差值在噪声内不可分辨；
   TSAN 全绿；默认调度器路径配对 A/B ±1.1% 内（零变化）。
 
-### 2.4 AdaptiveScheduler MVP（M3）
+### 2.4 AdaptiveScheduler MVP（M3）✅ 已落地（2026-10-11，feat/adaptive-scheduler）
 
 范围刻意收窄到三类有明确收益、可解释的决策：
 
@@ -114,10 +115,25 @@ constraint filter → candidate generation → scoring/ranking → selection
 
 明确不做：NUMA、跨 pool 迁移、基于 utilization 的线程数调整（已有 resizer，避免两个控制回路相互打架）。
 
+落地形态：`AdaptiveScheduler`（`include/kairo/adaptive_scheduler.hpp`）复用 M1 pipeline
+与 M2 聚合器，三类决策全部命中预留的解释通道（`RoutingReason::AdaptiveHistory` /
+新增 `LoadShedding`、诊断位、`SchedulingMetrics` 三个新计数）；窗口证据按窗口差分
+（累计直方图无遗忘，会阻塞恢复与 fail-open）；开/关对称滞回。设计语义见
+`docs/design/scheduling_runtime.md` §8。
+
 验收：
-- 合成负载下 CPU/GPU 选择在 N 个任务内收敛，且在交替负载下不翻转（具体阈值写进测试）；
-- 降载场景中高 QoS 的 p99 queue wait 明显优于 DefaultScheduler（基准记录到 `docs/performance/`）；
-- 每个自适应决策都能从 `RoutingDecision` 与 `SchedulingMetrics` 复原原因。
+- ✅ 合成负载下 CPU/GPU 选择收敛且交替负载不翻转（阈值内置于
+  `tests/test_adaptive_scheduler.cpp`：双侧 min_samples 后 ≤2×min_samples 条收敛；
+  滞回边际内维持在用侧；44 用例含交替负载零翻转）；
+- ✅ 降载场景中高 QoS 的 p99 queue wait 明显优于 DefaultScheduler
+  （绑核配对：Interactive 探针端到端 p99 自适应 1.3-4.2ms vs
+  10.8-16.9ms，160-168 次结构化拒绝；记录到
+  `docs/performance/m3_adaptive_scheduler_results.md`）；
+- ✅ 每个自适应决策都能从 `RoutingDecision` 与 `SchedulingMetrics` 复原原因；
+- ✅ 热路径预算先定后实现：route 纯策略配对差 18.8ns（线 150ns）、
+  CpuOrGpu 冷路径 30.5ns（线 250ns）、on_task_completed 22.6ns（线 150ns）、
+  effective_priority_for 0.74ns（线 50ns）；默认路径配对 A/B vs M2 head ±5% 内；
+  TSAN 白名单全绿。
 
 ### 2.5 文档与发布
 

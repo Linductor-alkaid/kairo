@@ -2,9 +2,12 @@
 
 #include "task_options.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -93,6 +96,71 @@ struct FeedbackSnapshot {
     uint64_t total_failures = 0;
     std::vector<FeedbackEntry> entries;
 };
+
+/**
+ * @brief 按 (backend, qos, executor_name) 查找快照条目（线性扫描，
+ *  entries 规模有界）。
+ *
+ * 返回 nullptr 等价于"该键尚无任何样本"（快照契约：entries 只包含
+ * 至少有一条样本的键）——调用方据此回退到启发式/默认行为，不得把
+ * 缺样本当作"快"或"慢"。
+ */
+inline const FeedbackEntry* find_entry(const FeedbackSnapshot& snapshot,
+                                       ExecutionBackend backend,
+                                       QosClass qos,
+                                       const std::string& executor_name) {
+    for (const FeedbackEntry& entry : snapshot.entries) {
+        if (entry.key.backend == backend && entry.key.qos == qos &&
+            entry.key.executor_name == executor_name) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+/**
+ * @brief 直方图分位数估计（纳秒）。
+ *
+ * 在桶内按计数线性插值（桶下界 = 前一桶上界，首桶下界为 0）；样本
+ * 落入溢出桶（超过最后一个有限上界）时返回该上界作为保守下界估计。
+ * total 为 0（无样本）时返回 0——与 find_entry 的 nullptr 一样，语义
+ * 是"未知"，不是"快"。
+ */
+inline int64_t histogram_quantile_ns(const FeedbackHistogram& histogram,
+                                     double quantile) {
+    const uint64_t total = histogram.total();
+    if (histogram.buckets.empty() || total == 0) {
+        return 0;
+    }
+    if (quantile <= 0.0) {
+        return 0;
+    }
+    if (quantile >= 1.0) {
+        quantile = 1.0;
+    }
+    const uint64_t rank = static_cast<uint64_t>(
+        std::ceil(static_cast<double>(total) * quantile));
+    uint64_t cumulative = 0;
+    int64_t lower_bound_ns = 0;
+    for (const FeedbackHistogramBucket& bucket : histogram.buckets) {
+        cumulative += bucket.count;
+        if (cumulative >= rank && bucket.count > 0) {
+            if (bucket.upper_bound_ns == std::numeric_limits<int64_t>::max()) {
+                // 溢出桶：真实值只知"超过最后一个有限上界"，返回该上界。
+                return lower_bound_ns;
+            }
+            const double within = (static_cast<double>(rank) -
+                                   static_cast<double>(cumulative - bucket.count)) /
+                                  static_cast<double>(bucket.count);
+            return lower_bound_ns +
+                   static_cast<int64_t>(static_cast<double>(
+                                            bucket.upper_bound_ns - lower_bound_ns) *
+                                        within);
+        }
+        lower_bound_ns = bucket.upper_bound_ns;
+    }
+    return lower_bound_ns;
+}
 
 /** @brief FeedbackAggregator 配置。构造时校验并夹取；config() 返回
  *  生效配置（桶界含非法回退与截断后的结果）。运行期只读。 */

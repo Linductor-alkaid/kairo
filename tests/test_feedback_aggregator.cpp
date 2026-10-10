@@ -54,6 +54,8 @@ using sched::FeedbackAggregatorConfig;
 using sched::FeedbackEntry;
 using sched::FeedbackKey;
 using sched::FeedbackSnapshot;
+// M3 起公开的快照查找辅助（原本地独立实现升级为库 API）。
+using sched::find_entry;
 
 constexpr int64_t kInt64Max = std::numeric_limits<int64_t>::max();
 
@@ -89,19 +91,6 @@ uint64_t histogram_total(const sched::FeedbackHistogram& histogram) {
         total += bucket.count;
     }
     return total;
-}
-
-// 按 (backend, qos, executor_name) 查找 entry；不存在返回 nullptr。
-const FeedbackEntry* find_entry(const FeedbackSnapshot& snapshot,
-                                ExecutionBackend backend, QosClass qos,
-                                const std::string& name) {
-    for (const auto& entry : snapshot.entries) {
-        if (entry.key.backend == backend && entry.key.qos == qos &&
-            entry.key.executor_name == name) {
-            return &entry;
-        }
-    }
-    return nullptr;
 }
 
 // 与契约测试同款：带线程数的默认池初始化。

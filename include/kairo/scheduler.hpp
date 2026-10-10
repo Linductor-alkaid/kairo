@@ -71,6 +71,27 @@ public:
     }
 
     /**
+     * @brief 任务提交时对 QoS 默认排队优先级的咨询（0.7.0 M3）。
+     *
+     * 仅在用户未显式设置 priority（TaskOptions::priority_set == false）
+     * 时被 facade 咨询；显式 priority 永远原样生效，调度器无权覆盖。
+     * 默认实现原样返回 default_priority——DefaultScheduler 及 0.6.x
+     * 语义的自定义调度器不受影响。
+     *
+     * AdaptiveScheduler 用它实现有界的 QoS→priority 动态映射（长期
+     * queue wait 超标 +1 级，见 adaptive_scheduler.hpp）；facade 对
+     * 被调整的提交计数到 SchedulingMetrics::priority_promoted_count。
+     *
+     * 线程约定：与 route() 相同，多提交线程并发调用，实现必须自身
+     * 线程安全且不得修改调度器可观测状态之外的全局状态。
+     */
+    virtual int effective_priority_for(const TaskOptions& options,
+                                       int default_priority) const {
+        (void)options;
+        return default_priority;
+    }
+
+    /**
      * @brief 是否需要执行期反馈（0.6.1 热路径开关）。
      *
      * 返回 false（默认）时，submit_auto 不为任务附加测量包装，反馈通道
