@@ -87,6 +87,23 @@ v0.7.0 前置清债（M0，`docs/design/roadmap_v0.7.md` §2.1）：在引入任
   热路径实测快于 0.6.1 基线（阶段折叠为单一扁平函数，基线 36.5ns →
   35-36ns，配对 ABBA 4 轮）。
 
+- **反馈聚合层 FeedbackAggregator（M2，additive，默认零开销）**：
+  新增公开头 `include/kairo/feedback_aggregator.hpp`。`record()` 在
+  worker 线程无锁、无分配、noexcept 地累加执行期样本（EWMA 队列等待
+  与执行时长、分桶直方图、失败率、deadline 错过），按
+  `(backend, executor_name, qos)` 分键，per-worker 固定 32 分片（进程级
+  thread_local 槽位稳定映射）。读方只读周期性合并出的不可变快照
+  （RCU 风格原子 shared_ptr 指针交换发布，读路径无锁）。键空间有界
+  （每分片默认 16 槽、上限 64），表满后新键样本丢弃计数——"未知即
+  宽容"。样本与 0.6.1 测量包装同源：仅注入 `wants_feedback() == true`
+  的调度器时才有流入，默认调度器行为与开销不变。`Executor` 新增
+  `get_feedback_snapshot()`（诊断用），`get_snapshot_text()` 追加
+  `scheduling_feedback.*` 段。新增 `benchmark_feedback_aggregator`
+  （`--json`，验收线内置）：record 快路径实测 23.8ns/task（预算
+  ≤100ns）；facade 端到端（提交→worker 反馈→聚合转发）与只计数
+  调度器的差值在调度噪声内不可分辨（±40ns）。基准结果记录于
+  `docs/performance/m2_feedback_aggregator_results.md`。
+
 ### 性能
 
 - M0 前后基准对比记录见

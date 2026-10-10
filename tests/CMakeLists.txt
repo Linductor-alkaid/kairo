@@ -430,6 +430,13 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
             LABELS "benchmark;scheduling;baseline"
             TIMEOUT 120
         )
+    # 反馈聚合层基准（0.7.0 M2：record 快路径验收线 ≤100ns/task、
+    # snapshot RCU 读、refresh 合并、facade 端到端聚合差值）
+    elseif(TEST_NAME STREQUAL "benchmark_feedback_aggregator")
+        set_tests_properties(${TEST_NAME} PROPERTIES
+            LABELS "benchmark;scheduling"
+            TIMEOUT 120
+        )
     # 无锁任务执行器基准测试（高吞吐量压测，需要更长超时）
     elseif(TEST_NAME STREQUAL "benchmark_lockfree_task_executor")
         set_tests_properties(${TEST_NAME} PROPERTIES

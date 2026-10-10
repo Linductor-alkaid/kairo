@@ -214,6 +214,8 @@ status/reason/diagnostics 一一对应，另有 `deadline_missed_count`
 - **0.6.1 边界**：只建立 measurement contract。DefaultScheduler 不
   消费反馈；任何基于 queue pressure、historical latency 或 backend
   utilization 的自适应调度行为都属于 v0.7.0+。
+- 0.7.0 起，流入的样本在 `FeedbackAggregator` 中聚合（§7.1）；本节
+  的 measurement contract 本身不变。
 
 ### 6.4 capability snapshot 弱一致语义
 
@@ -244,7 +246,45 @@ status/reason/diagnostics 一一对应，另有 `deadline_missed_count`
 成功调度的普通路径不为诊断构造字符串：结构化 reason/status 的
 引入正是为了把 detail 字符串从程序判断接口的位置上移除。
 
-## 7. 测试与验证
+## 7. 0.7.0 反馈聚合层 FeedbackAggregator（M2，已落地）
+
+`include/kairo/feedback_aggregator.hpp`。0.6.1 建立了 measurement
+contract（§6.3）；M2 为其补上聚合与消费的基础设施。聚合本身仍不改变
+任何调度行为——DefaultScheduler 契约与 0.6.1 逐项一致，样本流入仅在
+注入 `wants_feedback() == true` 的调度器时发生。
+
+- **写路径（worker 热路径）**：`FeedbackAggregator::record()` 由
+  `report_scheduling_feedback()` 喂入，与 0.6.1 测量包装同源。满足
+  §2.1 的三条硬约束——不阻塞（无锁：样本写入调用线程的分片）、不分配
+  （键槽定长、SSO 字符串比较）、不抛异常（`noexcept`；异常值夹取）。
+  分片固定 32 片，进程级 `thread_local` 槽位稳定映射（worker 数超过
+  分片数时共享分片，仍无锁）。
+- **键与键空间**：按 `(backend, executor_name, qos)` 分键；
+  executor_name 槽内定长 48 字节（超长截断，截断后相同的键合并）。
+  键空间有界：每分片默认 16 槽（上限 64）；未见过的键先到先得建槽，
+  表满后新键样本丢弃并计入 `dropped_samples`——§6.4 "未知即宽容"的
+  聚合版。`register_key()` 支持预注册（幂等、全或无）。
+- **聚合量**：计数自构造起累计（attempts / failures / deadline_misses /
+  分桶直方图，桶界可配且须严格升序）；EWMA 是唯一带遗忘的量（整数
+  定点，千分比平滑系数，默认 125 = 1/8；样本夹取到 [0, 1e15] ns 保证
+  定点乘法不溢出）。
+- **读路径（RCU）**：`route()` 侧与诊断只读周期性合并出的不可变快照
+  （`FeedbackSnapshot`：EWMA、直方图、失败率、dropped 计数；entries
+  按 key 排序输出确定性），经原子 `shared_ptr` 指针交换发布，读路径
+  无锁。entries 只包含至少有一条样本的键（预注册未观测的键不出现，
+  消费方可假设 `attempts > 0`）。合并由 `refresh()` / `refresh_if_stale()`
+  驱动（本类不拥有线程：诊断读方与后续 M3 的 AdaptiveScheduler 决定
+  刷新节奏）。快照为弱一致：分片间不同步；EWMA 跨分片按样本数加权
+  平均。
+- **facade 接入**：`Executor::get_feedback_snapshot()`（诊断用，
+  超过 merge_interval 先重合并再读快照）；`get_snapshot_text()` 末尾
+  追加 `scheduling_feedback.*` 行式段（无样本时仅输出汇总计数）。
+- **验收**：开启聚合时每任务聚合开销 ≤ 100ns——
+  `benchmark_feedback_aggregator` 内置验收线（record 快路径中位数）；
+  facade 端到端（提交 → worker 反馈 → 聚合转发）差值同预算内；TSAN
+  全绿；默认调度器路径零变化。
+
+## 8. 测试与验证
 
 行为测试由 Independent-Verification-Agent 独立编写与执行，覆盖：
 EDF 排序、deadline 拒绝/错过计数、QoS 映射、affinity 诊断、

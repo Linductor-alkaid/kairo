@@ -306,6 +306,9 @@ void Executor::report_scheduling_feedback(const SchedulingFeedback& feedback) {
     // 在 worker 线程同步调用，其异常必须被隔离——反馈不能杀死任务执行；
     // 抛出时该条反馈的语义即"已尝试交付"。
     scheduling_counters_.feedback_reported.fetch_add(1, std::memory_order_relaxed);
+    // 0.7.0 M2 反馈聚合：worker 热路径无锁分片累加，noexcept（与下方
+    // IScheduler 交付解耦；仅 wants_feedback() 时本通道有样本流入）。
+    feedback_aggregator_.record(feedback);
     try {
         task_scheduler_->on_task_completed(feedback);
     } catch (...) {

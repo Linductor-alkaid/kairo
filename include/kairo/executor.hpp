@@ -5,6 +5,7 @@
 #include "task_options.hpp"
 #include "task_router.hpp"
 #include "scheduler.hpp"
+#include "feedback_aggregator.hpp"
 #include "task_cancellation.hpp"
 #include "timer.hpp"
 #include "serial_execution_context.hpp"
@@ -640,6 +641,16 @@ public:
     std::string get_snapshot_text() const;
 
     /**
+     * @brief 获取执行期反馈聚合快照（0.7.0 M2，诊断用）。
+     *
+     * 返回当前 FeedbackAggregator 的合并快照（距上次合并超过聚合器
+     * merge_interval 时先重合并再返回）。仅当注入的调度器声明
+     * wants_feedback() 时才有样本流入；无样本时返回空 entries 的快照。
+     * 低频诊断接口，不应在任务热路径调用。
+     */
+    scheduling::FeedbackSnapshot get_feedback_snapshot() const;
+
+    /**
      * @brief 设置低频故障现场回调。
      *
      * 回调在 wait 超时及 facade 生命周期/注册/启动失败的调用线程执行；
@@ -1118,6 +1129,10 @@ private:
     // wants_feedback() 时，submit_auto 才为任务附加测量包装（时间戳采样
     // + 终态回调）。set_scheduler() 时缓存，读取付一次 relaxed load。
     std::atomic<bool> scheduling_feedback_enabled_{false};
+
+    // 0.7.0 M2 反馈聚合层：样本与测量包装同源（仅 wants_feedback() 时有
+    // 流入），worker 线程无锁分片累加；route 侧与诊断经 RCU 快照读取。
+    scheduling::FeedbackAggregator feedback_aggregator_;
 
     mutable std::mutex task_graph_mutex_;
     // PR-3：task_graph_cv_ 已退役——dependency-driven 调度下不再有 worker

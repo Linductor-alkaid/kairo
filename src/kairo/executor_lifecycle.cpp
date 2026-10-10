@@ -385,7 +385,18 @@ ExecutorSnapshot Executor::get_snapshot() const {
 }
 
 std::string Executor::get_snapshot_text() const {
-    return monitor::format_executor_snapshot(get_snapshot());
+    std::string text = monitor::format_executor_snapshot(get_snapshot());
+    // 0.7.0 M2：追加反馈聚合段（无样本时只输出汇总计数行）。
+    text += scheduling::FeedbackAggregator::format_text(
+        *feedback_aggregator_.refresh_if_stale());
+    return text;
+}
+
+scheduling::FeedbackSnapshot Executor::get_feedback_snapshot() const {
+    // 超过聚合器 merge_interval 未合并时先重合并（诊断读方驱动周期合并；
+    // 读路径本身无锁）。
+    feedback_aggregator_.refresh_if_stale();
+    return *feedback_aggregator_.snapshot();
 }
 
 void Executor::emit_snapshot_diagnostic() const {

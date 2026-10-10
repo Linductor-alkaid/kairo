@@ -7,6 +7,7 @@
 > perf/task-monitor-sharding、perf/task-allocation-baseline、
 > feat/optional-priority-aging、perf/dependency-topo-order）。
 > **M1 pipeline 化已落地**（§2.2，分支 refactor/scheduler-route-pipeline）。
+> **M2 反馈聚合层已落地**（§2.3，分支 feat/feedback-aggregator）。
 > 输入：`docs/design/scheduling_runtime.md` §5/§6、`docs/CODE_REVIEW_2026-09-30.md`
 > 未结项、`CHANGELOG.md` 0.6.x 边界声明。
 
@@ -83,15 +84,22 @@ constraint filter → candidate generation → scoring/ranking → selection
   route 纯策略路径配对 A/B 实测快于 0.6.1 基线约 4%（36.6ns → 35.0ns，
   4 轮方向一致）。
 
-### 2.3 反馈聚合层（M2）
+### 2.3 反馈聚合层（M2）✅ 已落地（2026-10-11，feat/feedback-aggregator）
 
 `on_task_completed()` 在 worker 线程同步调用，因此聚合必须满足：不阻塞、不分配、不抛异常。
 
-- 新增 `FeedbackAggregator`：per-worker 分片的 EWMA / 分桶直方图（queue wait、执行时长、失败率），
-  按 `(backend, executor_name, qos)` 分键；`route()` 只读一个周期性合并出的快照（RCU 风格指针交换）。
-- 键空间有界（预注册或固定上限），超限就退化为"未知即宽容"，与 §6.4 的弱一致语义一致。
-- 对外提供 `get_feedback_snapshot()`（诊断用），并接入 `get_snapshot_text()`。
-- 验收：开启聚合时每任务额外开销有明确上限（建议 ≤ 100ns，基准实测后再定）；TSAN 全绿。
+- 新增 `FeedbackAggregator`（`include/kairo/feedback_aggregator.hpp`）：per-worker 分片
+  （固定 32 片，thread_local 槽位稳定映射）的 EWMA / 分桶直方图（queue wait、执行时长、
+  失败率、deadline 错过），按 `(backend, executor_name, qos)` 分键；读方只读周期性
+  合并出的快照（原子 shared_ptr 指针交换，RCU 风格，读路径无锁）。设计语义见
+  `docs/design/scheduling_runtime.md` §7，基准见 `docs/performance/m2_feedback_aggregator_results.md`。
+- 键空间有界（每分片默认 16 槽、上限 64，支持 `register_key()` 预注册），超限就退化为
+  "未知即宽容"（丢弃 + `dropped_samples` 计数），与 §6.4 的弱一致语义一致。
+- 对外提供 `Executor::get_feedback_snapshot()`（诊断用），并接入 `get_snapshot_text()`
+  （追加 `scheduling_feedback.*` 段）。
+- 验收（已达成）：开启聚合时每任务聚合开销实测 23.8ns/task（预算 ≤ 100ns，验收线
+  内置于 `benchmark_feedback_aggregator`）；facade 端到端聚合差值在噪声内不可分辨；
+  TSAN 全绿；默认调度器路径配对 A/B ±1.1% 内（零变化）。
 
 ### 2.4 AdaptiveScheduler MVP（M3）
 
