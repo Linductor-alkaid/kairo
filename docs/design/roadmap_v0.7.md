@@ -6,6 +6,7 @@
 > Unreleased 节；分支 refactor/split-executor-facade、
 > perf/task-monitor-sharding、perf/task-allocation-baseline、
 > feat/optional-priority-aging、perf/dependency-topo-order）。
+> **M1 pipeline 化已落地**（§2.2，分支 refactor/scheduler-route-pipeline）。
 > 输入：`docs/design/scheduling_runtime.md` §5/§6、`docs/CODE_REVIEW_2026-09-30.md`
 > 未结项、`CHANGELOG.md` 0.6.x 边界声明。
 
@@ -61,7 +62,7 @@
 `benchmark_thread_pool_hotpath` 无回归（配对 A/B）；CR-071 修复后，多线程
 提交吞吐在采样率为 0 时与关闭监控持平（±5%，实测 ±1.2%）。
 
-### 2.2 DefaultScheduler 内部 pipeline 化（M1）
+### 2.2 DefaultScheduler 内部 pipeline 化（M1）✅ 已落地（2026-10-10，refactor/scheduler-route-pipeline）
 
 按 §5 的既定方向，把 `route()` 内部重构为
 
@@ -70,8 +71,17 @@ constraint filter → candidate generation → scoring/ranking → selection
 ```
 
 - `IScheduler` 对外接口不变；`DefaultScheduler` 的 scoring 阶段为空实现，结果逐项等同 0.6.1。
-- pipeline 的各阶段作为可组合组件对外开放，`AdaptiveScheduler` 复用 filter / candidate，只替换 scoring。
-- 验收：0.6.1 的契约测试（`test_scheduling_contract_v061.cpp`）一字不改通过；route 纯策略路径开销 ≤ 0.6.1 + 5%。
+- pipeline 的各阶段作为可组合组件对外开放（`include/kairo/scheduling_pipeline.hpp`：
+  Deadline/GpuResource 约束过滤器、`ConstraintFilterChain<>`、
+  `IntentCandidateGenerator`、`IdentityScoring`、`select_first`、
+  `apply_affinity_advisory`），`AdaptiveScheduler` 复用 filter / candidate，只替换 scoring。
+- 热路径形状约束（实测沉淀）：公开阶段函数是普通外联定义（可链接、可组合），
+  热路径经由的内部实现函数以 always_inline 折叠进
+  `SchedulingPipeline<IdentityScoring>` 的显式实例化——未折叠的阶段边界
+  实测各值 ~10ns，候选中间结构二次物化实测 +10ns 级。
+- 验收：0.6.1 的契约测试（`test_scheduling_contract_v061.cpp`）一字不改通过；
+  route 纯策略路径配对 A/B 实测快于 0.6.1 基线约 4%（36.6ns → 35.0ns，
+  4 轮方向一致）。
 
 ### 2.3 反馈聚合层（M2）
 

@@ -70,6 +70,23 @@ v0.7.0 前置清债（M0，`docs/design/roadmap_v0.7.md` §2.1）：在引入任
   `test_task_dependency_topo`（17 用例，含 n=20000 规模回归与固定种子
   随机对拍）。
 
+### 调度
+
+- **DefaultScheduler route() 内部 pipeline 化（M1，纯结构）**：
+  `route()` 重构为 `约束过滤 → 候选生成 → 评分/排序 → 选择` 四阶段。
+  新增公开头 `include/kairo/scheduling_pipeline.hpp`：
+  `DeadlineConstraintFilter` / `GpuResourceConstraintFilter` /
+  `ConstraintFilterChain<>`（约束过滤，可编译期组合、首个拒绝短路）、
+  `IntentCandidateGenerator`（0.6.1 意图路由决策树）、
+  `IdentityScoring`（空评分实现）、`select_first` /
+  `apply_affinity_advisory`（选择与 advisory）。各阶段可组合，
+  后续 AdaptiveScheduler 复用过滤与候选生成、只替换评分。
+  `IScheduler` 对外接口不变，决策结果与 0.6.1 逐项一致
+  （契约测试 `test_scheduling_contract_v061.cpp` 一字不改通过）；
+  `TaskRouter::route()` 保留为"无过滤/无评分/无 advisory"参考路径。
+  热路径实测快于 0.6.1 基线（阶段折叠为单一扁平函数，基线 36.5ns →
+  35-36ns，配对 ABBA 4 轮）。
+
 ### 性能
 
 - M0 前后基准对比记录见
