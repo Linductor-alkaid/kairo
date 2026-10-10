@@ -22,12 +22,21 @@ namespace kairo {
  * Task包含std::atomic<bool>不可复制和移动，因此使用unique_ptr管理。
  *
  * @note 语义约定（CR-024，实测确认后文档化）：
- *  - 严格优先级，无老化（aging）：持续的高优先级负载会让 LOW/NORMAL
- *    任务无限期等待。这是有意设计（实时场景要求高优先级零干扰）；
- *    需要防饿死的场景应在应用层拆分流量或使用独立执行器。
- *  - 已知窗口：worker 会优先弹本地队列再查全局调度器，滞留在某个
- *    本地队列的高优先级任务对全局严格序不可见——洪泛尾段低优先级
+ *  - 默认（aging 关闭）：严格优先级，无老化——持续的高优先级负载会让
+ *    LOW/NORMAL 任务无限期等待。这是有意设计（实时场景要求高优先级零
+ *    干扰）；需要防饿死的场景应在应用层拆分流量、使用独立执行器，或
+ *    开启下述可选 aging。
+ *  - 已知窗口（NN-05）：worker 会优先弹本地队列再查全局调度器，滞留在
+ *    某个本地队列的高优先级任务对全局严格序不可见——洪泛尾段低优先级
  *    任务可能提前至多一个本地队列深度的时间执行（实测 ~100ms 量级）。
+ *    aging 不改变该窗口（worker 扫描顺序未变）。
+ *  - 可选 aging（CR-024，v0.7.0 M0，默认关闭）：经 set_aging_policy
+ *    开启后，dequeue 时按堆顶任务的等待时长计算有效优先级
+ *    effective = min(CRITICAL, base + waited / boost_interval)，在全部
+ *    非空队列的堆顶中选 (effective, EDF, submit FIFO) 最优者弹出。
+ *    队列内部堆序不重排；关闭时行为与逐位不变。开启会改变出队顺序
+ *    （这是它的目的），并把 dequeue 的锁面从"短路单队列"变为
+ *    "全队列临界区"——仅在需要防饿死时开启。
  */
 class PriorityScheduler {
 public:
@@ -46,6 +55,20 @@ public:
     PriorityScheduler& operator=(const PriorityScheduler&) = delete;
     PriorityScheduler(PriorityScheduler&&) = delete;
     PriorityScheduler& operator=(PriorityScheduler&&) = delete;
+
+    /**
+     * @brief 配置可选的防饿死 aging（CR-024，默认关闭）
+     *
+     * 关闭（默认）时出队顺序与既有严格优先级语义逐位一致。开启后，
+     * 堆顶任务等待每满 boost_interval 提升一级有效优先级（至多到
+     * CRITICAL）；有效优先级超过其它队列堆顶基级时可在 dequeue 时
+     * 跨级胜出。提升只影响出队选择，不改写任务自身的 priority。
+     *
+     * @param enabled 是否启用 aging
+     * @param boost_interval_ns 每提升一级所需的最短等待（纳秒）；
+     *        enabled 且值 <= 0 时按 1ns 处理（等待任务立即逐级到顶）
+     */
+    void set_aging_policy(bool enabled, int64_t boost_interval_ns) noexcept;
 
     /**
      * @brief 添加任务到优先级队列
@@ -148,6 +171,14 @@ private:
     mutable std::mutex high_mutex_;
     mutable std::mutex normal_mutex_;
     mutable std::mutex low_mutex_;
+
+    // CR-024 可选 aging：atomic 保证 initialize 配置与 dequeue 读取之间
+    // 无数据竞争（configure 发生在 worker 启动前，成本是一次 relaxed load）。
+    std::atomic<bool> aging_enabled_{false};
+    std::atomic<int64_t> aging_interval_ns_{100'000'000};  // 默认 100ms/级
+
+    /// aging 开启路径：锁全部队列，选 (有效优先级, EDF, FIFO) 最优堆顶弹出。
+    std::unique_ptr<Task> pop_best_with_aging();
 
     /** 从 unique_ptr<Task> 移动出到 Task&，供 dequeue/dequeue_batch 复用（PA-4） */
     static void move_task_out(const std::unique_ptr<Task>& src, Task& out);

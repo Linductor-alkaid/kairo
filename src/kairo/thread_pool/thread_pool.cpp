@@ -52,6 +52,11 @@ bool ThreadPool::initialize(const ThreadPoolConfig& config) {
         stop_.store(false);
         resize_monitor_stop_.store(false);
 
+        // CR-024（v0.7.0 M0）：可选防饿死 aging（默认关闭）。此刻尚无
+        // worker 与并发 submit，直接写入 scheduler 的配置原子即可。
+        scheduler_.set_aging_policy(config_.enable_priority_aging,
+                                    config_.priority_aging_interval_ns);
+
         // 初始化负载均衡器
         load_balancer_ = std::make_unique<LoadBalancer>(config_.min_threads);
 
