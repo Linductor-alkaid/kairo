@@ -1,6 +1,11 @@
-# Kairo v0.7.x 开发大纲（草案）
+# Kairo v0.7.x 开发大纲
 
-> 状态：规划草案（2026-10-10），未承诺。基线：v0.6.1。
+> 状态：**实施中**（2026-10-10 起按本大纲推进）。基线：v0.6.1。
+> 进度：**0.7.0 M0 前置清债已完成**（§2.1 五项全部落地，基准对比见
+> `docs/performance/m0_debt_paydown_results.md`，变更清单见 CHANGELOG
+> Unreleased 节；分支 refactor/split-executor-facade、
+> perf/task-monitor-sharding、perf/task-allocation-baseline、
+> feat/optional-priority-aging、perf/dependency-topo-order）。
 > 输入：`docs/design/scheduling_runtime.md` §5/§6、`docs/CODE_REVIEW_2026-09-30.md`
 > 未结项、`CHANGELOG.md` 0.6.x 边界声明。
 
@@ -42,18 +47,19 @@
 
 ## 2. v0.7.0 — 调度基础整备 + 反馈闭环 MVP
 
-### 2.1 前置清债（M0，先于任何自适应代码合入）
+### 2.1 前置清债（M0，先于任何自适应代码合入）✅ 已完成（2026-10-10）
 
-| 项 | 问题 | 为何是 0.7.0 前置 |
-|---|---|---|
-| CR-071 / CR-163 | `TaskMonitor` 单把全局 mutex 串行化提交/执行热路径；采样率为 0 时仍然取锁 | 反馈测量的 `queue_wait_ns` 和 `execution_duration_ns` 会混入监控锁的争用，自适应会学到噪声 |
-| CR-107 | 每个任务 6-10 次堆分配 | 反馈包装还要再加开销；先把基线压下来，验收线才有意义 |
-| CR-024 + NN-05 | 严格优先级无老化，LOW 无限饿死；本地队列优先级倒置 | 自适应会动态调整优先级/QoS，没有防饿死机制会放大饿死。先提供可选的 aging policy（默认关闭，保持现有语义） |
-| CR-052 遗留 | 依赖建链 O(n²)、环检测在锁内遍历（n=4000 约 3.9s） | 0.7.1 的 deadline policy 会与依赖图交互；改为增量拓扑序 |
-| executor.cpp 拆分 | 单个文件 2242 行，承担门面、路由、决策记录、tracked 图 | 新策略代码不再往巨石里堆。按 routing / tracked graph / lifecycle / gpu facade 拆成独立编译单元，**纯结构改动，单独 PR，零行为变化** |
+| 项 | 问题 | 为何是 0.7.0 前置 | 状态 |
+|---|---|---|---|
+| CR-071 / CR-163 | `TaskMonitor` 单把全局 mutex 串行化提交/执行热路径；采样率为 0 时仍然取锁 | 反馈测量的 `queue_wait_ns` 和 `execution_duration_ns` 会混入监控锁的争用，自适应会学到噪声 | ✅ 分片 + 采样门控（perf/task-monitor-sharding） |
+| CR-107 | 每个任务 6-10 次堆分配 | 反馈包装还要再加开销；先把基线压下来，验收线才有意义 | ✅ 第一阶段：10→9 allocs/task + 计数基准入库（perf/task-allocation-baseline） |
+| CR-024 + NN-05 | 严格优先级无老化，LOW 无限饿死；本地队列优先级倒置 | 自适应会动态调整优先级/QoS，没有防饿死机制会放大饿死。先提供可选的 aging policy（默认关闭，保持现有语义） | ✅ 可选 aging 落地，NN-05 维持文档化（feat/optional-priority-aging） |
+| CR-052 遗留 | 依赖建链 O(n²)、环检测在锁内遍历（n=4000 约 3.9s） | 0.7.1 的 deadline policy 会与依赖图交互；改为增量拓扑序 | ✅ 增量拓扑序，n=20000 正序链 21-36ms（perf/dependency-topo-order） |
+| executor.cpp 拆分 | 单个文件 2242 行，承担门面、路由、决策记录、tracked 图 | 新策略代码不再往巨石里堆。按 routing / tracked graph / lifecycle / gpu facade 拆成独立编译单元，**纯结构改动，单独 PR，零行为变化** | ✅ 五编译单元 + detail 头（refactor/split-executor-facade，第一个合入） |
 
-验收：全量测试绿；`benchmark_scheduling_paths` 和 `benchmark_thread_pool_hotpath` 无回归；
-CR-071 修复后，多线程提交吞吐在采样率为 0 时与关闭监控持平（±5%）。
+验收（已达成）：全量测试绿（171/171）；`benchmark_scheduling_paths` 和
+`benchmark_thread_pool_hotpath` 无回归（配对 A/B）；CR-071 修复后，多线程
+提交吞吐在采样率为 0 时与关闭监控持平（±5%，实测 ±1.2%）。
 
 ### 2.2 DefaultScheduler 内部 pipeline 化（M1）
 

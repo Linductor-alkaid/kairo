@@ -4,6 +4,81 @@
 
 ---
 
+## [Unreleased] - 0.7.0 开发中
+
+v0.7.0 前置清债（M0，`docs/design/roadmap_v0.7.md` §2.1）：在引入任何
+自适应调度代码之前，先消除会污染反馈测量或放大自适应风险的遗留项。
+全部为 additive 或纯结构改动；默认行为与 0.6.1 一致。
+
+### 结构
+
+- **executor.cpp 拆分**（纯结构，零行为变化）：2242 行单体实现按职责
+  拆为 `executor_lifecycle` / `executor_task_graph` / `executor_timers` /
+  `executor_backends` / `executor_routing` 五个编译单元，共享辅助提取到
+  内部头 `src/kairo/executor_detail.hpp`。方法集合（117 个）与导出符号
+  面逐一核验不变。
+
+### 线程池
+
+- **可选防饿死 aging（CR-024，additive，默认关闭）**：
+  `PriorityScheduler::set_aging_policy(enabled, boost_interval_ns)`。
+  开启后 dequeue 在全部非空队列堆顶中按
+  （有效优先级, EDF, 提交 FIFO）选取——堆顶任务每等待
+  `priority_aging_interval_ns` 提升一级有效优先级（至多 CRITICAL），
+  队列内部堆序与任务自身 priority 不改写。关闭时出队路径与 0.6.1
+  逐位一致。`ThreadPoolConfig` / `ExecutorConfig` 新增
+  `enable_priority_aging`（默认 false）与
+  `priority_aging_interval_ns`（默认 100ms）。NN-05 本地队列倒置窗口
+  维持文档化现状（worker 扫描顺序未变）。
+
+### 可观测性
+
+- **TaskMonitor 分片化与热路径门控（CR-071/CR-163）**：单把全局 mutex
+  改为哈希分片（id 映射与 in-flight 快照按 task_id 分 16 片，聚合统计
+  按 task_type 分 8 片），dropped/evicted/in-flight 计数改原子。
+  新增热路径快速门：统计采样率为 0 时不触碰 id 映射与统计分片；
+  in-flight 采样率为 0 或容量为 0 时不触碰 in-flight 分片——两门全关时
+  `record_task_start/complete/timeout` 零取锁。配套语义补全（对齐
+  `set_enabled(false)`）：
+  - `set_sampling_rate(0.0)` 现在清空 task_id→type 映射：已开始未结算
+    的统计样本随清空丢弃（语义即"关闭统计采样"）；
+  - `set_in_flight_sampling_rate(0.0)` 现在清空 in-flight 快照（此前
+    已采样条目会残留至被 complete 擦除）。
+  in-flight 容量语义微调：分片化后为跨分片软上界（原子计数预留，
+  并发下至多短暂超限 1-2 条）。验收：采样率 0 时多线程提交吞吐与
+  关闭监控持平 ±5%（配对实测 ±1.2%）。
+
+### 提交路径
+
+- **每任务堆分配基线（CR-107，第一阶段）**：`submit()` 主路径的
+  promise 与 ready 标志合并为单控制块（`detail::PromiseCell`）；
+  `generate_task_id` 经 `std::to_chars` 单次拼接；池提交路径消除
+  monitor_id 中间拷贝。新增 `benchmark_submit_allocations` 基准
+  （替换全局 operator new，确定性计数）：submit 路径 10.00 →
+  **9.00 allocs/task**（816 → 768 字节/task），tracked 路径 19.13 不变。
+  剩余分配项受结构约束（move-only 可调用需间接层、双 std::function 是
+  后端接口、Task 含 atomic、快照字符串是公开契约），留待接口层调整。
+
+### 任务依赖
+
+- **依赖环检测增量化（CR-052）**：`TaskDependencyManager` 引入
+  Pearce-Kelly 风格增量拓扑序（节点序号 + 反向边表）。加边快路径
+  O(1)（序约束已满足），不再做锁内全图 DFS；违序时三段式受限重排，
+  环检测并入同一次遍历。链式建链从 O(n²)（n=4000 约 3.9s）降至
+  n=20000 约 28ms；与插入序完全相反的最坏形态仍为 O(n²) 纯内存遍历
+  （与旧实现同阶，facade 真实形态全走快路径）。新增
+  `test_task_dependency_topo`（17 用例，含 n=20000 规模回归与固定种子
+  随机对拍）。
+
+### 性能
+
+- M0 前后基准对比记录见
+  `docs/performance/m0_debt_paydown_results.md`：两个既有热路径基准
+  （`benchmark_scheduling_paths` / `benchmark_thread_pool_hotpath`）
+  配对验证无回归；EDF dequeue 的关闭路径仅增加一次原子读。
+
+---
+
 ## [0.6.1] - 2026-10-06
 
 0.6.1 不扩张调度策略维度，对 0.6.0 建立的 Scheduling Runtime 边界做
