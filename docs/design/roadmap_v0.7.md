@@ -9,6 +9,8 @@
 > **M1 pipeline 化已落地**（§2.2，分支 refactor/scheduler-route-pipeline）。
 > **M2 反馈聚合层已落地**（§2.3，分支 feat/feedback-aggregator）。
 > **M3 AdaptiveScheduler MVP 已落地**（§2.4，分支 feat/adaptive-scheduler）。
+> **0.7.0 文档与发布已落地**（§2.5，分支 docs/v070-website-migration-sync）；
+> 0.7.0 里程碑全部完成，下一版本为 0.7.1（§3）。
 > 输入：`docs/design/scheduling_runtime.md` §5/§6、`docs/CODE_REVIEW_2026-09-30.md`
 > 未结项、`CHANGELOG.md` 0.6.x 边界声明。
 
@@ -135,11 +137,11 @@ constraint filter → candidate generation → scoring/ranking → selection
   effective_priority_for 0.74ns（线 50ns）；默认路径配对 A/B vs M2 head ±5% 内；
   TSAN 白名单全绿。
 
-### 2.5 文档与发布
+### 2.5 文档与发布 ✅ 已落地（2026-10-10，docs/v070-website-migration-sync）
 
-- `docs/design/scheduling_runtime.md` 新增 §7 "0.7.0 Runtime-aware Scheduling"。
-- website 新增 "何时使用 AdaptiveScheduler / 何时不该用" 决策页，重点写震荡、冷启动、不可复现性。
-- MIGRATION：0.7.0 节（预计无必需迁移）。
+- ✅ `docs/design/scheduling_runtime.md` 新增 §7 "0.7.0 Runtime-aware Scheduling"：随 M2/M3 落地（§7 反馈聚合层、§8 AdaptiveScheduler 设计语义，§9 测试与验证）。
+- ✅ website 新增 "何时使用 AdaptiveScheduler / 何时不该用" 决策页（中英 `website/{zh,en}/guides/adaptive-scheduling.md`），重点写震荡、冷启动、不可复现性；版本与迁移页新增 0.7.0 开发快照小节；API 覆盖索引接入调度策略行；GPU 自动选择 / 执行模型 / 调度运行时教程页补开发快照交叉注记。
+- ✅ MIGRATION：0.7.0 节（确认无必需迁移；记录 `effective_priority_for` 默认实现、`RoutingReason` 穷举 switch 注意事项与 opt-in 行为差异）。`docs/API.md` §3.8 追加 0.7.0 开发快照文档；`docs/skill` 两张调度卡同步；`scripts/check_docs_drift.sh` 通过。
 
 ---
 

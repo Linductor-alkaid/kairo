@@ -409,6 +409,53 @@ reason 细分的 `deadline_rejected_count` /
 反馈，由决策与指标体系观测）。DefaultScheduler 不消费反馈，
 0.6.1 也不包含任何基于反馈的自适应调度行为。
 
+**0.7.0 开发快照（自适应调度，未随稳定版本发布）**：以下为 `master`
+上已落地的 additive 扩展，未注入对应调度器时不产生任何行为或开销
+变化。
+
+- **反馈聚合层（`<kairo/feedback_aggregator.hpp>`）**：
+  `scheduling::FeedbackAggregator` 按 `(backend, executor_name, qos)`
+  分键，在 worker 线程无锁、无分配、noexcept 地累加 EWMA
+  （`queue_wait_ns` / `execution_duration_ns`）、分桶直方图与
+  失败/deadline 计数；`FeedbackAggregatorConfig`（`max_keys=16`、
+  `merge_interval=100ms`、直方图桶界等，构造期夹取）控制键空间上界
+  与合并节奏。读方持有 `shared_ptr<const FeedbackSnapshot>`（RCU
+  风格发布）；公开查询辅助 `scheduling::find_entry(snapshot, backend,
+  qos, name)`（无样本键返回 `nullptr`）与
+  `scheduling::histogram_quantile_ns(histogram, q)`（桶内线性插值；
+  无样本返回 0）。`Executor::get_feedback_snapshot()` 返回诊断用
+  快照，`get_snapshot_text()` 追加 `scheduling_feedback.*` 段。
+- **`IScheduler::effective_priority_for(options, default_priority)`**：
+  新虚方法（默认实现原样返回），每次 `submit_auto(TaskBuilder)` 在
+  未显式设置 `priority` 时咨询一次；显式 `priority_set` 永不经过它。
+  自定义调度器可覆写以参与 QoS→priority 提升；须可多提交线程并发
+  调用。
+- **`AdaptiveScheduler`（`<kairo/adaptive_scheduler.hpp>`，opt-in）**：
+  复用 0.6.1 基线路由 + 内嵌 `FeedbackAggregator`，叠加三类可解释
+  决策：①`CpuOrGpu` 意图的历史端到端 EWMA 选择（双侧
+  `min_samples=8` 后采信，切换需 `hysteresis_margin=0.25` 边际；
+  命中时 `reason=AdaptiveHistory` + 同名诊断位，`detail` 携带两侧
+  数值；`RequireRequestedBackend` 不翻转）；②QoS 感知降载（类
+  queue wait p99 按 `queue_wait_p99_target_ns={0, 100ms, 10ms, 2ms}`
+  目标、连续 `shed_breach_windows=3` 窗超阈开闸，对严格更低 QoS 类
+  合成 `reason=LoadShedding` 拒绝；连续 `shed_close_windows=5` 恢复
+  窗关闸，`recovery_ratio=0.5`；窗口样本 `< min_window_samples=32`
+  或目标 0 时跳过评估）；③QoS→priority 有界提升（连续
+  `promotion_windows=6` 窗 +1 级、`promotion_close_windows=10` 窗
+  取消，封顶 CRITICAL，显式 priority 不覆盖，生效经
+  `effective_priority_for`）。评估节奏每 `merge_interval` 至多一次；
+  诊断接口 `load_shed_active(QosClass)` / `priority_promoted(QosClass)`
+  / `feedback_snapshot()` / `format_state_text()`。`load_shedding_enabled`
+  / `priority_promotion_enabled` 可分别关闭。
+- **新增结构化诊断通道**：`RoutingReason::LoadShedding`；
+  `RoutingDiagnostics::AdaptiveHistory`（`1u<<2`）、
+  `RoutingDiagnostics::LoadShedding`（`1u<<3`）；`SchedulingMetrics`
+  计数 `adaptive_history_count` / `load_shedding_rejected_count` /
+  `priority_promoted_count`。对 `RoutingReason` 穷举 switch 的代码
+  需补新分支；以 `RoutingDecision::status` 为权威判据的代码不受影响。
+  选型与风险边界见网站"何时使用 AdaptiveScheduler"页
+  （`website/zh/guides/adaptive-scheduling.md`）。
+
 ### 3.9 延迟与周期任务
 
 > ⚠️ **API 范围提示**：`submit_delayed`、`submit_periodic` **仅在 `Executor` Facade 类中提供**，**不属于** `IAsyncExecutor`、`IExecutor` 或 `ThreadPool` 的接口。用户直接对底层 `ThreadPool` 实例调用这些方法会编译失败。延迟与周期任务统一由 Facade 内部的 `ExecutorManager` 调度，底层 `ThreadPool` 不感知任务时间维度。

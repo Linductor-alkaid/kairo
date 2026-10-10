@@ -58,4 +58,5 @@ custom scheduler routes=1
 
 - [控制命令优先](/zh/tutorial/priority) —— 手动优先级槽位
 - [延迟重试与健康检查](/zh/tutorial/delayed-and-periodic) —— 定时句柄
+- [何时使用 AdaptiveScheduler](/zh/guides/adaptive-scheduling) —— 0.7.0 开发快照：反馈驱动的 CPU/GPU 选择、降载与提升
 - [版本与迁移](/zh/reference/version-and-migration) —— 0.6.0 变更

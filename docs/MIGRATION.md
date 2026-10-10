@@ -4,6 +4,55 @@
 
 ---
 
+## 从 0.6.x 升级到 0.7.0：Runtime-aware Scheduling（无必需迁移）
+
+0.7.0 是 additive 版本：默认行为与 0.6.1 逐项一致（0.6.1 契约测试
+`test_scheduling_contract_v061.cpp` 一字不改通过），**不迁移任何代码即可
+升级**。全部新能力围绕"利用观测的调度"展开，且只在显式选择后生效。
+路线图见 `docs/design/roadmap_v0.7.md`，设计语义见
+`docs/design/scheduling_runtime.md` §7/§8。
+
+### 新增公开头文件（均为 additive）
+
+| 头文件 | 内容 | 是否影响既有代码 |
+|---|---|---|
+| `<kairo/scheduling_pipeline.hpp>` | M1：`DefaultScheduler::route()` 内部四阶段化的可组合组件（约束过滤、候选生成、`IdentityScoring`、选择） | 否——`DefaultScheduler` 对外接口与决策结果不变 |
+| `<kairo/feedback_aggregator.hpp>` | M2：`FeedbackAggregator`（worker 线程无锁样本累加 + 周期合并快照）与公开查询辅助 `find_entry` / `histogram_quantile_ns` | 否；`Executor` 新增诊断入口 `get_feedback_snapshot()`，`get_snapshot_text()` 追加 `scheduling_feedback.*` 段 |
+| `<kairo/adaptive_scheduler.hpp>` | M3：`AdaptiveScheduler` + `AdaptiveSchedulerConfig`（CPU/GPU 历史选择、QoS 降载、QoS→priority 有界提升） | 仅显式注入（`set_scheduler`）后生效 |
+
+### 自定义调度器实现者需要知道的接口扩展
+
+- `IScheduler` 新增虚方法
+  `effective_priority_for(const TaskOptions&, int default_priority)`，
+  默认实现原样返回——既有自定义调度器无需改动即保持现行为；希望参与
+  QoS→priority 提升的调度器覆写它（提交侧每次 `submit_auto` 咨询一次，
+  须与 `route()` 一样可并发调用）。
+- `RoutingReason` 新增 `LoadShedding`；`RoutingDiagnostics` 新增
+  `AdaptiveHistory`（`1u << 2`）与 `LoadShedding`（`1u << 3`）位。
+  **对 `RoutingReason` 做穷举 `switch` 的代码**需要补新分支（作者建议
+  以 `RoutingDecision::status` 为权威判据、reason 仅作解释，见 0.6.1
+  契约）；未设 `status` 的 0.6.0 风格拒绝归一化规则不变，`LoadShedding`
+  同样被纳入归一化。
+- `SchedulingMetrics` 新增三个计数：`adaptive_history_count`、
+  `load_shedding_rejected_count`、`priority_promoted_count`（字段追加，
+  按字段名读取的代码不受影响）。
+
+### 注入 AdaptiveScheduler 后的行为差异（仅 opt-in 生效）
+
+- `wants_feedback()` 返回 true，`submit_auto` 会为任务附加测量包装
+  （`CpuGpuTask` 的 CPU/GPU 两侧各自上报）——这是反馈数据的唯一来源，
+  0.6.x 行为（默认调度器无包装）不变。
+- CPU/GPU 选择可能把 `CpuOrGpu` 意图翻转到历史更优侧（决策
+  `reason = AdaptiveHistory`）；`FallbackPolicy::RequireRequestedBackend`
+  的请求与显式 `priority()` 永不被覆盖。
+- 某类 QoS 的 queue wait p99 持续超目标时，**严格更低 QoS 类**的提交
+  收到 `reason = LoadShedding` 的结构化拒绝；调用方应按 0.6.1 契约
+  以 `RoutingDecision::status == Rejected` 判定并自行退避。
+- 适用条件与风险（震荡、冷启动、不可复现性）见网站
+  [何时使用 AdaptiveScheduler](../website/zh/guides/adaptive-scheduling.md)。
+
+---
+
 ## 从 0.5.x 升级到 0.6.0：项目更名 kairo + 兼容层清理
 
 0.6.0 是破坏性变更窗口，包含两类变化：项目更名为 kairo，以及历史兼容层

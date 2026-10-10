@@ -45,7 +45,13 @@ Semantic boundaries:
 - Strictly expired-at-submission deadlines reject (`DeadlineExpired`); a task starting after its deadline still runs and records `FailureKind::DeadlineMissed` (visible via `get_failure_status().deadline_missed_count` and `get_scheduling_metrics().deadline_missed_count`).
 - QoS is a priority preset: `BestEffort/Standard/Interactive/Critical -> LOW/NORMAL/HIGH/CRITICAL`. No preemption, latency bound, or bandwidth guarantee; deterministic cycles need the RealtimeQueue intent.
 - Affinity hints are advisory (no OS thread rebinding): mismatch still accepts the task as `AcceptedDegraded`. Resource declarations are a feasibility check against capability snapshots (TOCTOU possible) - unfit requests reject with `BackendUnavailable`/`CapacityPressure` plus the `ResourceInfeasible` bit instead of degrading silently.
-- Health at a glance: `executor.get_scheduling_metrics()` counts decisions (accepted/degraded/rejected, deadline and resource rejections, affinity mismatches). Schedulers overriding `wants_feedback()` receive per-task completion measurements via `on_task_completed()` - `DefaultScheduler` does not consume feedback, and 0.6.x has no adaptive behavior.
+- Health at a glance: `executor.get_scheduling_metrics()` counts decisions (accepted/degraded/rejected, deadline and resource rejections, affinity mismatches). Schedulers overriding `wants_feedback()` receive per-task completion measurements via `on_task_completed()` - `DefaultScheduler` does not consume feedback.
+
+## Adaptive Scheduling (0.7.0 development snapshot; opt-in)
+
+`AdaptiveScheduler` (`include/kairo/adaptive_scheduler.hpp`) is an injectable `IScheduler` that reuses the 0.6.1 baseline routing and adds three explainable feedback-driven decisions: history-based CPU/GPU selection for `CpuOrGpu` intents (minimum samples + hysteresis; hit -> `reason = AdaptiveHistory`, `detail` carries both EWMA numbers), QoS-aware load shedding (a class's queue-wait p99 over target for `shed_breach_windows` consecutive windows rejects strictly lower QoS with `reason = LoadShedding`), and bounded QoS->priority promotion (+1 level, explicit priorities never overridden). Check `RoutingDecision::status` first - shedding rejections are structured, so callers should back off on `Rejected` + `LoadShedding`.
+
+Use it only for long-lived, shape-stable workloads whose callers can respond to rejection; expect no benefit during the learning period (cold start), and treat decision sequences as non-reproducible (troubleshoot via `RoutingDecision`, the three new `SchedulingMetrics` counters, and `load_shed_active()` / `priority_promoted()` / `feedback_snapshot()` / `format_state_text()`). Selection guide: `website/en/guides/adaptive-scheduling.md`. The default path (no injection) is byte-for-byte 0.6.1 behavior.
 
 ## Integration Pitfalls
 

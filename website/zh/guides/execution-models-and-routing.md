@@ -93,6 +93,8 @@ auto future = executor.submit_auto(std::move(work));
 4. `RequireRequestedBackend` 跳过上述启发式，要求指定 GPU 可提交；没有名称即拒绝。
 5. `AllowCpu` 在 GPU 不可用、未运行、已知容量不足或实际 GPU 提交被拒绝时改走默认 CPU，并在决策中写 `fell_back = true`。`NoFallback` 则让 future 以异常就绪。
 
+> 0.7.0 开发快照（未发布）：第 3 步描述的是默认路径。注入 `AdaptiveScheduler` 后，`CpuOrGpu` 决策可由完成时延历史（带滞回与最小样本约束）翻转；适用条件与风险见[何时使用 AdaptiveScheduler](/zh/guides/adaptive-scheduling)。
+
 `preferred_executor` 是“锁定候选名称”，不是“保证该任务一定跑在 GPU”。实际提交仍可能与 stop 或容量变化竞争；请同时观察 future 和 routing decision。
 
 ### 3. `dispatch_auto`：intent 和名称必须同时匹配

@@ -137,6 +137,20 @@ v0.7.0 前置清债（M0，`docs/design/roadmap_v0.7.md` §2.1）：在引入任
   基准结果
   记录于 `docs/performance/m3_adaptive_scheduler_results.md`。
 
+### 文档
+
+- **0.7.0 文档与发布同步（roadmap §2.5）**：`docs/MIGRATION.md` 新增
+  "从 0.6.x 升级到 0.7.0"一节（无必需迁移：新头文件、
+  `IScheduler::effective_priority_for` 默认实现、新 reason/诊断位/计数
+  的穷举 switch 注意事项）；`docs/API.md` §3.8 追加 0.7.0 开发快照
+  （pipeline 组件、FeedbackAggregator、AdaptiveScheduler 决策语义与
+  诊断接口）。网站新增中英文选型页"何时使用 AdaptiveScheduler"
+  （`website/{zh,en}/guides/adaptive-scheduling.md`，重点覆盖震荡、
+  冷启动、不可复现性），版本与迁移页新增 0.7.0 开发快照小节，API
+  覆盖索引接入调度策略行，GPU 自动选择 / 执行模型 / 调度运行时教程
+  页补开发快照交叉注记；`docs/skill` 两张调度卡（kairo-integration /
+  kairo-maintainer）同步 0.7.0 自适应层与测试清单。
+
 ### 性能
 
 - M0 前后基准对比记录见

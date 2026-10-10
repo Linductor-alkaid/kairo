@@ -93,6 +93,8 @@ Matching proceeds as follows:
 4. `RequireRequestedBackend` skips these heuristics and requires the named GPU to be submit-capable; a missing name rejects.
 5. `AllowCpu` uses default CPU when GPU is unavailable, stopped, known-full, or rejects the actual submission, recording `fell_back = true`. `NoFallback` makes the future ready with an exception.
 
+> 0.7.0 development snapshot (unreleased): step 3 describes the default path. With an `AdaptiveScheduler` injected, the `CpuOrGpu` decision can be flipped by completion-latency history (with hysteresis and minimum-sample guards); see [When to Use AdaptiveScheduler](/en/guides/adaptive-scheduling) for applicability and risks.
+
 `preferred_executor` pins a candidate name; it does not guarantee that a task will run on GPU. Stop and capacity may still race real submission, so inspect both the future and routing decision.
 
 ### 3. `dispatch_auto`: intent and name must both match

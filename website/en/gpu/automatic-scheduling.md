@@ -36,6 +36,8 @@ future.get();
 
 The public `Executor` routing path currently uses only explicit preference and thresholds: the Facade does not record completion timings into its internal `GpuScheduler`, so enabling `enable_adaptive` supplies no history for automatic routing.
 
+> 0.7.0 development snapshot (unreleased): `AdaptiveScheduler` on `master` is the opt-in path for callers who want the platform to learn from completion timings (per-`(backend, executor, qos)` EWMA with hysteresis before flipping a `CpuOrGpu` decision). The default path described above (no adaptive scheduler injected) is unaffected; see [When to Use AdaptiveScheduler](/en/guides/adaptive-scheduling) for applicability and risks.
+
 `GpuScheduler` itself decides in this order when it owns caller-supplied history:
 
 1. Choose GPU when `TaskCharacteristics::prefer_gpu` is true.

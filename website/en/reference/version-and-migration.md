@@ -7,7 +7,7 @@ description: Entry points for the development snapshot, releases, and API migrat
 
 ## Current scope
 
-The latest release record is `v0.6.1`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
+The latest release record is `v0.6.1`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. `master` is currently in the 0.7.0 development cycle (Runtime-aware Scheduling); see the development-snapshot section below. This first English edition does not maintain historical versioned sites.
 
 | What to check | Source of truth |
 | --- | --- |
@@ -15,6 +15,17 @@ The latest release record is `v0.6.1`. This site uses that stable version as its
 | Recommended migrations from older APIs | [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) |
 | Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | Complete current signatures | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
+
+## 0.7.0 (development snapshot, unreleased): Runtime-aware Scheduling
+
+`master` is progressing through 0.7.0 per `docs/design/roadmap_v0.7.md`; everything below is additive and part of no stable tag yet:
+
+- **Default path unchanged**: `DefaultScheduler` matches 0.6.1 field by field (the contract test passes unmodified); **no migration is required**, and nothing is paid unless an adaptive scheduler is injected.
+- **Routing pipeline**: `DefaultScheduler::route()` is internally restructured into `constraint filter → candidate generation → scoring/selection` stages, exposed as composable components (`<kairo/scheduling_pipeline.hpp>`); the external interface and decisions are unchanged.
+- **Feedback aggregation**: `FeedbackAggregator` (`<kairo/feedback_aggregator.hpp>`) accumulates execution-time samples lock-free on worker threads (EWMA, bucketed histograms, failure rate) and periodically merges them into immutable snapshots; `Executor::get_feedback_snapshot()` is the diagnostics entry, and `get_snapshot_text()` gains a `scheduling_feedback.*` section.
+- **AdaptiveScheduler (opt-in)**: `<kairo/adaptive_scheduler.hpp>` provides three explainable decisions once injected — history-based CPU/GPU selection (hysteresis + minimum samples), QoS-aware load shedding, and bounded QoS→priority promotion. When to use it and the risks (oscillation, cold start, non-reproducibility) are covered in [When to Use AdaptiveScheduler](/en/guides/adaptive-scheduling).
+- **New structured diagnostics**: `RoutingReason::LoadShedding`, the `AdaptiveHistory` / `LoadShedding` diagnostics bits, and three new `SchedulingMetrics` counters (`adaptive_history_count` / `load_shedding_rejected_count` / `priority_promoted_count`).
+- Full upgrade notes: the "upgrading from 0.6.x to 0.7.0" section of [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md).
 
 ## 0.6.1: Scheduling Runtime observability and docs governance
 
