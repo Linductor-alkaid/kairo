@@ -1,4 +1,4 @@
-# Kairo API 使用说明
+# Kairo API 使用说明（v0.6.1）
 
 本文档说明 `kairo` 库的主要 API、配置与类型，便于集成与扩展。完整接口定义见头文件 `include/kairo/`。
 
@@ -470,7 +470,7 @@ TimerHandle submit_periodic_cancellable(int64_t period_ms,
 
 `submit_periodic()` 提供允许抖动的遥测、健康检查和后台刷新能力。固定控制周期、单线程状态所有权和实时调度尝试由第 4 节的专用实时线程提供。
 
-### 3.9 任务协作取消
+### 3.10 任务协作取消
 
 取消是**请求不是中断**：排队中的任务会被安全跳过；运行中的任务通过协作停止
 令牌（`kairo::StopToken`）自行决定何时退出。阻塞在无 wakeup 机制调用上的任务
@@ -526,7 +526,7 @@ size_t closure_graveyard_size() const;
 与外部事件循环（asio strand 等）的取消/定时边界见
 [外部事件循环互操作指南](external_event_loop_interop.md)。
 
-### 3.10 总量有界 admission（max_in_flight_tasks）
+### 3.11 总量有界 admission（max_in_flight_tasks）
 
 `ExecutorConfig::max_in_flight_tasks` 为 facade 默认异步提交提供总量上限：
 `0`（默认）不启用、零热路径开销；正值 N 表示该 Executor 实例已接纳未结算的
@@ -1368,7 +1368,7 @@ kairo 库遵循以下原则 (P019 三阶段 + P019C companion):
 | `enable_work_stealing` | `bool` | `true` | 无锁工作窃取；`max_threads == 1` 时自动关；-10.7% 性能退化关闭 |
 | `enable_monitoring` | `bool` | `true` | 是否启用监控 |
 | `task_graph_retention_capacity` | `size_t` | `1024` | 已完成任务图 handle 的保留上限；`0` 表示终态 handle 立即过期，活动依赖不会提前回收 |
-| `max_in_flight_tasks` | `size_t` | `0` | facade 默认异步提交的总量在途上限（scheduler + 本地队列 + 执行中）；`0` = 不启用（零热路径开销）。与 `queue_capacity`（每 worker 本地队列）语义无关，见 §3.10 |
+| `max_in_flight_tasks` | `size_t` | `0` | facade 默认异步提交的总量在途上限（scheduler + 本地队列 + 执行中）；`0` = 不启用（零热路径开销）。与 `queue_capacity`（每 worker 本地队列）语义无关，见 §3.11 |
 
 内部动态 resize 扩容时，新增 worker 的负载元数据会重置为零负载，并将 `last_update` 初始化为当前 `std::chrono::steady_clock::now()`。
 
@@ -1413,7 +1413,7 @@ kairo 库遵循以下原则 (P019 三阶段 + P019C companion):
   - `pool_exhausted_count` (uint64_t)：对象池耗尽拒绝累计数。
   - `queue_full_count` (uint64_t)：队列满拒绝累计数。
 - **TaskStatistics**：`total_count`、`success_count`、`fail_count`、`timeout_count`、`total_execution_time_ns`、`max_`/`min_execution_time_ns`。执行前软超时增加 `timeout_count`，不增加 `fail_count`。
-- **ExecutorFailureStatus**：`task_exception_count`、`submit_rejected_count`、`timeout_count`、`realtime_drop_count`、`gpu_failure_count`、`wait_timeout_count`、`tuning_fallback_count`、`capacity_exhausted_count`、`total_count`。`wait_for_completion()` 或 `try_wait_for_completion(timeout)` 等待超时时记录 `FailureKind::WaitTimeout` 并增加 `wait_timeout_count`；这只表示等待动作超时，不表示任务被取消、panic 或抛异常。总量 admission 耗尽时记录 `FailureKind::CapacityExhausted` 并增加 `capacity_exhausted_count`（配置与覆盖范围见 §3.10）。
+- **ExecutorFailureStatus**：`task_exception_count`、`submit_rejected_count`、`timeout_count`、`realtime_drop_count`、`gpu_failure_count`、`wait_timeout_count`、`tuning_fallback_count`、`capacity_exhausted_count`、`total_count`。`wait_for_completion()` 或 `try_wait_for_completion(timeout)` 等待超时时记录 `FailureKind::WaitTimeout` 并增加 `wait_timeout_count`；这只表示等待动作超时，不表示任务被取消、panic 或抛异常。总量 admission 耗尽时记录 `FailureKind::CapacityExhausted` 并增加 `capacity_exhausted_count`（配置与覆盖范围见 §3.11）。
 - **ExecutorResult**：`ok`、`error_code`、`message`，用于 `initialize`、`register_realtime_task`、`start_realtime_task`、`register_gpu_executor` 等。常见 `ExecutorErrorCode`：`AlreadyInitialized`、`AlreadyShutdown`、`InvalidConfig`、`DuplicateName`、`NotFound`、`BackendUnavailable`、`StartFailed`、`PermissionDenied`。失败会写入 failure/diagnostic event，但配置错误不会计入 `task_exception_count`。
 - **CompletionStatus**：`executor_name`、`is_initialized`、`is_running`、`is_idle`、`active_tasks`、`queued_tasks`、`pending_tasks`、`completed_tasks`、`failed_tasks`。由 `get_completion_status()` 和 `WaitResult::status` 返回；状态查询不会触发默认异步执行器懒初始化。它仅描述默认异步执行器，不包含实时线程、实时队列或应用自建的多消费者流水线；跨视觉、控制等消费者的 idle 状态由应用定义并汇总。
 - **WaitResult**：`completed`、`timed_out`、`timeout`、`status`、`message`、可选 `diagnostic_snapshot`。由 `wait_for_completion(timeout)` 返回；超时会记录 `FailureKind::WaitTimeout`，并保留同一次路径采集的完整生命周期快照。

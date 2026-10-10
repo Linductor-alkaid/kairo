@@ -7,11 +7,11 @@ aside: false
 
 # 内容维护
 
-本手册以“用户能完成任务并处理失败”为完成标准，而不是以公开接口是否被提到为标准。当前内容基线为 `v0.6.0` 与后续 `master` 开发快照；页面中的待发布能力不能视为已有稳定版本承诺。
+本手册以“用户能完成任务并处理失败”为完成标准，而不是以公开接口是否被提到为标准。当前内容基线为 `v0.6.1` 与后续 `master` 开发快照；页面中的待发布能力不能视为已有稳定版本承诺。
 
 <div class="maintenance-hero">
   <p class="maintenance-eyebrow">CURRENT BASELINE</p>
-  <p class="maintenance-version">v0.6.0 + master 开发快照</p>
+  <p class="maintenance-version">v0.6.1 + master 开发快照</p>
   <p>稳定 tag 发布、公开 API 行为变化或教程示例修改时，必须重新核对对应责任域。</p>
 </div>
 

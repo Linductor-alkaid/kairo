@@ -1,6 +1,6 @@
 # Executor 完整生命周期 Monitor 实施计划
 
-本文档基于[完整生命周期 Monitor 演进设计](../design/lifecycle-monitor-design.md)，列出从现有分散监控能力演进到统一生命周期快照的实施任务、验收标准和发布顺序。
+本文档基于[完整生命周期 Monitor 演进设计](../design/lifecycle_monitor_design.md)，列出从现有分散监控能力演进到统一生命周期快照的实施任务、验收标准和发布顺序。
 
 ## 目标
 
@@ -278,7 +278,7 @@
 
 ## 参考
 
-- 设计文档：[docs/design/lifecycle-monitor-design.md](../design/lifecycle-monitor-design.md)
+- 设计文档：[docs/design/lifecycle_monitor_design.md](../design/lifecycle_monitor_design.md)
 - 现有监控实现：`src/executor/monitor/task_monitor.*`、`src/executor/monitor/statistics_collector.*`
 - 生命周期管理：`include/executor/executor.hpp`、`include/executor/executor_manager.hpp`
 - 现有状态类型：`include/executor/types.hpp`、`include/executor/config.hpp`
