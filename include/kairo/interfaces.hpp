@@ -40,6 +40,15 @@ bool is_empty_std_function(const F& f) {
     }
 }
 
+/// CR-107（v0.7.0 M0）：promise 与 promise_ready 此前是两个 make_shared，
+/// 每任务多付一次堆分配和一份控制块。合并为单控制块：ready 的
+/// store/CAS 语义与原独立 atomic_bool 完全一致。
+template<typename T>
+struct PromiseCell {
+    std::promise<T> promise;
+    std::atomic_bool ready{false};
+};
+
 } // namespace detail
 
 /**

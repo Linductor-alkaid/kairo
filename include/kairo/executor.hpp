@@ -1561,15 +1561,15 @@ auto Executor::submit_with_rejection_observer(
             "Async executor not initialized. Call initialize() first.");
     }
 
-    auto promise = std::make_shared<std::promise<return_type>>();
-    auto promise_ready = std::make_shared<std::atomic_bool>(false);
-    auto future = promise->get_future();
+    // CR-107：promise 与 ready 标志合并为单控制块（原两个 make_shared）。
+    auto cell = std::make_shared<detail::PromiseCell<return_type>>();
+    auto future = cell->promise.get_future();
 
     if constexpr (sizeof...(Args) == 0) {
         if (detail::is_empty_std_function(f)) {
             auto exception = std::make_exception_ptr(std::invalid_argument("empty task"));
-            promise_ready->store(true, std::memory_order_release);
-            promise->set_exception(exception);
+            cell->ready.store(true, std::memory_order_release);
+            cell->promise.set_exception(exception);
             record_submit_rejected(
                 executor_name,
                 task_id,
@@ -1582,6 +1582,9 @@ auto Executor::submit_with_rejection_observer(
         }
     }
 
+    // bound_task 经 shared_ptr 持有：支持 move-only 可调用（如 unique_ptr
+    // 捕获的 lambda）——wrapper 转 std::function 要求可拷贝目标，间接层
+    // 在此擦除该约束。改动此结构须保证 tutorial 11 的 move-only 用例。
     auto bound_task = std::make_shared<decltype(std::bind(std::forward<F>(f), std::forward<Args>(args)...))>(
         std::bind(std::forward<F>(f), std::forward<Args>(args)...)
     );
@@ -1592,32 +1595,32 @@ auto Executor::submit_with_rejection_observer(
     if (!admission.accepted) {
         auto exception = std::make_exception_ptr(CapacityExhaustedException(
             "In-flight submission capacity exhausted"));
-        promise_ready->store(true, std::memory_order_release);
-        promise->set_exception(exception);
+        cell->ready.store(true, std::memory_order_release);
+        cell->promise.set_exception(exception);
         return future;
     }
     auto release_admission = [releaser = std::move(admission.releaser)]() {
         if (releaser) releaser->release();
     };
 
-    auto task_wrapper = [this, executor_name, task_id, promise, promise_ready, bound_task,
+    auto task_wrapper = [this, executor_name, task_id, cell, bound_task,
                          release_admission]() mutable {
         try {
             if constexpr (std::is_void_v<return_type>) {
                 std::invoke(*bound_task);
                 release_admission();
-                promise->set_value();
+                cell->promise.set_value();
             } else {
                 auto result = std::invoke(*bound_task);
                 release_admission();
-                promise->set_value(std::move(result));
+                cell->promise.set_value(std::move(result));
             }
-            promise_ready->store(true, std::memory_order_release);
+            cell->ready.store(true, std::memory_order_release);
         } catch (...) {
             auto exception = std::current_exception();
             release_admission();
-            promise->set_exception(exception);
-            promise_ready->store(true, std::memory_order_release);
+            cell->promise.set_exception(exception);
+            cell->ready.store(true, std::memory_order_release);
             record_task_exception(
                 executor_name,
                 task_id,
@@ -1627,12 +1630,12 @@ auto Executor::submit_with_rejection_observer(
         }
     };
 
-    auto on_timeout = [this, executor_name, task_id, promise, promise_ready,
+    auto on_timeout = [this, executor_name, task_id, cell,
                        release_admission](std::exception_ptr exception) {
         bool expected = false;
-        if (promise_ready->compare_exchange_strong(expected, true)) {
+        if (cell->ready.compare_exchange_strong(expected, true)) {
             release_admission();
-            promise->set_exception(exception);
+            cell->promise.set_exception(exception);
             record_task_timeout(
                 executor_name,
                 task_id,
@@ -1645,9 +1648,9 @@ auto Executor::submit_with_rejection_observer(
         auto exception = std::make_exception_ptr(
             std::runtime_error("Async executor rejected task submission"));
         bool expected = false;
-        if (promise_ready->compare_exchange_strong(expected, true)) {
+        if (cell->ready.compare_exchange_strong(expected, true)) {
             release_admission();
-            promise->set_exception(exception);
+            cell->promise.set_exception(exception);
             record_submit_rejected(
                 executor_name,
                 task_id,
