@@ -155,8 +155,8 @@ TEST(ApiDocAdmissionFields, AdmissionSectionAndConfigDocumented) {
     const std::string doc = read_api_md();
     ASSERT_FALSE(doc.empty());
 
-    // §3.10 章节存在并覆盖关键语义宣称。
-    EXPECT_NE(doc.find("### 3.10 总量有界 admission"), std::string::npos)
+    // §3.11 章节存在并覆盖关键语义宣称（8ba4f83 文档规范化重编号 3.10→3.11）。
+    EXPECT_NE(doc.find("### 3.11 总量有界 admission"), std::string::npos)
         << "API.md must keep the bounded admission section";
     EXPECT_NE(doc.find("CapacityExhaustedException"), std::string::npos)
         << "API.md must document the capacity rejection exception";
