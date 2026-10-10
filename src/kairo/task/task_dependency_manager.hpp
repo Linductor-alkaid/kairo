@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -10,14 +11,24 @@ namespace kairo {
 
 /**
  * @brief 任务依赖管理器
- * 
+ *
  * 用于管理任务之间的依赖关系，支持：
  * - 注册任务依赖
  * - 检查任务是否可执行（所有依赖已完成）
  * - 标记任务完成
  * - 检测循环依赖
- * 
+ *
  * 线程安全：使用 shared_mutex 实现读写锁，支持并发读取
+ *
+ * @note CR-052（v0.7.0 M0）：环检测改为 Pearce-Kelly 风格的增量拓扑序。
+ * 每个节点持有拓扑序号 ord，边 u→v（u 依赖 v）携带约束 ord[v] < ord[u]。
+ * add_dependency 快路径（ord[v] < ord[u] 已满足）O(1) 接受，不再做全图
+ * DFS——此前每条边一次锁内全图遍历使链式建链退化为 O(n²)（n=4000 约
+ * 3.9s）。违序时对受影响闭包做受限重排，环检测并入同一次遍历；全部
+ * 遍历为显式栈迭代（Phase 1 已消除的栈溢出面不回归）。反向边表
+ * dependents_ 与 dependencies_ 同步维护。已知边界：与插入序完全相反的
+ * 建链形态每次触发重排，代价为已建尾部闭包的线性访问（纯内存遍历）；
+ * 按依赖就绪序建链的真实形态全部走快路径。
  */
 class TaskDependencyManager {
 public:
@@ -120,32 +131,27 @@ public:
     bool is_completed(const std::string& task_id) const;
 
 private:
-    /**
-     * @brief 检测循环依赖（DFS）
-     * 
-     * 检查从 task_id 到 depends_on 是否存在路径，如果存在则说明添加依赖后会形成循环
-     * 
-     * @param task_id 任务ID
-     * @param depends_on 依赖的任务ID
-     * @return 如果存在循环依赖，返回 true
-     */
-    bool has_cycle(const std::string& task_id, 
-                   const std::string& depends_on) const;
+    /// Pearce-Kelly 受限重排：加约束 v→u（v 先于 u）而 ord[v] > ord[u] 时，
+    /// 从 u 沿反向边收 ord ≤ ord[v] 的后代（RB，途中遇 v 即成环），从 v 沿
+    /// 正向边收 ord ≥ ord[u] 的祖先（RA），RB∪RA 按原序连续重编号。
+    /// 返回 false 表示成环（不加边）。
+    bool rebuild_order_for(const std::string& u, const std::string& v);
 
-    /**
-     * @brief DFS 辅助函数，检查从 start 到 target 是否存在路径
-     * 
-     * @param start 起始任务ID
-     * @param target 目标任务ID
-     * @param visited 已访问的任务集合
-     * @return 如果存在路径，返回 true
-     */
-    bool dfs_path_exists(const std::string& start,
-                        const std::string& target,
-                        std::unordered_set<std::string>& visited) const;
+    /// 确保 ord_ 中存在节点序号（首次出现时分配递增序号）。
+    void ensure_ord(const std::string& id);
 
     // 依赖关系图：task_id -> [depends_on_1, depends_on_2, ...]
     std::unordered_map<std::string, std::vector<std::string>> dependencies_;
+
+    // CR-052：反向边表 task_id -> [依赖 task_id 的任务]，供违序重排沿
+    // "谁依赖我"方向遍历；与 dependencies_ 在 add/remove/prune/clear 中
+    // 同步维护。
+    std::unordered_map<std::string, std::vector<std::string>> dependents_;
+
+    // CR-052：增量拓扑序号（被依赖者 < 依赖者）。单调递增分配；违序时
+    // 受影响闭包在原序区间内重编号，计数器不回退。
+    std::unordered_map<std::string, int64_t> ord_;
+    int64_t next_ord_ = 0;
 
     // 已完成的任务集合
     std::unordered_set<std::string> completed_tasks_;
