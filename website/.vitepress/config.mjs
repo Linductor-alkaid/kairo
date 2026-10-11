@@ -24,7 +24,7 @@ export default defineConfig({
           {
             text: 'Reference',
             items: [
-              { text: 'Versions and Migration · v0.6.0', link: '/en/reference/version-and-migration' },
+              { text: 'Versions and Migration · v0.7.0', link: '/en/reference/version-and-migration' },
               { text: 'API Reference', link: '/en/reference/api' }
             ]
           },
@@ -201,7 +201,7 @@ export default defineConfig({
       {
         text: '参考',
         items: [
-          { text: '版本与迁移 · v0.6.0', link: '/zh/reference/version-and-migration' },
+          { text: '版本与迁移 · v0.7.0', link: '/zh/reference/version-and-migration' },
           { text: '完整 API 参考', link: '/zh/reference/api' }
         ]
       },

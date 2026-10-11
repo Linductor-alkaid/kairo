@@ -7,7 +7,7 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
 
 ## 当前版本说明
 
-项目 CMake 与最新发布记录的版本均为 `v0.6.1`。本站以该稳定版为基线，同时跟随 `master` 的后续开发；未在稳定 tag 中发布的能力不构成版本承诺。`master` 当前处于 0.7.0 开发周期（Runtime-aware Scheduling），相应能力见下方开发快照小节。首发不维护历史版本站点；发布时应以 tag 重新核对页面。
+项目 CMake 与最新发布记录的版本均为 `v0.7.0`。本站以该稳定版为基线，同时跟随 `master` 的后续开发；未在稳定 tag 中发布的能力不构成版本承诺。首发不维护历史版本站点；发布时应以 tag 重新核对页面。
 
 | 需要确认什么 | 入口 |
 | --- | --- |
@@ -16,9 +16,9 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
 | 选项、编译器与后端前置 | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | 当前完整签名 | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
-## 0.7.0（开发快照，未发布）：Runtime-aware Scheduling
+## 0.7.0：Runtime-aware Scheduling
 
-`master` 正按 `docs/design/roadmap_v0.7.md` 推进 0.7.0；以下能力均为 additive，未包含在任何稳定 tag 中：
+0.7.0（2026-10-10 发布）按 `docs/design/roadmap_v0.7.md` 落地；以下能力均为 additive：
 
 - **默认路径不变**：`DefaultScheduler` 行为与 0.6.1 逐项一致（契约测试一字不改通过）；**无必需迁移**，不注入自适应调度器就不付任何代价。
 - **路由 pipeline 化**：`DefaultScheduler::route()` 内部重构为 `约束过滤 → 候选生成 → 评分/选择` 四阶段，各阶段作为可组合组件开放（`<kairo/scheduling_pipeline.hpp>`）；对外接口与决策结果不变。

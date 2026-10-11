@@ -1,6 +1,6 @@
 # Kairo v0.7.x 开发大纲
 
-> 状态：**实施中**（2026-10-10 起按本大纲推进）。基线：v0.6.1。
+> 状态：**0.7.0 已发布**（2026-10-10，M0 至 §2.5 全部落地，tag v0.7.0）。基线：v0.6.1。
 > 进度：**0.7.0 M0 前置清债已完成**（§2.1 五项全部落地，基准对比见
 > `docs/performance/m0_debt_paydown_results.md`，变更清单见 CHANGELOG
 > Unreleased 节；分支 refactor/split-executor-facade、

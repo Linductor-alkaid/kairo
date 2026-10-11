@@ -1,11 +1,11 @@
 ---
 title: When to Use AdaptiveScheduler
-description: "Development-snapshot capability of 0.7.0: when feedback-driven CPU/GPU selection, QoS load shedding, and priority promotion apply, and the boundaries of oscillation, cold start, and non-reproducibility."
+description: "Adaptive scheduling in 0.7.0: when feedback-driven CPU/GPU selection, QoS load shedding, and priority promotion apply, and the boundaries of oscillation, cold start, and non-reproducibility."
 ---
 
 # When to Use AdaptiveScheduler
 
-> **0.7.0 development-snapshot capability (unreleased)**: this page describes behavior that exists on `master` but is not part of any stable tag yet. The stable baseline v0.6.1 has no adaptive scheduling — without injecting an `AdaptiveScheduler`, nothing on this page applies and `DefaultScheduler` matches 0.6.1 field by field.
+> **New in 0.7.0**: `AdaptiveScheduler` ships with 0.7.0 as an opt-in scheduler. The previous stable baseline v0.6.1 has no adaptive scheduling — without injecting an `AdaptiveScheduler`, nothing on this page applies and `DefaultScheduler` matches 0.6.1 field by field.
 
 `AdaptiveScheduler` (`include/kairo/adaptive_scheduler.hpp`) is an `IScheduler` implementation injected through `set_scheduler()`: it first produces the 0.6.1 baseline decision, then applies three explainable feedback-driven decisions on top. Injecting it means turning it on; every decision carries a structured explanation channel.
 

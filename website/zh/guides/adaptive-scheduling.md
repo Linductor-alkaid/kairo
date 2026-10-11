@@ -1,11 +1,11 @@
 ---
 title: 何时使用 AdaptiveScheduler
-description: 0.7.0 开发快照能力：反馈驱动的 CPU/GPU 选择、QoS 降载与优先级提升的适用条件，以及震荡、冷启动与不可复现性三类风险的边界。
+description: 0.7.0 自适应调度：反馈驱动的 CPU/GPU 选择、QoS 降载与优先级提升的适用条件，以及震荡、冷启动与不可复现性三类风险的边界。
 ---
 
 # 何时使用 AdaptiveScheduler
 
-> **0.7.0 开发快照能力（未发布）**：本文描述 `master` 上已存在、尚未包含在任何稳定 tag 中的行为。稳定基线 v0.6.1 没有任何自适应调度——不注入 `AdaptiveScheduler` 时，本文所述内容全部不适用，`DefaultScheduler` 与 0.6.1 逐项一致。
+> **随 0.7.0 发布的新能力**：AdaptiveScheduler 是 0.7.0 新增的 opt-in 调度器。此前的稳定基线 v0.6.1 没有任何自适应调度——不注入 `AdaptiveScheduler` 时，本文所述内容全部不适用，`DefaultScheduler` 与 0.6.1 逐项一致。
 
 `AdaptiveScheduler`（`include/kairo/adaptive_scheduler.hpp`）是经 `set_scheduler()` 注入的 `IScheduler` 实现：先复用 0.6.1 基线路由产出决策，再叠加三类可解释的反馈决策。选择注入即选择开启；每个决策都带结构化解释通道。
 

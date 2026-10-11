@@ -5,7 +5,7 @@ description: 公开 API 的模块入口与稳定性边界。
 
 # API 参考
 
-本站以 `v0.6.1` 为稳定版本基线，包含统一自动路由、等待、通信、任务图和诊断能力；后续 `master` 的未发布能力不构成稳定承诺。完整签名、默认值、错误码和兼容语义只在仓库的 [`docs/API.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) 维护，避免网站内容和仓库文档出现两套说法。
+本站以 `v0.7.0` 为稳定版本基线，包含统一自动路由、等待、通信、任务图和诊断能力；后续 `master` 的未发布能力不构成稳定承诺。完整签名、默认值、错误码和兼容语义只在仓库的 [`docs/API.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) 维护，避免网站内容和仓库文档出现两套说法。
 
 ## 先按模块定位
 
@@ -22,7 +22,7 @@ description: 公开 API 的模块入口与稳定性边界。
 | 串行派发与总量 admission | `submit_on[_with_handle]`、`SerialExecutionContext`、`max_in_flight_tasks`、`CapacityExhaustedException` | [容量与告警](/zh/realtime-and-communication/capacity-and-alerting)、[事件循环互操作](/zh/guides/event-loop-interop) | admission 与串行派发章节。 |
 | 实时 | 注册/启动 `_ex`、push、状态、任务列表 | [实时控制循环](/zh/realtime-and-communication/realtime-control) | 实时任务 API。 |
 | GPU | 注册 `_ex`、`submit_gpu`、状态、`submit_auto`、scheduler | [GPU 专题](/zh/gpu/) | GPU API 与构建文档。 |
-| 调度策略与自适应 | `IScheduler`、`DefaultScheduler`、`set_scheduler`、`AdaptiveScheduler`（0.7.0 开发快照） | [何时使用 AdaptiveScheduler](/zh/guides/adaptive-scheduling)、[声明任务的期限、优先级与资源](/zh/tutorial/scheduling-runtime) | `docs/API.md` §3.8 与 `docs/design/scheduling_runtime.md`。 |
+| 调度策略与自适应 | `IScheduler`、`DefaultScheduler`、`set_scheduler`、`AdaptiveScheduler`（0.7.0） | [何时使用 AdaptiveScheduler](/zh/guides/adaptive-scheduling)、[声明任务的期限、优先级与资源](/zh/tutorial/scheduling-runtime) | `docs/API.md` §3.8 与 `docs/design/scheduling_runtime.md`。 |
 | 有界 dispatch 与 worker | `dispatch_auto`、`DispatchResult`、`start_worker`、`WorkerHandle` | [提交接口选型](/zh/guides/choosing-submit-api)、[Blocking I/O worker](/zh/realtime-and-communication/blocking-io-workers) | 路由与 Blocking I/O API。 |
 | 高级 | `ExecutorManager`、执行器指针、`ICycleManager`、`LockFreeTaskExecutor` | [高级与原理](/zh/advanced/) | 高级接口与设计文档。 |
 
@@ -45,7 +45,7 @@ description: 公开 API 的模块入口与稳定性边界。
 | `register_lockfree_executor` / `start_` / `stop_` / `get_lockfree_executor_names` | 提交接口选型、高级与原理 | 后端生命周期；`dispatch_auto` 的 `accepted` 只代表队列接收。 |
 | 有界 dispatch、Blocking worker | 执行模型与路由边界 | admission 不等于完成、worker 生命周期。 |
 | GPU 注册、提交、状态、自动调度 | GPU 教程 | 后端可用性、stream 与硬件验证。 |
-| `set_scheduler` / `get_scheduler`、`AdaptiveScheduler` | [何时使用 AdaptiveScheduler](/zh/guides/adaptive-scheduling)（选型）、调度运行时教程 | 0.7.0 开发快照能力：opt-in 注入；默认调度器行为不变；降载拒绝与提升边界见该页。 |
+| `set_scheduler` / `get_scheduler`、`AdaptiveScheduler` | [何时使用 AdaptiveScheduler](/zh/guides/adaptive-scheduling)（选型）、调度运行时教程 | 0.7.0 新能力：opt-in 注入；默认调度器行为不变；降载拒绝与提升边界见该页。 |
 | 直接 manager / executor 指针 | 高级接口 | 所有权、并发和生命周期责任。 |
 
 ## 状态与结果怎么读

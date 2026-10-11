@@ -47,7 +47,7 @@ Semantic boundaries:
 - Affinity hints are advisory (no OS thread rebinding): mismatch still accepts the task as `AcceptedDegraded`. Resource declarations are a feasibility check against capability snapshots (TOCTOU possible) - unfit requests reject with `BackendUnavailable`/`CapacityPressure` plus the `ResourceInfeasible` bit instead of degrading silently.
 - Health at a glance: `executor.get_scheduling_metrics()` counts decisions (accepted/degraded/rejected, deadline and resource rejections, affinity mismatches). Schedulers overriding `wants_feedback()` receive per-task completion measurements via `on_task_completed()` - `DefaultScheduler` does not consume feedback.
 
-## Adaptive Scheduling (0.7.0 development snapshot; opt-in)
+## Adaptive Scheduling (0.7.0; opt-in)
 
 `AdaptiveScheduler` (`include/kairo/adaptive_scheduler.hpp`) is an injectable `IScheduler` that reuses the 0.6.1 baseline routing and adds three explainable feedback-driven decisions: history-based CPU/GPU selection for `CpuOrGpu` intents (minimum samples + hysteresis; hit -> `reason = AdaptiveHistory`, `detail` carries both EWMA numbers), QoS-aware load shedding (a class's queue-wait p99 over target for `shed_breach_windows` consecutive windows rejects strictly lower QoS with `reason = LoadShedding`), and bounded QoS->priority promotion (+1 level, explicit priorities never overridden). Check `RoutingDecision::status` first - shedding rejections are structured, so callers should back off on `Rejected` + `LoadShedding`.
 

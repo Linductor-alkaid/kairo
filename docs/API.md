@@ -1,4 +1,4 @@
-# Kairo API 使用说明（v0.6.1）
+# Kairo API 使用说明（v0.7.0）
 
 本文档说明 `kairo` 库的主要 API、配置与类型，便于集成与扩展。完整接口定义见头文件 `include/kairo/`。
 
@@ -409,8 +409,8 @@ reason 细分的 `deadline_rejected_count` /
 反馈，由决策与指标体系观测）。DefaultScheduler 不消费反馈，
 0.6.1 也不包含任何基于反馈的自适应调度行为。
 
-**0.7.0 开发快照（自适应调度，未随稳定版本发布）**：以下为 `master`
-上已落地的 additive 扩展，未注入对应调度器时不产生任何行为或开销
+**0.7.0 新增（自适应调度）**：以下为 0.7.0
+落地的 additive 扩展，未注入对应调度器时不产生任何行为或开销
 变化。
 
 - **反馈聚合层（`<kairo/feedback_aggregator.hpp>`）**：

@@ -7,7 +7,7 @@ description: Entry points for the development snapshot, releases, and API migrat
 
 ## Current scope
 
-The latest release record is `v0.6.1`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. `master` is currently in the 0.7.0 development cycle (Runtime-aware Scheduling); see the development-snapshot section below. This first English edition does not maintain historical versioned sites.
+The latest release record is `v0.7.0`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
 
 | What to check | Source of truth |
 | --- | --- |
@@ -16,9 +16,9 @@ The latest release record is `v0.6.1`. This site uses that stable version as its
 | Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | Complete current signatures | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
-## 0.7.0 (development snapshot, unreleased): Runtime-aware Scheduling
+## 0.7.0: Runtime-aware Scheduling
 
-`master` is progressing through 0.7.0 per `docs/design/roadmap_v0.7.md`; everything below is additive and part of no stable tag yet:
+0.7.0 (released 2026-10-10) lands per `docs/design/roadmap_v0.7.md`; everything below is additive:
 
 - **Default path unchanged**: `DefaultScheduler` matches 0.6.1 field by field (the contract test passes unmodified); **no migration is required**, and nothing is paid unless an adaptive scheduler is injected.
 - **Routing pipeline**: `DefaultScheduler::route()` is internally restructured into `constraint filter → candidate generation → scoring/selection` stages, exposed as composable components (`<kairo/scheduling_pipeline.hpp>`); the external interface and decisions are unchanged.
