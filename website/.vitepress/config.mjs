@@ -189,7 +189,7 @@ export default defineConfig({
     ['link', { rel: 'icon', type: 'image/png', href: '/kairo/kairo-favicon.png?v=2', sizes: '64x64' }],
     ['link', { rel: 'apple-touch-icon', href: '/kairo/kairo-180.png?v=2' }],
     ['meta', { name: 'keywords', content: 'C++20, task executor, thread pool, real-time, realtime, robotics, lock-free, concurrent programming, C++ 任务执行器, 线程池, 实时系统, 机器人, 无锁' }],
-    ['meta', { name: 'theme-color', content: '#181d26' }]
+    ['meta', { name: 'theme-color', content: '#0e1a3c' }]
   ],
   themeConfig: {
     logo: '/kairo-logo.png',
