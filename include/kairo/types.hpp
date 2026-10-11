@@ -245,6 +245,13 @@ struct SchedulingMetrics {
     uint64_t affinity_mismatch_count = 0;         // diagnostics 含 AffinityMismatch
     uint64_t deadline_missed_count = 0;           // 执行时已错过（不中断执行）
     uint64_t feedback_reported_count = 0;         // on_task_completed 反馈次数
+    // ---- 0.7.0 AdaptiveScheduler（M3）：自适应决策计数 ----
+    uint64_t adaptive_history_count = 0;      // diagnostics 含 AdaptiveHistory
+                                              //（含历史确认 heuristic 的情形）
+    uint64_t load_shedding_rejected_count = 0;  // reason == LoadShedding
+    uint64_t priority_promoted_count = 0;     // 调度器调整了 QoS 默认排队
+                                              // 优先级的提交次数（有界 +1 级；
+                                              // 显式 priority 不受影响）
 };
 
 /**

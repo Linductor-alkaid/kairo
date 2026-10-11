@@ -24,6 +24,11 @@ struct ThreadPoolConfig {
     std::vector<int> cpu_affinity;       // CPU亲和性（绑定到特定核心）, 空 = auto-allocate [0..hw-1]；Android 使用 cgroup 允许 cpuset
     int64_t task_timeout_ms = 0;         // 任务超时时间（毫秒），0表示不超时
     bool enable_work_stealing = true;    // 默认开, 无锁工作窃取 -10.7% 退化; max_threads==1 时自动关
+    // CR-024（v0.7.0 M0）：可选防饿死 aging（默认关闭，语义与 0.6.x 一致）。
+    // 开启后堆顶任务每等待 priority_aging_interval_ns 提升一级有效优先级
+    // （至多 CRITICAL），dequeue 时跨级竞争。见 PriorityScheduler 注释。
+    bool enable_priority_aging = false;
+    int64_t priority_aging_interval_ns = 100'000'000;  // 每提升一级的最短等待，默认 100ms
 };
 
 /**
@@ -82,6 +87,10 @@ struct ExecutorConfig {
     // 全局队列 + worker 本地队列 + 执行中）。0 = 不启用（默认，零热路径开销）。
     // 注意与 queue_capacity（每 worker 本地队列构造参数）语义无关。
     size_t max_in_flight_tasks = 0;
+    // CR-024（v0.7.0 M0）：可选防饿死 aging，透传给默认池的
+    // PriorityScheduler（默认关闭）。语义见 ThreadPoolConfig 同名字段。
+    bool enable_priority_aging = false;
+    int64_t priority_aging_interval_ns = 100'000'000;
 };
 
 /**

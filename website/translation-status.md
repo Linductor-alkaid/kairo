@@ -17,6 +17,7 @@ English pages use the same repository examples and commands as Chinese pages; no
 | `/zh/quick-start/build` | `/en/quick-start/build` | Published | `docs/BUILD.md` |
 | `/zh/quick-start/first-task` | `/en/quick-start/first-task` | Published | `examples/tutorial/01_first_task.cpp` |
 | `/zh/guides/execution-models-and-routing` | `/en/guides/execution-models-and-routing` | Published | Unified Facade routing and result-model public APIs |
+| `/zh/guides/adaptive-scheduling` | `/en/guides/adaptive-scheduling` | Published | `include/kairo/adaptive_scheduler.hpp`, `docs/design/scheduling_runtime.md` §8, `docs/performance/m3_adaptive_scheduler_results.md` |
 | `/zh/quick-start/task-inputs-and-ownership` | `/en/quick-start/task-inputs-and-ownership` | Published | `examples/tutorial/11_task_inputs.cpp` |
 | `/zh/quick-start/return-values-and-errors` | `/en/quick-start/return-values-and-errors` | Published | `std::future` and tutorial example `01` |
 | `/zh/quick-start/lifecycle` | `/en/quick-start/lifecycle` | Published | Public lifecycle API and `docs/API.md` |
@@ -40,7 +41,7 @@ English pages use the same repository examples and commands as Chinese pages; no
 | --- | --- | --- |
 | `/zh/quick-start/` | Complete | All six Chinese quick-start pages have an English counterpart. |
 | `/zh/tutorial/` | Complete | All eight Chinese tutorial pages have English counterparts using the same C++ examples and commands. |
-| `/zh/guides/` | Complete | All six Chinese scenario and production guides have English counterparts. |
+| `/zh/guides/` | Complete | All seven Chinese scenario and production guides have English counterparts. |
 | `/zh/realtime-and-communication/` | Complete | All seven Chinese real-time and communication pages have English counterparts. |
 | `/zh/reliability/` | Complete | All five Chinese reliability pages have English counterparts. |
 | `/zh/advanced/` | Complete | All seven Chinese advanced and internal-behavior pages have English counterparts. |

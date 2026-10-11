@@ -15,7 +15,7 @@ aside: false
 | Toolchain | VitePress 1.6.3, Node.js 20 LTS, npm | Static generation, built-in search, and low maintenance. |
 | URL | GitHub Pages project site at `/kairo/`; no custom domain initially | Matches `Linductor-alkaid/kairo` and avoids launch DNS dependency. |
 | Language policy | Chinese root home page; `/zh/` and `/en/` content trees | Root never redirects by browser language, preserving predictable deep links. |
-| Version policy | Stable `v0.6.1` baseline | Pages follow current repository API; unreleased features are not stable-version promises. |
+| Version policy | Stable `v0.7.0` baseline | Pages follow current repository API; unreleased features are not stable-version promises. |
 | Diagram policy | Markdown text diagrams initially | Avoids extra Mermaid dependency and build risk. |
 | Code source | `examples/tutorial/`, embedded with VitePress `<<< @` | Core page snippets point at compiled examples, avoiding duplicate facts. |
 | English launch | Publish only complete English counterparts | Never publish empty translations; maintain one-to-one published routes. |

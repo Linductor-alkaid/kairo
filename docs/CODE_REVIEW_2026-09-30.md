@@ -85,9 +85,12 @@
 - 位置：`src/executor/thread_pool/thread_pool.cpp:316-318`；`src/executor/thread_pool/lockfree_worker_queue.hpp:35-44`
 - `dispatch_batch` 回灌时 `scheduler_.enqueue` 的 `make_unique<Task>` 可抛 bad_alloc；lockfree `push` 的 `new Task`/`copy_task`（拷贝 `std::function`）抛出时 `task_ptr` 泄漏。异常穿出 worker 线程即 terminate。
 
-#### CR-024 严格优先级无老化，LOW/NORMAL 无限饿死（P2 级设计确认项） `已确认（复现）`
+#### CR-024 严格优先级无老化，LOW/NORMAL 无限饿死（P2 级设计确认项） `已修复（v0.7.0 M0：可选 aging，默认关闭）`
 - 位置：`src/executor/thread_pool/priority_scheduler.cpp:129-186`
 - 持续高优先级负载下低优先级零进度；若为有意设计应文档化。
+- v0.7.0 M0：严格优先级语义保持默认；新增可选 aging
+  （`PriorityScheduler::set_aging_policy`，`enable_priority_aging` 默认 false），
+  契约测试 `test_priority_scheduler_aging`（8 用例）。NN-05 本地队列倒置窗口维持文档化现状。
 
 #### CR-025 批内任务共享同一 `submit_time_ns`，同优先级批内 FIFO 失效 `已确认（复现，程度超预期：200/200 轮全乱序）`
 - 位置：`src/executor/thread_pool/thread_pool.cpp:1111-1123`；契约注释 `priority_scheduler.hpp:18`
@@ -151,10 +154,14 @@
 - 位置：`include/executor/timer.hpp:669-676`
 - fixed-delay 而非 fixed-rate：回调耗时逐周期单调累积（100ms 周期 + 每 tick 5ms 耗时 → 实际 ~105ms 且持续漂移）。RT 侧已有 skip-late 决策（realtime_thread_executor.cpp:475-487），定时器侧无对应处理。
 
-#### CR-052 依赖环检测：持写锁的递归 DFS，深度无界 → 栈溢出 + 读饿死 + O(n²) 建链 `已确认（复现：O(n²)、锁内 DFS、小栈 n=4000 SIGSEGV）`
+#### CR-052 依赖环检测：持写锁的递归 DFS，深度无界 → 栈溢出 + 读饿死 + O(n²) 建链 `已修复（v0.7.0 M0：增量拓扑序）`
 - 位置：`src/executor/task/task_dependency_manager.cpp:32`（unique_lock 内调 `has_cycle`）、`:169-197`（递归 `dfs_path_exists`）
 - 十万级依赖链直接栈溢出崩溃；DFS 期间所有共享读阻塞。
 - 验证手段：构建 10 万级链，期望崩溃或超时。
+- v0.7.0 M0：Pearce-Kelly 风格增量拓扑序（快路径 O(1)、违序三段式受限重排、
+  环检测并入遍历；反向边表 dependents_ 同步维护）。正序链 n=20000 建链 21-36ms
+  （旧实现 n=4000 即 ~3.9s）；逆序最坏形态 O(n²) 纯内存遍历与旧实现同阶。
+  契约测试 `test_task_dependency_topo`（17 用例，含固定种子随机对拍）。
 
 #### CR-053 RT 队列容量取整与对象池容量不一致，drop 归因失真 `已确认（复现）`
 - 位置：`src/executor/realtime_thread_executor.cpp:50-51, 631`；`src/executor/util/lockfree_queue.hpp:82-84`（队列向上取整 2 的幂）
@@ -210,9 +217,13 @@
 - 位置：`src/executor/monitor/executor_snapshot_formatter.cpp:215-217`
 - `timer_slack_applied` 后缺 `'\n'`，输出 `...applied=truerealtime[rt].dropped_...`，按行解析的工具必挂。同文件其余所有 `write_bool` 均正常。
 
-#### CR-071 TaskMonitor 单把全局 mutex 在提交/执行热路径串行化所有线程；采样率 0 时锁照样取 `待验证`
+#### CR-071 TaskMonitor 单把全局 mutex 在提交/执行热路径串行化所有线程；采样率 0 时锁照样取 `已修复（v0.7.0 M0：分片 + 采样门控）`
 - 位置：`src/executor/monitor/task_monitor.cpp:18, 38, 52, 64, 83, 100, 132`；调用方 `thread_pool.cpp:337, 385, 397, 994, 1061, 1149`
 - 默认开启 100% 采样下每提交+执行共 4 次全局锁 + string 拷贝进 map。
+- v0.7.0 M0：哈希分片（id 映射/in-flight 按 task_id 16 片、统计按 task_type 8 片）
+  + 热路径快速门（两采样门全关时 record_task_* 零取锁）。采样率 0 时提交吞吐与
+  关闭监控持平 ±1.2%（配对实测，验收线 ±5%）。TSAN 零 race。测试
+  `test_task_monitor_gating`（8 用例）+ `review_verification/cr071_submit_throughput_gating.cpp`。
 
 #### CR-072 TaskMonitor 析构竞态的注释论证只覆盖一半 + Manager 成员析构顺序不利（排空失败路径 UAF） `代码推演确认`
 - 位置：`src/executor/monitor/task_monitor.cpp:68-76`、`include/executor/executor_manager.hpp:316, 324, 366`、`src/executor/executor_manager.cpp:849-856`
@@ -268,7 +279,7 @@
 | CR-104 | executor.cpp:608-611 | WhenAll 依赖失败异常分类不一致（DependencyCancelled vs 透传） | 实测未复现：所有用户可见路径分类一致，降级为代码级观察 |
 | CR-105 | executor.cpp:1406-1435 | `WorkerHandle` 持裸 `ExecutorManager*`，无失效机制 | 代码推演确认 |
 | CR-106 | executor.hpp:1670 + executor_manager.cpp:539-632 | 每次 `submit_auto` 路由全量锁 5 把注册表采所有后端能力 | 已确认（submit_auto 慢 65-70%，主要在 route_task+决策记录而非能力采集） |
-| CR-107 | executor.hpp 各提交路径 | 每任务 6-10 次堆分配（promise/state/bound/DrainBag×2），部分可省 | 代码核实 |
+| CR-107 | executor.hpp 各提交路径 | 每任务 6-10 次堆分配（promise/state/bound/DrainBag×2），部分可省 | 部分修复（v0.7.0 M0：submit 主路径 10→9 allocs/task，`benchmark_submit_allocations` 计数入库；其余分配受 move-only/接口/公开契约约束，留待接口层调整） |
 | CR-108 | thread_pool.cpp:422-434 | 每任务 2 次 `completion_cv_.notify_all()` | 已测量（有等待者时吞吐 -76.8%，归因含锁竞争上界） |
 | CR-109 | thread_pool.cpp:712-745 | `try_wait_for_completion` 10ms 轮询（300s=3 万次全量扫队列） | 代码核实 |
 | CR-110 | thread_pool.hpp:553-570 | submit 热路径 make_shared×3 + std::bind + task_id 字符串拼接 | 代码核实 |
@@ -324,7 +335,7 @@
 | CR-160 | statistics_collector.cpp:24-27 | set_gpu_status_provider 与并发读无同步（当前靠构造顺序侥幸安全） | 代码核实 |
 | CR-161 | executor_monitor.cpp:9-15 | mark_partial 拼接 provider 名无分隔空格 | 代码核实 |
 | CR-162 | executor_snapshot_formatter.cpp:324-327 | 分配计数靠手工 +1 修正，依赖"输出恒大于 SSO"的脆弱假设 | 代码核实 |
-| CR-163 | task_monitor.cpp | （同 CR-071 热路径；修复方向：分片锁/原子计数/interned id） | — |
+| CR-163 | task_monitor.cpp | （同 CR-071 热路径；修复方向：分片锁/原子计数/interned id） | 已修复（v0.7.0 M0：分片锁 + 原子计数落地，同 CR-071） |
 | CR-164 | tests 基建 | 测试 golden-output 缺失（格式化器格式无锁定测试） | 代码核实 |
 
 ---

@@ -1,22 +1,23 @@
 :root {
-  --vp-c-brand-1: #181d26;
-  --vp-c-brand-2: #0d1218;
-  --vp-c-brand-3: #181d26;
-  --vp-c-brand-soft: #f8fafc;
-  --vp-c-text-1: #181d26;
-  --vp-c-text-2: #333840;
-  --vp-c-text-3: #41454d;
+  --vp-c-brand-1: #2b5bd7;
+  --vp-c-brand-2: #1e47b8;
+  --vp-c-brand-3: #2b5bd7;
+  --vp-c-brand-soft: #eef4ff;
+  --vp-c-text-1: #172041;
+  --vp-c-text-2: #46506e;
+  --vp-c-text-3: #6b7491;
   --vp-c-bg: #ffffff;
   --vp-c-bg-alt: #f8fafc;
-  --vp-c-bg-soft: #f8fafc;
+  --vp-c-bg-soft: #eef2fb;
   --vp-c-bg-elv: #ffffff;
-  --vp-c-divider: #dddddd;
-  --vp-code-block-bg: #f8fafc;
+  --vp-c-divider: #d9e0f0;
+  --vp-code-block-bg: #f4f7fd;
   --vp-code-copy-code-bg: #ffffff;
-  --executor-sidebar-active-bg: #e0e2e6;
-  --executor-sidebar-active-marker: #181d26;
-  --vp-font-family-base: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  --vp-font-family-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --executor-sidebar-active-bg: #e8effc;
+  --executor-sidebar-active-marker: #2b5bd7;
+  --vp-font-family-base: "Plus Jakarta Sans Variable", -apple-system, system-ui, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --vp-font-family-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+  --k-font-display: "Unbounded Variable", "Plus Jakarta Sans Variable", system-ui, sans-serif;
   --vp-layout-max-width: 1280px;
 }
 
@@ -29,7 +30,7 @@
 .VPNavScreenTranslations .VPIconLanguages { display: none !important; }
 .language-switch { display: inline-flex; align-items: center; min-height: 40px; padding: 0 10px; color: var(--vp-c-text-2); font-size: 14px; font-weight: 500; white-space: nowrap; }
 .language-switch:active { color: var(--vp-c-text-1); }
-.VPNavBarTitle .title { font-weight: 500; }
+.VPNavBarTitle .title { font-weight: 700; }
 .VPNavBarTitle .logo {
   width: 28px;
   height: 28px;
@@ -48,9 +49,9 @@
   color: var(--vp-c-text-1);
   font-weight: 500;
 }
-.VPButton.brand { border-radius: 12px; background: #181d26; border-color: #181d26; font-weight: 500; }
-.VPButton.brand:active { background: #0d1218; border-color: #0d1218; }
-.VPButton.alt { border-radius: 12px; border-color: var(--vp-c-divider); color: var(--vp-c-text-1); }
+.VPButton.brand { border-radius: 999px; background: #2b5bd7; border-color: #2b5bd7; font-weight: 600; }
+.VPButton.brand:active { background: #1e47b8; border-color: #1e47b8; }
+.VPButton.alt { border-radius: 999px; border-color: var(--vp-c-divider); color: var(--vp-c-text-1); }
 .VPHomeHero { padding-top: 96px; padding-bottom: 64px; }
 .VPHomeHero .name, .VPHomeHero .text { font-weight: 400; letter-spacing: 0; }
 .VPHomeHero .text { text-wrap: balance; }
@@ -64,11 +65,11 @@
 .language-not-found h1 { margin: 0 0 24px; color: var(--vp-c-text-1); font-size: 40px; font-weight: 400; line-height: 1.2; }
 .language-not-found p { color: var(--vp-c-text-2); }
 .language-not-found li { margin: 12px 0; }
-.VPDoc h1, .VPDoc h2 { font-weight: 400; letter-spacing: 0; }
+.VPDoc h1, .VPDoc h2, .VPDoc h3 { font-weight: 700; letter-spacing: -0.01em; }
 .VPDoc h1 { font-size: 40px; line-height: 1.2; }
 .VPDoc h2 { font-size: 32px; line-height: 1.2; margin-top: 64px; }
 .VPDoc p, .VPDoc li { color: var(--vp-c-text-2); }
-.VPDoc a { color: #1b61c9; }
+.VPDoc a { color: #2b5bd7; }
 .mermaid-diagram {
   position: relative;
   display: flex;
@@ -178,10 +179,10 @@
 .migration-table table { table-layout: fixed; }
 .migration-table th:first-child, .migration-table td:first-child { width: 58%; }
 .migration-table :not(pre) > code { white-space: normal; overflow-wrap: anywhere; }
-.version-note { margin-top: 48px; padding: 24px; border-radius: 10px; background: #f5e9d4; color: #181d26; }
-.maintenance-hero { margin: 32px 0 64px; padding: 40px 48px; border-radius: 12px; background: #181d26; color: #ffffff; }
+.version-note { margin-top: 48px; padding: 20px 24px; border-left: 3px solid #f3c348; border-radius: 0 10px 10px 0; background: #fdf6e1; color: #172041; }
+.maintenance-hero { margin: 32px 0 64px; padding: 40px 48px; border-radius: 12px; background: #0e1a3c; color: #ffffff; }
 .maintenance-hero p { margin: 0; color: #ffffff; }
-.maintenance-hero .maintenance-eyebrow { margin-bottom: 12px; color: #a8d8c4; font-size: 13px; font-weight: 500; letter-spacing: 0.12em; }
+.maintenance-hero .maintenance-eyebrow { margin-bottom: 12px; color: #f3c348; font-size: 13px; font-weight: 500; letter-spacing: 0.04em; }
 .maintenance-hero .maintenance-version { margin-bottom: 16px; font-size: 28px; line-height: 1.25; }
 .maintenance-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin: 32px 0 64px; }
 .maintenance-card { min-height: 220px; padding: 32px; border-radius: 10px; color: #181d26; }
@@ -192,44 +193,44 @@
 .maintenance-card-cream { background: #f5e9d4; }
 .maintenance-card-forest { background: #0a2e0e; color: #ffffff; }
 .maintenance-card-coral code, .maintenance-card-forest code { background: rgba(255, 255, 255, 0.14); color: #ffffff; }
-.maintenance-callout { display: flex; align-items: center; justify-content: space-between; gap: 32px; margin-top: 64px; padding: 32px; border-radius: 12px; background: #e0e2e6; color: #181d26; }
+.maintenance-callout { display: flex; align-items: center; justify-content: space-between; gap: 32px; margin-top: 64px; padding: 32px; border-radius: 12px; background: #eef2fb; color: #172041; }
 .maintenance-callout strong { font-size: 20px; font-weight: 500; }
 .maintenance-callout p { margin: 8px 0 0; color: #333840; }
-.VPDoc .maintenance-callout a { flex: 0 0 auto; padding: 14px 20px; border-radius: 12px; background: #181d26; color: #ffffff; font-weight: 500; text-decoration: none; }
+.VPDoc .maintenance-callout a { flex: 0 0 auto; padding: 14px 20px; border-radius: 999px; background: #2b5bd7; color: #ffffff; font-weight: 500; text-decoration: none; }
 
 .dark {
-  --vp-c-brand-1: #ffffff;
-  --vp-c-brand-2: #f8fafc;
-  --vp-c-brand-3: #ffffff;
-  --vp-c-brand-soft: #2a303a;
-  --vp-c-text-1: #f8fafc;
-  --vp-c-text-2: #e0e2e6;
-  --vp-c-text-3: #c4c8ce;
-  --vp-c-bg: #181d26;
-  --vp-c-bg-alt: #1d1f25;
-  --vp-c-bg-soft: #252b35;
-  --vp-c-bg-elv: #1d1f25;
-  --vp-c-divider: #41454d;
-  --vp-code-block-bg: #11151c;
-  --vp-code-copy-code-bg: #252b35;
-  --executor-sidebar-active-bg: #252b35;
-  --executor-sidebar-active-marker: #f8fafc;
+  --vp-c-brand-1: #9bbcff;
+  --vp-c-brand-2: #b8cfff;
+  --vp-c-brand-3: #9bbcff;
+  --vp-c-brand-soft: rgba(155, 188, 255, 0.14);
+  --vp-c-text-1: #eef2fb;
+  --vp-c-text-2: #c4cde4;
+  --vp-c-text-3: #8f9abb;
+  --vp-c-bg: #0b1430;
+  --vp-c-bg-alt: #0e1a3c;
+  --vp-c-bg-soft: #16234b;
+  --vp-c-bg-elv: #121d40;
+  --vp-c-divider: #2a3763;
+  --vp-code-block-bg: #0e1a3c;
+  --vp-code-copy-code-bg: #16265a;
+  --executor-sidebar-active-bg: #16265a;
+  --executor-sidebar-active-marker: #f3c348;
 }
 
-.dark .VPButton.brand { background: #f8fafc; border-color: #f8fafc; color: #181d26; }
+.dark .VPButton.brand { background: #f3c348; border-color: #f3c348; color: #0e1a3c; }
 .dark .VPNavBarTitle .logo { content: url('/kairo/kairo-logo.png'); }
 .dark .language-switch { color: #e0e2e6; }
-.dark .VPButton.brand:active { background: #e0e2e6; border-color: #e0e2e6; }
-.dark .VPButton.alt { background: transparent; border-color: #9297a0; color: #f8fafc; }
-.dark .VPDoc a { color: #8ab4f8; }
-.dark .VPDoc :not(pre) > code { background: #252b35; color: #f8fafc; }
+.dark .VPButton.brand:active { background: #ffd66e; border-color: #ffd66e; }
+.dark .VPButton.alt { background: transparent; border-color: #3d4d85; color: #eef2fb; }
+.dark .VPDoc a { color: #9bbcff; }
+.dark .VPDoc :not(pre) > code { background: #16265a; color: #eef2fb; }
 .dark .VPDoc th { color: #f8fafc; }
 .dark .VPDoc td { color: #e0e2e6; }
-.dark .version-note { background: #3b3020; color: #f8fafc; }
+.dark .version-note { background: #1d2440; color: #eef2fb; }
 .dark .maintenance-card-cream { background: #3b3020; color: #f8fafc; }
-.dark .maintenance-callout { background: #252b35; color: #f8fafc; }
+.dark .maintenance-callout { background: #16234b; color: #eef2fb; }
 .dark .maintenance-callout p { color: #e0e2e6; }
-.dark .VPDoc .maintenance-callout a { background: #f8fafc; color: #181d26; }
+.dark .VPDoc .maintenance-callout a { background: #f3c348; color: #0e1a3c; }
 
 @media (min-width: 960px) {
   .VPHomeHero .text { max-width: 720px; }

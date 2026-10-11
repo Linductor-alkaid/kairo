@@ -1,10 +1,79 @@
 #include "priority_scheduler.hpp"
 #include <algorithm>
+#include <chrono>
+#include <limits>
 #include <memory>
 #include <mutex>
+#include <tuple>
 #include <utility>
 
 namespace kairo {
+
+namespace {
+constexpr int kQueueCount = 4;  // LOW, NORMAL, HIGH, CRITICAL
+constexpr int kTopLevel = kQueueCount - 1;
+}  // namespace
+
+void PriorityScheduler::set_aging_policy(bool enabled, int64_t boost_interval_ns) noexcept {
+    aging_interval_ns_.store(
+        boost_interval_ns > 0 ? boost_interval_ns : 1, std::memory_order_relaxed);
+    aging_enabled_.store(enabled, std::memory_order_release);
+}
+
+std::unique_ptr<Task> PriorityScheduler::pop_best_with_aging() {
+    // 固定顺序锁全部队列（与 size/clear 的 scoped_lock 同序，无死锁面），
+    // 锁内完成堆顶快照、有效优先级比较与弹出，避免 peek/pop 两阶段竞态。
+    std::scoped_lock lock(critical_mutex_, high_mutex_, normal_mutex_, low_mutex_);
+    // 下标即优先级等级：0=LOW … 3=CRITICAL（与 queue_level 编码一致）。
+    TaskQueue* queues[kQueueCount] = {
+        &low_queue_, &normal_queue_, &high_queue_, &critical_queue_};
+
+    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    const int64_t interval = aging_interval_ns_.load(std::memory_order_relaxed);
+
+    int best_level = -1;
+    // 最优键（大者胜）：(有效优先级, EDF 次序, submit FIFO)。
+    // deadline 次序复用 Task::operator< 的约定：有 deadline 的按 deadline
+    // 升序排在无 deadline 之前——编码为"小者优"的 rank。
+    std::tuple<int, int64_t, int64_t> best_key{};
+    for (int level = 0; level < kQueueCount; ++level) {
+        auto& queue = *queues[level];
+        if (queue.empty() || !queue.front()) {
+            continue;
+        }
+        const Task& top = *queue.front();
+        int effective = level;
+        if (interval > 0) {
+            const int64_t waited = now_ns - top.submit_time_ns;
+            if (waited > 0) {
+                const int64_t boost = waited / interval;
+                effective = static_cast<int>(
+                    std::min<int64_t>(kTopLevel, level + boost));
+            }
+        }
+        // EDF rank：有 deadline 的按 -deadline（小者优），无 deadline 的排后。
+        // 键整体为"大者胜"，故 submit FIFO 取负（早提交者大），无 deadline
+        // 的哨兵取 int64_min（任何有效 deadline 的 -deadline 均大于它）。
+        const int64_t deadline_rank =
+            top.deadline_ns != 0 ? -top.deadline_ns
+                                 : std::numeric_limits<int64_t>::min();
+        std::tuple<int, int64_t, int64_t> key{effective, deadline_rank,
+                                              -top.submit_time_ns};
+        if (best_level < 0 || key > best_key) {
+            best_level = level;
+            best_key = key;
+        }
+    }
+    if (best_level < 0) {
+        return nullptr;
+    }
+    auto& queue = *queues[best_level];
+    std::pop_heap(queue.begin(), queue.end(), TaskPtrCompare{});
+    std::unique_ptr<Task> ptr = std::move(queue.back());
+    queue.pop_back();
+    return ptr;
+}
 
 void PriorityScheduler::move_task_out(const std::unique_ptr<Task>& src, Task& out) {
     if (!src) return;
@@ -127,6 +196,17 @@ size_t PriorityScheduler::enqueue_batch(std::unique_ptr<Task>* tasks, size_t n) 
 }
 
 bool PriorityScheduler::dequeue(Task& task) {
+    // CR-024：aging 开启时走全队列有效优先级决策；关闭时保持原短路
+    // 逐队扫描（逐位不变）。
+    if (aging_enabled_.load(std::memory_order_acquire)) {
+        std::unique_ptr<Task> aged = pop_best_with_aging();
+        if (!aged) {
+            return false;
+        }
+        move_task_out(aged, task);
+        return true;
+    }
+
     TaskPtrCompare cmp;
     std::unique_ptr<Task> task_ptr;
 
@@ -187,6 +267,22 @@ bool PriorityScheduler::dequeue(Task& task) {
 
 size_t PriorityScheduler::dequeue_batch(std::unique_ptr<Task>* out, size_t max_tasks) {
     if (max_tasks == 0 || !out) return 0;
+
+    // CR-024：aging 开启时逐个走全队列决策（批内保持与单 dequeue 相同的
+    // 有效优先级全局序）；关闭时保持原逐队排空（逐位不变）。
+    if (aging_enabled_.load(std::memory_order_acquire)) {
+        size_t count = 0;
+        while (count < max_tasks) {
+            std::unique_ptr<Task> aged = pop_best_with_aging();
+            if (!aged) {
+                break;
+            }
+            out[count] = std::move(aged);
+            ++count;
+        }
+        return count;
+    }
+
     TaskPtrCompare cmp;
     size_t count = 0;
 

@@ -1,10 +1,11 @@
 #include "task_dependency_manager.hpp"
 #include <algorithm>
 #include <mutex>
+#include <utility>
 
 namespace kairo {
 
-bool TaskDependencyManager::add_dependency(const std::string& task_id, 
+bool TaskDependencyManager::add_dependency(const std::string& task_id,
                                            const std::string& depends_on) {
     // 空任务ID检查
     if (task_id.empty() || depends_on.empty()) {
@@ -28,13 +29,26 @@ bool TaskDependencyManager::add_dependency(const std::string& task_id,
         }
     }
 
-    // 检测循环依赖（需要在持有锁的情况下检查，因为需要访问 dependencies_）
-    if (has_cycle(task_id, depends_on)) {
+    // CR-052：增量拓扑序（Pearce-Kelly 风格）。边 u→v 携带约束
+    // ord[v] < ord[u]；新节点先给 depends_on(v) 分配、再给 task_id(u)
+    // 分配，使新建边默认满足序（正序与逆序建链均落在快路径）。
+    ensure_ord(depends_on);
+    ensure_ord(task_id);
+
+    bool accepted;
+    if (ord_[depends_on] < ord_[task_id]) {
+        accepted = true;  // 快路径：约束已满足，O(1)
+    } else {
+        // 违序：受限重排，环检测并入同一次遍历。
+        accepted = rebuild_order_for(task_id, depends_on);
+    }
+    if (!accepted) {
         return false;
     }
 
-    // 添加依赖
+    // 添加依赖（正向边 + 反向边同步）
     dependencies_[task_id].push_back(depends_on);
+    dependents_[depends_on].push_back(task_id);
     return true;
 }
 
@@ -87,6 +101,11 @@ size_t TaskDependencyManager::prune(const std::string& task_id) {
         completed_tasks_.erase(cit);
         ++removed;
     }
+    // CR-052：拓扑结构同步回收。契约约定调用时已无其它任务依赖 task_id，
+    // 反向表条目按契约应为空——防御性擦除；ord 条目随节点消失（同名
+    // 重新注册将获得更大序号，既有约束 ord[被依赖] < ord[依赖者] 仍成立）。
+    dependents_.erase(task_id);
+    ord_.erase(task_id);
     return removed;
 }
 
@@ -110,6 +129,18 @@ bool TaskDependencyManager::remove_dependency(const std::string& task_id,
     if (deps.empty()) {
         dependencies_.erase(it);
     }
+    // CR-052：反向边同步回收
+    auto rit = dependents_.find(depends_on);
+    if (rit != dependents_.end()) {
+        auto& ents = rit->second;
+        auto eit = std::find(ents.begin(), ents.end(), task_id);
+        if (eit != ents.end()) {
+            ents.erase(eit);
+        }
+        if (ents.empty()) {
+            dependents_.erase(rit);
+        }
+    }
     return true;
 }
 
@@ -128,19 +159,22 @@ TaskDependencyManager::Stats TaskDependencyManager::get_stats() const {
 void TaskDependencyManager::clear() {
     std::unique_lock<std::shared_mutex> lock(mutex_);
     dependencies_.clear();
+    dependents_.clear();
+    ord_.clear();
+    next_ord_ = 0;
     completed_tasks_.clear();
 }
 
 std::vector<std::string> TaskDependencyManager::get_dependencies(
     const std::string& task_id) const {
-    
+
     std::shared_lock<std::shared_mutex> lock(mutex_);
-    
+
     auto it = dependencies_.find(task_id);
     if (it == dependencies_.end()) {
         return {};
     }
-    
+
     return it->second;
 }
 
@@ -153,55 +187,133 @@ bool TaskDependencyManager::is_completed(const std::string& task_id) const {
     return completed_tasks_.find(task_id) != completed_tasks_.end();
 }
 
-bool TaskDependencyManager::has_cycle(const std::string& task_id, 
-                                      const std::string& depends_on) const {
-    // 如果 depends_on 就是 task_id，则存在循环（但这种情况已在 add_dependency 中检查）
-    if (task_id == depends_on) {
-        return true;
+void TaskDependencyManager::ensure_ord(const std::string& id) {
+    if (ord_.find(id) == ord_.end()) {
+        ord_.emplace(id, next_ord_++);
     }
-
-    // 使用 DFS 检查从 depends_on 到 task_id 是否存在路径
-    // 如果存在，则添加依赖后会形成循环：task_id -> depends_on -> ... -> task_id
-    std::unordered_set<std::string> visited;
-    return dfs_path_exists(depends_on, task_id, visited);
 }
 
-bool TaskDependencyManager::dfs_path_exists(
-    const std::string& start,
-    const std::string& target,
-    std::unordered_set<std::string>& visited) const {
+bool TaskDependencyManager::rebuild_order_for(const std::string& u,
+                                              const std::string& v) {
+    // 加约束 v→u（v 先于 u）而 ord[v] > ord[u]：两段式受限重排。
+    //   A 段 = v 的祖先闭包（沿 dependencies_，收 ord ≥ ord_u，含 v）
+    //   D 段 = u 的后代闭包（沿 dependents_，收 ord ≤ ord_v，含 u）
+    // 前提（归纳不变式）：当前 ord 满足全部既有边约束，故任何祖先/后代
+    // 链上序严格单调——剪枝不会切断通向 v/u 的路径，也不会漏掉交点。
+    // 无环（A∩D=∅）时重排为：A 段按原序占区间前部，D 段按原序占后部。
+    // 正确性：A∩D≠∅ ⟺ ∃w：v⇝w⇝u ⟺ 成环；无环时 A 与 D 之间既有约束
+    // 只能是 A 中节点先于 D 中节点（反向 d⇝a 会经 u⇝d⇝a⇝v 落入 A∩D），
+    // 两段式恰好保持段内原相对序并把 v 放到 u 之前；段外节点不受影响
+    // （A 段新值 ≤ 原值，其后代约束保持；D 段新值 ≥ 原值，其祖先约束
+    // 保持；被剪枝的链尾序值仍落在段界之外）。
+    const int64_t ord_u = ord_[u];
+    const int64_t ord_v = ord_[v];
 
-    // CR-052: 递归实现的深度随依赖链长度无界增长（256KB 栈上 n≈4000 即
-    // SIGSEGV，8MB 栈约 9.6 万），且整段 DFS 在写锁内执行——改为显式栈
-    // 迭代，语义不变：沿依赖边从 start 是否可达 target。栈内存的是
-    // dependencies_ 内部字符串的指针，调用方持锁期间无变异，稳定。
-    if (start == target) {
-        return true;
+    // A 段：从 v 沿正向边（我依赖谁）收集 ord ≥ ord_u 的祖先。
+    std::vector<std::pair<std::string, int64_t>> seg_a;
+    std::unordered_set<std::string> set_a;
+    {
+        std::vector<const std::string*> stack{&v};
+        set_a.insert(v);
+        seg_a.emplace_back(v, ord_v);
+        while (!stack.empty()) {
+            const std::string* cur = stack.back();
+            stack.pop_back();
+            auto it = dependencies_.find(*cur);
+            if (it == dependencies_.end()) {
+                continue;
+            }
+            for (const auto& dependency : it->second) {
+                if (set_a.count(dependency)) {
+                    continue;
+                }
+                const auto ord_it = ord_.find(dependency);
+                if (ord_it == ord_.end() || ord_it->second < ord_u) {
+                    continue;  // 剪枝：更小序的祖先无需移动
+                }
+                set_a.insert(dependency);
+                seg_a.emplace_back(dependency, ord_it->second);
+                stack.push_back(&dependency);
+            }
+        }
     }
 
-    std::vector<const std::string*> stack;
-    visited.insert(start);
-    stack.push_back(&start);
+    // 环判定（两者等价，取并增强）：环 ⟺ v 的依赖闭包含 u（u ∈ A）⟺
+    // A∩D ≠ ∅。u ∈ A 在此显式检查；其余交点由 D 段遍历命中 set_a 捕获。
+    if (set_a.count(u)) {
+        return false;  // v ⇝ u 已存在：加边成环
+    }
 
-    while (!stack.empty()) {
-        const std::string* current = stack.back();
-        stack.pop_back();
-
-        auto it = dependencies_.find(*current);
-        if (it == dependencies_.end()) {
-            continue;
-        }
-        for (const auto& dep : it->second) {
-            if (dep == target) {
-                return true;
+    // D 段：从 u 沿反向边（谁依赖我）收集 ord ≤ ord_v 的后代；途中命中
+    // A 段成员（含 v）即 v ⇝ u 可达，加边成环。
+    std::vector<std::pair<std::string, int64_t>> seg_d;
+    std::unordered_set<std::string> seen_d{u};
+    {
+        std::vector<const std::string*> stack{&u};
+        seg_d.emplace_back(u, ord_u);
+        while (!stack.empty()) {
+            const std::string* cur = stack.back();
+            stack.pop_back();
+            auto it = dependents_.find(*cur);
+            if (it == dependents_.end()) {
+                continue;
             }
-            if (visited.insert(dep).second) {
-                stack.push_back(&dep);
+            for (const auto& dependent : it->second) {
+                if (set_a.count(dependent)) {
+                    return false;  // v ⇝ u 存在：加边成环
+                }
+                if (seen_d.count(dependent)) {
+                    continue;
+                }
+                const auto ord_it = ord_.find(dependent);
+                if (ord_it == ord_.end() || ord_it->second > ord_v) {
+                    continue;  // 剪枝：更大序的后代无需移动
+                }
+                seen_d.insert(dependent);
+                seg_d.emplace_back(dependent, ord_it->second);
+                stack.push_back(&dependent);
             }
         }
     }
 
-    return false;
+    // 三段式重排：区间 [ord_u, ord_v] 内除 A、D 外还可能有第三方节点
+    // （序值落在区间内、但与 u/v 无祖先关系的节点）——它们的既有值会被
+    // A/D 两段的连续放置撞占，同值又瓦解后续重排依赖的"区间容量"论证。
+    // 因此把区间内全部节点纳入：A 段左对齐（base=ord_u 起，成员新值
+    // ≤ 原值，其约束后代安全）；第三方节点按原序居中；D 段右对齐（到
+    // ord_v 止，成员新值 ≥ 原值，其约束祖先安全）。段间约束方向由闭包性
+    // 锁死：others ⇝ a 会经 a ⇝ v 把 o 拉进 A；d ⇝ o 会经 u ⇝ d ⇝ o 把
+    // o 拉进 D——均不存在；a ⇝ o 时 a_new ≤ a_old ≤ ord_v-|D| < o_new，
+    // o ⇝ d 时 o_new ≤ ord_v-|D| < d_new 恒成立。v ∈ A 段末、u ∈ D 段首，
+    // 新约束 v_new < u_new 恰好满足。
+    std::sort(seg_a.begin(), seg_a.end(),
+              [](const auto& lhs, const auto& rhs) { return lhs.second < rhs.second; });
+    std::sort(seg_d.begin(), seg_d.end(),
+              [](const auto& lhs, const auto& rhs) { return lhs.second < rhs.second; });
+
+    // 区间内第三方节点（不属于 A∪D）
+    std::vector<std::pair<std::string, int64_t>> seg_o;
+    for (const auto& [id, value] : ord_) {
+        if (value >= ord_u && value <= ord_v && !set_a.count(id) &&
+            !seen_d.count(id)) {
+            seg_o.emplace_back(id, value);
+        }
+    }
+    std::sort(seg_o.begin(), seg_o.end(),
+              [](const auto& lhs, const auto& rhs) { return lhs.second < rhs.second; });
+
+    int64_t assigned = ord_u;
+    for (const auto& [id, ord] : seg_a) {
+        ord_[id] = assigned++;
+    }
+    for (const auto& [id, ord] : seg_o) {
+        ord_[id] = assigned++;
+    }
+    int64_t d_pos = ord_v;
+    for (auto it = seg_d.rbegin(); it != seg_d.rend(); ++it) {
+        ord_[it->first] = d_pos--;
+    }
+    return true;
 }
 
 } // namespace kairo

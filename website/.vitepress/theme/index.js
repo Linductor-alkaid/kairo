@@ -1,7 +1,12 @@
 import DefaultTheme from 'vitepress/theme'
 import { computed, h, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vitepress'
+import '@fontsource-variable/plus-jakarta-sans'
+import '@fontsource-variable/unbounded'
+import '@fontsource-variable/jetbrains-mono'
 import './custom.css'
+import './home.css'
+import KairoHome from './KairoHome.vue'
 
 const zoomStep = 0.25
 const minZoom = 0.5
@@ -235,5 +240,9 @@ const Layout = {
 export default {
   ...DefaultTheme,
   Layout,
-  NotFound
+  NotFound,
+  enhanceApp(ctx) {
+    DefaultTheme.enhanceApp?.(ctx)
+    ctx.app.component('KairoHome', KairoHome)
+  }
 }

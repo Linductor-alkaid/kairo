@@ -52,6 +52,11 @@ bool ThreadPool::initialize(const ThreadPoolConfig& config) {
         stop_.store(false);
         resize_monitor_stop_.store(false);
 
+        // CR-024（v0.7.0 M0）：可选防饿死 aging（默认关闭）。此刻尚无
+        // worker 与并发 submit，直接写入 scheduler 的配置原子即可。
+        scheduler_.set_aging_policy(config_.enable_priority_aging,
+                                    config_.priority_aging_interval_ns);
+
         // 初始化负载均衡器
         load_balancer_ = std::make_unique<LoadBalancer>(config_.min_threads);
 
@@ -1021,13 +1026,10 @@ bool ThreadPool::try_submit(std::function<void()> task,
     ).count();
     // CR-022: timeout_ms 在锁内从 config_ 读取（见下方临界区）。
 
-    // PA-4: monitor 需要 task_id 时先拷出，入队即可移动消耗整个 Task。
+    // PA-4: CR-107——record_task_queued 先于 enqueue(move) 执行，可直接取
+    // executor_task.task_id，省去 monitor_id 中间堆拷贝（监控开启时每任务一次）。
     auto* monitor = monitor_.load(std::memory_order_acquire);
     const bool monitor_on = (monitor && monitor->is_enabled());
-    std::string monitor_id;
-    if (monitor_on) {
-        monitor_id = executor_task.task_id;
-    }
 
     // Keep mutex_ scoped to the ThreadPool state change. Dispatching may take
     // local queue / load-balancer / scheduler locks, so doing it after releasing
@@ -1053,7 +1055,7 @@ bool ThreadPool::try_submit(std::function<void()> task,
         // 锁序 pool.mutex_ → monitor.mutex_（monitor 回调不反向取 pool 锁）。
         if (monitor_on) {
             try {
-                monitor->record_task_queued(monitor_id, "default", "default");
+                monitor->record_task_queued(executor_task.task_id, "default", "default");
             } catch (...) {
                 // Diagnostics must never turn an accepted task into a rejection.
             }
@@ -1119,12 +1121,9 @@ bool ThreadPool::try_submit_priority(
     executor_task.qos = meta.qos;
     // CR-022: timeout_ms 在锁内从 config_ 读取（见下方临界区）。
 
+    // CR-107: 同 try_submit——record 在 enqueue(move) 前，直接取 task_id。
     auto* monitor = monitor_.load(std::memory_order_acquire);
     const bool monitor_on = (monitor && monitor->is_enabled());
-    std::string monitor_id;
-    if (monitor_on) {
-        monitor_id = executor_task.task_id;
-    }
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -1138,7 +1137,7 @@ bool ThreadPool::try_submit_priority(
         // NN-12: 同 try_submit —— queued 诊断必须在 enqueue 之前补记。
         if (monitor_on) {
             try {
-                monitor->record_task_queued(monitor_id, "default", "default");
+                monitor->record_task_queued(executor_task.task_id, "default", "default");
             } catch (...) {
                 // Diagnostics must never turn an accepted task into a rejection.
             }

@@ -68,9 +68,13 @@ enum class RoutingReason : uint8_t {
     Rejected,
     // ---- 0.6.1 Scheduling Runtime 结构化诊断 ----
     DeadlineExpired,    // 提交时点 deadline 已过 → status == Rejected
-    AffinityMismatch    // 请求核集合与目标后端绑核不相交（advisory）
+    AffinityMismatch,   // 请求核集合与目标后端绑核不相交（advisory）
                         // → status == AcceptedDegraded 且 diagnostics 含
                         //    RoutingDiagnostics::AffinityMismatch
+    // ---- 0.7.0 AdaptiveScheduler（M3）----
+    LoadShedding        // QoS 感知降载：观测到更高级别 QoS 的 queue wait
+                        // p99 持续超过目标 → 对严格更低 QoS 的提交
+                        // 提前结构化拒绝 → status == Rejected
 };
 
 /**
@@ -101,6 +105,11 @@ constexpr uint32_t None = 0;
 constexpr uint32_t AffinityMismatch = 1u << 0;
 /** 拒绝由声明的 ResourceRequirements 触发（设备不符 / 内存超量）。 */
 constexpr uint32_t ResourceInfeasible = 1u << 1;
+/** 0.7.0 M3：决策由执行历史反馈驱动（reason == AdaptiveHistory 时
+ *  恒置位；detail 携带两侧 EWMA 数值，可复原决策依据）。 */
+constexpr uint32_t AdaptiveHistory = 1u << 2;
+/** 0.7.0 M3：拒绝由 QoS 降载状态机触发（reason == LoadShedding）。 */
+constexpr uint32_t LoadShedding = 1u << 3;
 }  // namespace RoutingDiagnostics
 
 /** @brief RoutingStatus 的稳定名称（诊断与测试输出）。 */
@@ -141,6 +150,8 @@ inline const char* routing_reason_to_string(RoutingReason reason) noexcept {
         return "DeadlineExpired";
     case RoutingReason::AffinityMismatch:
         return "AffinityMismatch";
+    case RoutingReason::LoadShedding:
+        return "LoadShedding";
     case RoutingReason::Rejected:
     default:
         return "Rejected";

@@ -59,4 +59,9 @@ for (const filename of markdownFiles) {
   }
 }
 
+const { homeRoutes } = await import('../.vitepress/theme/home-content.mjs')
+for (const route of homeRoutes()) {
+  if (!isExistingPage(route)) fail(`.vitepress/theme/home-content.mjs: missing site route ${route}`)
+}
+
 if (!process.exitCode) console.log(`OK: checked ${markdownFiles.length} Markdown files and local links.`)

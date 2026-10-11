@@ -36,6 +36,8 @@ future.get();
 
 `Executor` 的公开自动路由目前只会使用显式偏好和阈值：Facade 不会在任务完成后向其内部 `GpuScheduler` 写入性能记录，因此即使开启 `enable_adaptive`，也没有可供自动路由使用的历史样本。
 
+> 0.7.0：`AdaptiveScheduler` 为希望由平台学习完成时延的调用方提供了 opt-in 通道（按 `(backend, executor, qos)` 键累积 EWMA 并带滞回地翻转 `CpuOrGpu` 决策）。上文描述的默认路径（未注入自适应调度器）不受影响；适用条件与风险见[何时使用 AdaptiveScheduler](/zh/guides/adaptive-scheduling)。
+
 `GpuScheduler` 本身在拥有调用方提供的历史时按以下顺序决定：
 
 1. `TaskCharacteristics::prefer_gpu` 为真时选择 GPU。

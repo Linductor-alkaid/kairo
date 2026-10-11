@@ -7,7 +7,7 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
 
 ## 当前版本说明
 
-项目 CMake 与最新发布记录的版本均为 `v0.6.1`。本站以该稳定版为基线，同时跟随 `master` 的后续开发；未在稳定 tag 中发布的能力不构成版本承诺。首发不维护历史版本站点；发布时应以 tag 重新核对页面。
+项目 CMake 与最新发布记录的版本均为 `v0.7.0`。本站以该稳定版为基线，同时跟随 `master` 的后续开发；未在稳定 tag 中发布的能力不构成版本承诺。首发不维护历史版本站点；发布时应以 tag 重新核对页面。
 
 | 需要确认什么 | 入口 |
 | --- | --- |
@@ -15,6 +15,17 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
 | 从旧 API 的推荐迁移路径 | [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) |
 | 选项、编译器与后端前置 | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | 当前完整签名 | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
+
+## 0.7.0：Runtime-aware Scheduling
+
+0.7.0（2026-10-10 发布）按 `docs/design/roadmap_v0.7.md` 落地；以下能力均为 additive：
+
+- **默认路径不变**：`DefaultScheduler` 行为与 0.6.1 逐项一致（契约测试一字不改通过）；**无必需迁移**，不注入自适应调度器就不付任何代价。
+- **路由 pipeline 化**：`DefaultScheduler::route()` 内部重构为 `约束过滤 → 候选生成 → 评分/选择` 四阶段，各阶段作为可组合组件开放（`<kairo/scheduling_pipeline.hpp>`）；对外接口与决策结果不变。
+- **反馈聚合层**：`<kairo/feedback_aggregator.hpp>` 的 `FeedbackAggregator` 在 worker 线程无锁累加执行期样本（EWMA、分桶直方图、失败率），周期合并为不可变快照；`Executor::get_feedback_snapshot()` 为诊断入口，`get_snapshot_text()` 追加 `scheduling_feedback.*` 段。
+- **AdaptiveScheduler（opt-in）**：`<kairo/adaptive_scheduler.hpp>` 注入后提供三类可解释决策——CPU/GPU 历史选择（滞回 + 最小样本）、QoS 感知降载、QoS→priority 有界提升。适用条件与风险（震荡、冷启动、不可复现性）见[何时使用 AdaptiveScheduler](/zh/guides/adaptive-scheduling)。
+- **新结构化诊断**：`RoutingReason::LoadShedding`，诊断位 `AdaptiveHistory` / `LoadShedding`，`SchedulingMetrics` 新增 `adaptive_history_count` / `load_shedding_rejected_count` / `priority_promoted_count`。
+- 完整升级说明见 [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) 的"从 0.6.x 升级到 0.7.0"一节。
 
 ## 0.6.1：Scheduling Runtime 可观测性与文档治理
 

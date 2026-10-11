@@ -136,6 +136,6 @@ More runnable code is available in [examples](examples/) and [tutorial](examples
 
 ## Version and License
 
-Current version: **v0.6.1**
+Current version: **v0.7.0**
 
 Kairo is available under the [MIT License](LICENSE).

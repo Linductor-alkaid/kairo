@@ -5,7 +5,7 @@ description: Module entry points and stability boundaries for the public API.
 
 # API Reference
 
-This site anchors on `v0.6.1` as its stable baseline, covering unified auto-routing, waiting, communication, task graphs and diagnostics; unreleased capabilities on `master` do not constitute a stability commitment. Complete signatures, defaults, error codes and compatibility semantics are maintained only in the repository's [`docs/API.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md), so the site and the repository never carry two competing versions of the truth.
+This site anchors on `v0.7.0` as its stable baseline, covering unified auto-routing, waiting, communication, task graphs and diagnostics; unreleased capabilities on `master` do not constitute a stability commitment. Complete signatures, defaults, error codes and compatibility semantics are maintained only in the repository's [`docs/API.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md), so the site and the repository never carry two competing versions of the truth.
 
 ## Locate by module first
 
@@ -22,6 +22,7 @@ This site anchors on `v0.6.1` as its stable baseline, covering unified auto-rout
 | Serial dispatch and total admission | `submit_on[_with_handle]`, `SerialExecutionContext`, `max_in_flight_tasks`, `CapacityExhaustedException` | [Capacity and Alerting](/en/realtime-and-communication/capacity-and-alerting), [Event Loop Interop](/en/guides/event-loop-interop) | Admission and serial dispatch chapters. |
 | Realtime | `_ex` registration/start, push, status, task list | [Realtime Control Loops](/en/realtime-and-communication/realtime-control) | Realtime task API. |
 | GPU | `_ex` registration, `submit_gpu`, status, `submit_auto`, scheduler | [GPU Topic](/en/gpu/) | GPU API and build docs. |
+| Scheduling policy and adaptivity | `IScheduler`, `DefaultScheduler`, `set_scheduler`, `AdaptiveScheduler` (0.7.0) | [When to Use AdaptiveScheduler](/en/guides/adaptive-scheduling), [Declare Deadlines, Priorities, and Resources](/en/tutorial/scheduling-runtime) | `docs/API.md` §3.8 and `docs/design/scheduling_runtime.md`. |
 | Bounded dispatch and workers | `dispatch_auto`, `DispatchResult`, `start_worker`, `WorkerHandle` | [Choosing a Submit API](/en/guides/choosing-submit-api), [Blocking I/O Workers](/en/realtime-and-communication/blocking-io-workers) | Routing and Blocking I/O API. |
 | Advanced | `ExecutorManager`, executor pointers, `ICycleManager`, `LockFreeTaskExecutor` | [Advanced and Internals](/en/advanced/) | Advanced interfaces and design docs. |
 
@@ -44,6 +45,7 @@ The table below is the pre-release checklist: every public `Executor` facade fam
 | Bounded dispatch, Blocking workers | Execution models and routing boundaries | admission is not completion; worker lifecycle. |
 | `register_lockfree_executor` / `start_` / `stop_` / `get_lockfree_executor_names` | Submit selection, advanced and internals | Backend lifecycle; `dispatch_auto`'s `accepted` only means queue admission. |
 | GPU registration, submission, status, auto scheduling | GPU tutorials | Backend availability, streams and hardware validation. |
+| `set_scheduler` / `get_scheduler`, `AdaptiveScheduler` | [When to Use AdaptiveScheduler](/en/guides/adaptive-scheduling) (selection), scheduling-runtime tutorial | New in 0.7.0: opt-in injection; the default scheduler is unchanged; shedding rejections and promotion boundaries are covered on that page. |
 | Direct manager / executor pointers | Advanced interfaces | Ownership, concurrency and lifetime responsibilities. |
 
 ## How to read status and results

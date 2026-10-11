@@ -24,7 +24,7 @@ export default defineConfig({
           {
             text: 'Reference',
             items: [
-              { text: 'Versions and Migration · v0.6.0', link: '/en/reference/version-and-migration' },
+              { text: 'Versions and Migration · v0.7.0', link: '/en/reference/version-and-migration' },
               { text: 'API Reference', link: '/en/reference/api' }
             ]
           },
@@ -95,6 +95,7 @@ export default defineConfig({
                 { text: 'Execution Models and Routing Boundaries', link: '/en/guides/execution-models-and-routing' },
                 { text: 'Choose a Submission API', link: '/en/guides/choosing-submit-api' },
                 { text: 'Choose a Communication Component', link: '/en/guides/choosing-communication' },
+                { text: 'When to Use AdaptiveScheduler', link: '/en/guides/adaptive-scheduling' },
                 { text: 'Interoperate with an External Event Loop', link: '/en/guides/event-loop-interop' },
                 { text: 'Migrate Existing Thread Code', link: '/en/guides/migrating-existing-threads' },
                 { text: 'Concurrency Architecture Antipatterns', link: '/en/guides/concurrency-antipatterns' },
@@ -188,7 +189,7 @@ export default defineConfig({
     ['link', { rel: 'icon', type: 'image/png', href: '/kairo/kairo-favicon.png?v=2', sizes: '64x64' }],
     ['link', { rel: 'apple-touch-icon', href: '/kairo/kairo-180.png?v=2' }],
     ['meta', { name: 'keywords', content: 'C++20, task executor, thread pool, real-time, realtime, robotics, lock-free, concurrent programming, C++ 任务执行器, 线程池, 实时系统, 机器人, 无锁' }],
-    ['meta', { name: 'theme-color', content: '#181d26' }]
+    ['meta', { name: 'theme-color', content: '#0e1a3c' }]
   ],
   themeConfig: {
     logo: '/kairo-logo.png',
@@ -200,7 +201,7 @@ export default defineConfig({
       {
         text: '参考',
         items: [
-          { text: '版本与迁移 · v0.6.0', link: '/zh/reference/version-and-migration' },
+          { text: '版本与迁移 · v0.7.0', link: '/zh/reference/version-and-migration' },
           { text: '完整 API 参考', link: '/zh/reference/api' }
         ]
       },
@@ -245,6 +246,7 @@ export default defineConfig({
             { text: '执行模型与路由边界', link: '/zh/guides/execution-models-and-routing' },
             { text: '如何选择提交接口', link: '/zh/guides/choosing-submit-api' },
             { text: '如何选择通信组件', link: '/zh/guides/choosing-communication' },
+            { text: '何时使用 AdaptiveScheduler', link: '/zh/guides/adaptive-scheduling' },
             { text: '与外部事件循环互操作', link: '/zh/guides/event-loop-interop' },
             { text: '从现有线程代码迁移', link: '/zh/guides/migrating-existing-threads' },
             { text: '并发架构反模式', link: '/zh/guides/concurrency-antipatterns' },

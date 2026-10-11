@@ -5,6 +5,7 @@
 #include "task_options.hpp"
 #include "task_router.hpp"
 #include "scheduler.hpp"
+#include "feedback_aggregator.hpp"
 #include "task_cancellation.hpp"
 #include "timer.hpp"
 #include "serial_execution_context.hpp"
@@ -640,6 +641,16 @@ public:
     std::string get_snapshot_text() const;
 
     /**
+     * @brief 获取执行期反馈聚合快照（0.7.0 M2，诊断用）。
+     *
+     * 返回当前 FeedbackAggregator 的合并快照（距上次合并超过聚合器
+     * merge_interval 时先重合并再返回）。仅当注入的调度器声明
+     * wants_feedback() 时才有样本流入；无样本时返回空 entries 的快照。
+     * 低频诊断接口，不应在任务热路径调用。
+     */
+    scheduling::FeedbackSnapshot get_feedback_snapshot() const;
+
+    /**
      * @brief 设置低频故障现场回调。
      *
      * 回调在 wait 超时及 facade 生命周期/注册/启动失败的调用线程执行；
@@ -1111,6 +1122,10 @@ private:
         std::atomic<uint64_t> affinity_mismatch{0};
         std::atomic<uint64_t> deadline_missed{0};
         std::atomic<uint64_t> feedback_reported{0};
+        // 0.7.0 M3 AdaptiveScheduler：自适应决策计数。
+        std::atomic<uint64_t> adaptive_history{0};
+        std::atomic<uint64_t> load_shedding_rejected{0};
+        std::atomic<uint64_t> priority_promoted{0};
     };
     SchedulingMetricsCounters scheduling_counters_;
 
@@ -1118,6 +1133,10 @@ private:
     // wants_feedback() 时，submit_auto 才为任务附加测量包装（时间戳采样
     // + 终态回调）。set_scheduler() 时缓存，读取付一次 relaxed load。
     std::atomic<bool> scheduling_feedback_enabled_{false};
+
+    // 0.7.0 M2 反馈聚合层：样本与测量包装同源（仅 wants_feedback() 时有
+    // 流入），worker 线程无锁分片累加；route 侧与诊断经 RCU 快照读取。
+    scheduling::FeedbackAggregator feedback_aggregator_;
 
     mutable std::mutex task_graph_mutex_;
     // PR-3：task_graph_cv_ 已退役——dependency-driven 调度下不再有 worker
@@ -1561,15 +1580,15 @@ auto Executor::submit_with_rejection_observer(
             "Async executor not initialized. Call initialize() first.");
     }
 
-    auto promise = std::make_shared<std::promise<return_type>>();
-    auto promise_ready = std::make_shared<std::atomic_bool>(false);
-    auto future = promise->get_future();
+    // CR-107：promise 与 ready 标志合并为单控制块（原两个 make_shared）。
+    auto cell = std::make_shared<detail::PromiseCell<return_type>>();
+    auto future = cell->promise.get_future();
 
     if constexpr (sizeof...(Args) == 0) {
         if (detail::is_empty_std_function(f)) {
             auto exception = std::make_exception_ptr(std::invalid_argument("empty task"));
-            promise_ready->store(true, std::memory_order_release);
-            promise->set_exception(exception);
+            cell->ready.store(true, std::memory_order_release);
+            cell->promise.set_exception(exception);
             record_submit_rejected(
                 executor_name,
                 task_id,
@@ -1582,6 +1601,9 @@ auto Executor::submit_with_rejection_observer(
         }
     }
 
+    // bound_task 经 shared_ptr 持有：支持 move-only 可调用（如 unique_ptr
+    // 捕获的 lambda）——wrapper 转 std::function 要求可拷贝目标，间接层
+    // 在此擦除该约束。改动此结构须保证 tutorial 11 的 move-only 用例。
     auto bound_task = std::make_shared<decltype(std::bind(std::forward<F>(f), std::forward<Args>(args)...))>(
         std::bind(std::forward<F>(f), std::forward<Args>(args)...)
     );
@@ -1592,32 +1614,32 @@ auto Executor::submit_with_rejection_observer(
     if (!admission.accepted) {
         auto exception = std::make_exception_ptr(CapacityExhaustedException(
             "In-flight submission capacity exhausted"));
-        promise_ready->store(true, std::memory_order_release);
-        promise->set_exception(exception);
+        cell->ready.store(true, std::memory_order_release);
+        cell->promise.set_exception(exception);
         return future;
     }
     auto release_admission = [releaser = std::move(admission.releaser)]() {
         if (releaser) releaser->release();
     };
 
-    auto task_wrapper = [this, executor_name, task_id, promise, promise_ready, bound_task,
+    auto task_wrapper = [this, executor_name, task_id, cell, bound_task,
                          release_admission]() mutable {
         try {
             if constexpr (std::is_void_v<return_type>) {
                 std::invoke(*bound_task);
                 release_admission();
-                promise->set_value();
+                cell->promise.set_value();
             } else {
                 auto result = std::invoke(*bound_task);
                 release_admission();
-                promise->set_value(std::move(result));
+                cell->promise.set_value(std::move(result));
             }
-            promise_ready->store(true, std::memory_order_release);
+            cell->ready.store(true, std::memory_order_release);
         } catch (...) {
             auto exception = std::current_exception();
             release_admission();
-            promise->set_exception(exception);
-            promise_ready->store(true, std::memory_order_release);
+            cell->promise.set_exception(exception);
+            cell->ready.store(true, std::memory_order_release);
             record_task_exception(
                 executor_name,
                 task_id,
@@ -1627,12 +1649,12 @@ auto Executor::submit_with_rejection_observer(
         }
     };
 
-    auto on_timeout = [this, executor_name, task_id, promise, promise_ready,
+    auto on_timeout = [this, executor_name, task_id, cell,
                        release_admission](std::exception_ptr exception) {
         bool expected = false;
-        if (promise_ready->compare_exchange_strong(expected, true)) {
+        if (cell->ready.compare_exchange_strong(expected, true)) {
             release_admission();
-            promise->set_exception(exception);
+            cell->promise.set_exception(exception);
             record_task_timeout(
                 executor_name,
                 task_id,
@@ -1645,9 +1667,9 @@ auto Executor::submit_with_rejection_observer(
         auto exception = std::make_exception_ptr(
             std::runtime_error("Async executor rejected task submission"));
         bool expected = false;
-        if (promise_ready->compare_exchange_strong(expected, true)) {
+        if (cell->ready.compare_exchange_strong(expected, true)) {
             release_admission();
-            promise->set_exception(exception);
+            cell->promise.set_exception(exception);
             record_submit_rejected(
                 executor_name,
                 task_id,
@@ -2904,10 +2926,20 @@ template<typename Function>
 auto Executor::submit_auto(TaskBuilder<Function> task)
     -> std::future<typename std::invoke_result<Function&>::type> {
     const auto& options = task.options();
-    // 0.6.0 QoS：未显式设置 priority 时按 QoS 类别映射默认排队优先级
-    const int effective_priority = static_cast<int>(
-        options.priority_set ? options.priority
-                             : default_priority_for_qos(options.qos));
+    // 0.6.0 QoS：未显式设置 priority 时按 QoS 类别映射默认排队优先级；
+    // 0.7.0 M3：调度器可对默认优先级做有界咨询（AdaptiveScheduler 的
+    // QoS→priority 动态映射）；显式 priority 永远原样生效。
+    const int qos_default_priority =
+        static_cast<int>(default_priority_for_qos(options.qos));
+    const int effective_priority =
+        options.priority_set
+            ? static_cast<int>(options.priority)
+            : task_scheduler_->effective_priority_for(options,
+                                                      qos_default_priority);
+    if (!options.priority_set && effective_priority != qos_default_priority) {
+        scheduling_counters_.priority_promoted.fetch_add(
+            1, std::memory_order_relaxed);
+    }
     const auto decision = route_task(options, false);
     record_routing_decision(decision);
     // 0.6.1：status 是接受/拒绝的权威判据（DeadlineExpired 等拒绝原因
@@ -3036,7 +3068,14 @@ std::future<void> Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction> tas
     // 语义在 facade 层裁决，此处把 status 修正为 Rejected 后再记录，
     // 保证 SchedulingMetrics 与 recent decisions 反映最终结果（0.6.0
     // 会先记录 Accepted 决策再拒绝，计数与结果不一致）。
+    // 0.7.0 M3 豁免：history 驱动的 AdaptiveHistory CPU 选择是 CpuOrGpu
+    // 意图内的正常结果（两侧皆可），不适用启发式 CPU 拒绝规则；该规则
+    // 对启发式路径逐位不变。
+    const bool adaptive_cpu_choice =
+        decision.reason == RoutingReason::AdaptiveHistory &&
+        (decision.diagnostics & RoutingDiagnostics::AdaptiveHistory) != 0;
     if (decision.selected_backend == ExecutionBackend::DefaultAsync && !decision.fell_back &&
+        !adaptive_cpu_choice &&
         options.fallback != FallbackPolicy::AllowCpu) {
         decision.status = RoutingStatus::Rejected;
     }
@@ -3046,13 +3085,94 @@ std::future<void> Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction> tas
         return reject("submit_auto: " + decision.detail);
     }
 
+    // 0.7.0 M3：CpuGpuTask 两侧的测量包装。0.6.1 的测量通道只覆盖
+    // TaskBuilder 路径，CPU/GPU 端到端时延历史（AdaptiveScheduler 的
+    // 学习输入）由此补齐；wants_feedback() == false 时零开销。
+    const bool feedback_enabled =
+        scheduling_feedback_enabled_.load(std::memory_order_relaxed);
+    const auto steady_ns_now = [] {
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                   std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    };
+    const int64_t submit_ns = feedback_enabled ? steady_ns_now() : 0;
+    const int64_t deadline_ns =
+        options.deadline
+            ? std::chrono::duration_cast<std::chrono::nanoseconds>(
+                  options.deadline->time_since_epoch()).count()
+            : 0;
+
     if (decision.selected_backend == ExecutionBackend::DefaultAsync) {
+        if (feedback_enabled) {
+            return submit(
+                [this, steady_ns_now, submit_ns, deadline_ns, qos = options.qos,
+                 feedback_task_id = task_name,
+                 inner = std::move(task).take_cpu()]() mutable {
+                    const int64_t start_ns = steady_ns_now();
+                    SchedulingFeedback feedback;
+                    feedback.task_id = feedback_task_id;
+                    feedback.qos = qos;
+                    feedback.backend = ExecutionBackend::DefaultAsync;
+                    feedback.executor_name = "default";
+                    feedback.queue_wait_ns = start_ns - submit_ns;
+                    feedback.had_deadline = deadline_ns > 0;
+                    feedback.deadline_missed =
+                        deadline_ns > 0 && start_ns > deadline_ns;
+                    const auto finish = [&](bool success, FailureKind kind) {
+                        feedback.success = success;
+                        feedback.failure_kind = kind;
+                        feedback.execution_duration_ns = steady_ns_now() - start_ns;
+                        report_scheduling_feedback(feedback);
+                    };
+                    try {
+                        inner();
+                        finish(true, FailureKind::None);
+                    } catch (...) {
+                        finish(false, FailureKind::TaskException);
+                        throw;
+                    }
+                });
+        }
         return submit(std::move(task).take_cpu());
     }
 
     const auto& gpu_name = decision.selected_executor_name;
     try {
         auto gpu_config = task.gpu_config();
+        if (feedback_enabled) {
+            // 泛型转发包装：GPU callable 可为 (void* stream) 或无参形态，
+            // 包装按执行器的调用形态原样转发。
+            return submit_gpu(
+                gpu_name,
+                [this, steady_ns_now, submit_ns, deadline_ns, qos = options.qos,
+                 executor = gpu_name, feedback_task_id = task_name,
+                 inner = std::move(task).take_gpu()](auto&&... args) mutable {
+                    const int64_t start_ns = steady_ns_now();
+                    SchedulingFeedback feedback;
+                    feedback.task_id = feedback_task_id;
+                    feedback.qos = qos;
+                    feedback.backend = ExecutionBackend::Gpu;
+                    feedback.executor_name = executor;
+                    feedback.queue_wait_ns = start_ns - submit_ns;
+                    feedback.had_deadline = deadline_ns > 0;
+                    feedback.deadline_missed =
+                        deadline_ns > 0 && start_ns > deadline_ns;
+                    const auto finish = [&](bool success, FailureKind kind) {
+                        feedback.success = success;
+                        feedback.failure_kind = kind;
+                        feedback.execution_duration_ns = steady_ns_now() - start_ns;
+                        report_scheduling_feedback(feedback);
+                    };
+                    try {
+                        inner(std::forward<decltype(args)>(args)...);
+                        finish(true, FailureKind::None);
+                    } catch (...) {
+                        finish(false, FailureKind::TaskException);
+                        throw;
+                    }
+                },
+                gpu_config);
+        }
         return submit_gpu(gpu_name, std::move(task).take_gpu(), gpu_config);
     } catch (const std::exception& error) {
         if (options.fallback == FallbackPolicy::AllowCpu) {

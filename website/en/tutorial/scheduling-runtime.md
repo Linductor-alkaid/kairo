@@ -58,4 +58,5 @@ All declarations are plain values on `TaskOptions`; nothing keeps references to 
 
 - [Prioritize Control Commands](/en/tutorial/priority) - manual priority slots
 - [Delayed Retry and Health Checks](/en/tutorial/delayed-and-periodic) - timer handles
+- [When to Use AdaptiveScheduler](/en/guides/adaptive-scheduling) - 0.7.0: feedback-driven CPU/GPU selection, shedding, and promotion
 - [Versions and Migration](/en/reference/version-and-migration) - 0.6.0 changes

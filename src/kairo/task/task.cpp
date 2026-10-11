@@ -1,5 +1,6 @@
 #include "task.hpp"
 #include <atomic>
+#include <charconv>
 
 namespace kairo {
 
@@ -43,12 +44,21 @@ bool operator>(const Task& lhs, const Task& rhs) {
 
 /**
  * @brief 创建任务ID（辅助函数）
- * 
- * 使用原子计数器生成唯一的任务ID，性能优于基于时间戳的实现
+ *
+ * 使用原子计数器生成唯一的任务ID，性能优于基于时间戳的实现。
+ * CR-107（v0.7.0 M0）：经 std::to_chars 直写栈缓冲再单次拼接——原
+ * "task_" + std::to_string(id) 每次调用付两次堆分配（to_string 临时 +
+ * 拼接结果），现只付一次。
  */
 std::string generate_task_id() {
     uint64_t id = g_task_id_counter.fetch_add(1, std::memory_order_relaxed);
-    return "task_" + std::to_string(id);
+    char digits[24];
+    const auto result = std::to_chars(digits, digits + sizeof(digits), id);
+    std::string out;
+    out.reserve(5 + static_cast<size_t>(result.ptr - digits));
+    out += "task_";
+    out.append(digits, static_cast<size_t>(result.ptr - digits));
+    return out;
 }
 
 /**

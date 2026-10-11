@@ -214,6 +214,8 @@ status/reason/diagnostics 一一对应，另有 `deadline_missed_count`
 - **0.6.1 边界**：只建立 measurement contract。DefaultScheduler 不
   消费反馈；任何基于 queue pressure、historical latency 或 backend
   utilization 的自适应调度行为都属于 v0.7.0+。
+- 0.7.0 起，流入的样本在 `FeedbackAggregator` 中聚合（§7.1），并由
+  AdaptiveScheduler 消费（§8）；本节的 measurement contract 本身不变。
 
 ### 6.4 capability snapshot 弱一致语义
 
@@ -244,7 +246,103 @@ status/reason/diagnostics 一一对应，另有 `deadline_missed_count`
 成功调度的普通路径不为诊断构造字符串：结构化 reason/status 的
 引入正是为了把 detail 字符串从程序判断接口的位置上移除。
 
-## 7. 测试与验证
+## 7. 0.7.0 反馈聚合层 FeedbackAggregator（M2，已落地）
+
+`include/kairo/feedback_aggregator.hpp`。0.6.1 建立了 measurement
+contract（§6.3）；M2 为其补上聚合与消费的基础设施。聚合本身仍不改变
+任何调度行为——DefaultScheduler 契约与 0.6.1 逐项一致，样本流入仅在
+注入 `wants_feedback() == true` 的调度器时发生。
+
+- **写路径（worker 热路径）**：`FeedbackAggregator::record()` 由
+  `report_scheduling_feedback()` 喂入，与 0.6.1 测量包装同源。满足
+  §2.1 的三条硬约束——不阻塞（无锁：样本写入调用线程的分片）、不分配
+  （键槽定长、SSO 字符串比较）、不抛异常（`noexcept`；异常值夹取）。
+  分片固定 32 片，进程级 `thread_local` 槽位稳定映射（worker 数超过
+  分片数时共享分片，仍无锁）。
+- **键与键空间**：按 `(backend, executor_name, qos)` 分键；
+  executor_name 槽内定长 48 字节（超长截断，截断后相同的键合并）。
+  键空间有界：每分片默认 16 槽（上限 64）；未见过的键先到先得建槽，
+  表满后新键样本丢弃并计入 `dropped_samples`——§6.4 "未知即宽容"的
+  聚合版。`register_key()` 支持预注册（幂等、全或无）。
+- **聚合量**：计数自构造起累计（attempts / failures / deadline_misses /
+  分桶直方图，桶界可配且须严格升序）；EWMA 是唯一带遗忘的量（整数
+  定点，千分比平滑系数，默认 125 = 1/8；样本夹取到 [0, 1e15] ns 保证
+  定点乘法不溢出）。
+- **读路径（RCU）**：`route()` 侧与诊断只读周期性合并出的不可变快照
+  （`FeedbackSnapshot`：EWMA、直方图、失败率、dropped 计数；entries
+  按 key 排序输出确定性），经原子 `shared_ptr` 指针交换发布，读路径
+  无锁。entries 只包含至少有一条样本的键（预注册未观测的键不出现，
+  消费方可假设 `attempts > 0`）。合并由 `refresh()` / `refresh_if_stale()`
+  驱动（本类不拥有线程：诊断读方与后续 M3 的 AdaptiveScheduler 决定
+  刷新节奏）。快照为弱一致：分片间不同步；EWMA 跨分片按样本数加权
+  平均。
+- **facade 接入**：`Executor::get_feedback_snapshot()`（诊断用，
+  超过 merge_interval 先重合并再读快照）；`get_snapshot_text()` 末尾
+  追加 `scheduling_feedback.*` 行式段（无样本时仅输出汇总计数）。
+- **验收**：开启聚合时每任务聚合开销 ≤ 100ns——
+  `benchmark_feedback_aggregator` 内置验收线（record 快路径中位数）；
+  facade 端到端（提交 → worker 反馈 → 聚合转发）差值同预算内；TSAN
+  全绿；默认调度器路径零变化。
+
+## 8. 0.7.0 AdaptiveScheduler（M3，已落地）
+
+`include/kairo/adaptive_scheduler.hpp`。M2 建立了聚合与消费基础设施；
+M3 是 §0 原则 1 的兑现：自适应以新的 `AdaptiveScheduler` 经
+`set_scheduler()` 注入，DefaultScheduler 保持确定性、行为与 0.6.1 逐项
+一致。结构上复用 M1 pipeline（`SchedulingPipeline<IdentityScoring>` 产出
+0.6.1 基线决策）与 M2 聚合器（内嵌 `FeedbackAggregator` 作决策输入，
+与 facade 诊断聚合器相互独立），再对基线候选做三类后处理。
+
+- **CPU/GPU 历史选择**（CpuOrGpu）：端到端时延 EWMA（queue wait +
+  execution duration）按 `(backend, executor_name, qos)` 两侧对比；
+  双侧 `attempts >= min_samples`（默认 8）才采信历史，否则回退 0.6.1
+  启发式结果（不标记）；切换需挑战侧优于在用侧 `(1 - hysteresis_margin)`
+  （默认 0.25，防震荡）。命中历史（含边际内"维持"）→ reason =
+  `AdaptiveHistory` + diagnostics 位 + detail 携带两侧 EWMA 纳秒值，
+  决策完全可复原。学习粒度为 per-(backend, executor, qos)。显式用户
+  约束优先于历史：`RequireRequestedBackend` 的请求不做历史翻转。配套
+  测量通道补齐：`submit_auto(CpuGpuTask)` 在 wants_feedback() 时为
+  CPU/GPU 两侧附加测量包装（此前该路径不产生 SchedulingFeedback，
+  GPU 侧经泛型转发包装上报 `(Gpu, executor_name, qos)`）。
+- **QoS 感知降载**：按 QoS 类把 queue-wait 直方图**按窗口差分**（两次
+  评估间的样本增量——聚合器直方图自构造起累计，直接评估会让"证据
+  不足"在预热后不可达、陈旧 p99 无遗忘），求窗口 p99 与
+  `min_window_samples` 证据门槛；连续 `shed_breach_windows` 个评估窗口
+  超过该类目标 → 开闸，对**严格低于**超阈类的提交合成结构化拒绝
+  （`RoutingReason::LoadShedding`，detail 标明超阈类与目标值）；连续
+  `shed_close_windows` 个恢复窗口（p99 < 目标 × recovery_ratio）才
+  关闸——开/关对称滞回，防止阈值附近反复开关。证据不足或目标为 0 →
+  "未知即宽容"（fail-open：清零连击并解除激活态）。与
+  `max_in_flight_tasks` 硬上界共存：只做更早、更有区分度的拒绝。
+- **QoS→priority 有界提升**：同一超阈信号、更长的持续窗口
+  （`promotion_windows` ≥ shed_breach_windows，取消需
+  `promotion_close_windows`）→ 该 QoS 类默认排队优先级 +1 级（封顶
+  CRITICAL）。经 `IScheduler::effective_priority_for()` 生效（0.7.0
+  新增虚方法，默认实现原样返回 default_priority）；**显式 priority
+  永不被覆盖**；被调整的提交计数到
+  `SchedulingMetrics::priority_promoted_count`。防饿死兜底仍由 M0 的
+  可选 aging（roadmap §2.1）承担。
+- **决策可复原**：reason（`AdaptiveHistory` / `LoadShedding`）+
+  diagnostics 位 + detail 数值 + `SchedulingMetrics` 三个新计数
+  （`adaptive_history_count` / `load_shedding_rejected_count` /
+  `priority_promoted_count`）+ AdaptiveScheduler 诊断接口
+  （`load_shed_active()` / `priority_promoted()` / `feedback_snapshot()`
+  / `format_state_text()`）。
+- **明确不做**（roadmap §2.4 非目标）：NUMA、跨 pool 迁移、基于
+  利用率的线程数调整（已有 resizer，避免双控制回路打架）。
+- **评估节奏与热路径形状**：route() 侧每 `merge_interval`（内嵌聚合器
+  配置，默认 100ms）至多重评估一次派生状态（原子 fast 门限 + 互斥锁内
+  重评估 + 双原子掩码发布，提交热路径只付两次无锁原子读）；实测
+  route() 纯策略路径配对差 ~19-50ns、on_task_completed 转发 ~23ns
+  （验收线均 150ns）。
+- **验收**（已达成）：`benchmark_adaptive_scheduler` 内置验收线全过
+  （route Auto ≤150ns、CpuOrGpu 冷路径 ≤250ns、on_task_completed
+  ≤150ns、effective_priority_for ≤50ns）；降载场景 Interactive 探针
+  端到端 p99 自适应 1.3-4.2ms vs DefaultScheduler 10.8-16.9ms
+  （绑核配对，160-168 次结构化拒绝）；TSAN 全绿；默认路径配对
+  A/B vs M2 head 在 ±5% 内。基准记录：`docs/performance/m3_adaptive_scheduler_results.md`。
+
+## 9. 测试与验证
 
 行为测试由 Independent-Verification-Agent 独立编写与执行，覆盖：
 EDF 排序、deadline 拒绝/错过计数、QoS 映射、affinity 诊断、

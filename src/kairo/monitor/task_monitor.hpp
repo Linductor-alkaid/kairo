@@ -18,15 +18,25 @@ namespace monitor {
  *
  * 接收任务生命周期事件（start/complete/timeout），按 task_type 聚合统计。
  * 供 ThreadPool 在 execute_task 前后钩子调用。
+ *
+ * @note CR-071/CR-163（v0.7.0 M0）：单把全局 mutex 会在提交/执行热路径上
+ * 串行化所有线程，且采样率为 0 时仍取锁——反馈测量会混入监控锁争用，
+ * 自适应调度会学到噪声。改为按 key 哈希分片：
+ *  - task_id → task_type 映射与 in-flight 快照按 task_id 分片；
+ *  - 聚合统计按 task_type 分片；
+ *  - dropped/evicted 计数与 in-flight 总数为原子量。
+ * 热路径快速门：统计采样率为 0 时不触碰 id 映射与统计分片（
+ * set_sampling_rate(0) 会清空 id 映射，已开始未结算的样本随之丢弃——
+ * 语义即"关闭统计采样"）；in-flight 采样率为 0 或容量为 0 时不触碰
+ * in-flight 分片（对应配置变更时清空，保证快速门与分片内容一致）。
+ * 两个门都关时 record_task_start/complete/timeout 零取锁。
  */
 class TaskMonitor {
 public:
     TaskMonitor() = default;
-    // 定义在 .cpp：析构前必须取 mutex_，与最后一个持锁读者（线程池 worker
-    // 的 record_task_*）建立 happens-before，否则 map 成员的无锁析构与
-    // shutdown 路径上 worker 的持锁访问构成数据竞争（TSAN 报告 + 潜在 UAF）。
-    // mutex_ 声明先于各 map，按逆序析构最后销毁，锁自身的生命周期覆盖
-    // 全部受保护成员。
+    // 定义在 .cpp：析构前必须取全部分片锁，与最后一个持分片锁的读者
+    // （线程池 worker 的 record_task_*）建立 happens-before，否则分片
+    // 成员的无锁析构与 shutdown 路径上 worker 的持锁访问构成数据竞争。
     // CR-073: record_task_* 为虚函数且已存在派生（测试注入），经基类指针
     // delete 派生对象是 UB——析构必须为虚。
     virtual ~TaskMonitor();
@@ -120,23 +130,26 @@ public:
 private:
     bool should_sample() const;
     bool should_sample_in_flight() const;
-    mutable std::mutex mutex_;
-    std::atomic<bool> enabled_{true};
-    std::atomic<uint32_t> sampling_rate_{100};  // 百分比，100=100%，1=1%
-    mutable std::atomic<uint64_t> sample_counter_{0};
-    std::atomic<size_t> in_flight_capacity_{128};
-    std::atomic<uint32_t> in_flight_sampling_rate_{100};
-    mutable std::atomic<uint64_t> in_flight_sample_counter_{0};
+    /// CR-071 热路径快速门：in-flight 分片当前是否可能持有条目。
+    /// 关闭（采样率 0 或容量 0）时 setter 已清空分片，后续更新可无锁跳过。
+    bool in_flight_active() const;
 
-    /// task_id -> task_type，用于 complete/timeout 时查找
-    std::unordered_map<std::string, std::string> task_id_to_type_;
-    std::unordered_map<std::string, TaskLifecycleSnapshot> in_flight_tasks_;
-    size_t in_flight_dropped_count_ = 0;
-    // CR-075: 缩容驱逐计数。此前驱逐混入 dropped_count_，导致 incomplete
-    // 永久置位且与真实运行期丢弃不可区分。
-    size_t in_flight_evicted_count_ = 0;
+    static constexpr size_t kIdShardCount = 16;
+    static constexpr size_t kTypeShardCount = 8;
+    static size_t shard_of(const std::string& key, size_t shard_count);
 
-    /// 按 task_type 聚合的统计（内部存储，与 TaskStatistics 一致）
+    /// task_id → task_type，用于 complete/timeout 时查找（按 task_id 分片）
+    struct IdShard {
+        mutable std::mutex mutex;
+        std::unordered_map<std::string, std::string> id_to_type;
+    };
+    /// 已采样排队/运行中任务快照（按 task_id 分片）
+    struct InFlightShard {
+        mutable std::mutex mutex;
+        std::unordered_map<std::string, TaskLifecycleSnapshot> tasks;
+    };
+    /// 按 task_type 聚合的统计（内部存储，与 TaskStatistics 一致；按
+    /// task_type 分片）
     struct Stats {
         int64_t total_count = 0;
         int64_t success_count = 0;
@@ -146,7 +159,26 @@ private:
         int64_t max_execution_time_ns = 0;
         int64_t min_execution_time_ns = 0;  /// 0 表示尚未有样本
     };
-    std::map<std::string, Stats> type_stats_;
+    struct TypeShard {
+        mutable std::mutex mutex;
+        std::map<std::string, Stats> stats;
+    };
+
+    std::atomic<bool> enabled_{true};
+    std::atomic<uint32_t> sampling_rate_{100};  // 百分比，100=100%，1=1%
+    mutable std::atomic<uint64_t> sample_counter_{0};
+    std::atomic<size_t> in_flight_capacity_{128};
+    std::atomic<uint32_t> in_flight_sampling_rate_{100};
+    mutable std::atomic<uint64_t> in_flight_sample_counter_{0};
+    /// in-flight 总条数（原子维护，容量检查与 count 查询不再聚合各分片）
+    std::atomic<size_t> in_flight_count_{0};
+    // CR-075: 缩容驱逐计数独立于运行期准入丢弃，二者均为跨分片原子量。
+    std::atomic<size_t> in_flight_dropped_count_{0};
+    std::atomic<size_t> in_flight_evicted_count_{0};
+
+    IdShard id_shards_[kIdShardCount];
+    InFlightShard in_flight_shards_[kIdShardCount];
+    TypeShard type_shards_[kTypeShardCount];
 };
 
 }  // namespace monitor

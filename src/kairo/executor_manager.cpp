@@ -112,6 +112,10 @@ bool ExecutorManager::initialize_async_executor(const ExecutorConfig& config) {
     // max_threads==1 时工作窃取无意义，自动关闭
     pool_config.enable_work_stealing = (pool_config.max_threads == 1) ? false : config.enable_work_stealing;
 
+    // CR-024（v0.7.0 M0）：可选防饿死 aging（默认关闭）
+    pool_config.enable_priority_aging = config.enable_priority_aging;
+    pool_config.priority_aging_interval_ns = config.priority_aging_interval_ns;
+
     // auto-allocate affinity to all detected cores when user didn't specify
     if (pool_config.cpu_affinity.empty() && pool_config.max_threads > 0) {
 #if defined(__ANDROID__)
