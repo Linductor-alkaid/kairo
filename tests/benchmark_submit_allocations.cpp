@@ -29,6 +29,10 @@
 #include <new>
 #include <string>
 
+#if defined(_WIN32)
+#include <malloc.h>  // _aligned_malloc/_aligned_free（MSVC 与 MinGW-w64）
+#endif
+
 using namespace kairo;
 
 namespace {
@@ -36,6 +40,27 @@ namespace {
 std::atomic<size_t> g_alloc_count{0};
 std::atomic<size_t> g_alloc_bytes{0};
 std::atomic<bool> g_counting{false};
+
+// 对齐分配的平台分派：POSIX 用 posix_memalign（free 释放）；Windows 用
+// _aligned_malloc（必须配 _aligned_free）。两者必须与对应的
+// aligned_deallocate 配对，不与 std::free 混用。
+void* aligned_allocate(std::size_t size, std::size_t alignment) {
+#if defined(_WIN32)
+    return _aligned_malloc(size, alignment);
+#else
+    void* p = nullptr;
+    if (posix_memalign(&p, alignment, size) != 0) p = nullptr;
+    return p;
+#endif
+}
+
+void aligned_deallocate(void* p) noexcept {
+#if defined(_WIN32)
+    _aligned_free(p);
+#else
+    std::free(p);
+#endif
+}
 
 void* counted_allocate(std::size_t size, std::size_t alignment) {
     if (g_counting.load(std::memory_order_relaxed)) {
@@ -45,8 +70,7 @@ void* counted_allocate(std::size_t size, std::size_t alignment) {
     if (alignment <= __STDCPP_DEFAULT_NEW_ALIGNMENT__) {
         if (void* p = std::malloc(size)) return p;
     } else {
-        void* p = nullptr;
-        if (posix_memalign(&p, alignment, size) == 0) return p;
+        if (void* p = aligned_allocate(size, alignment)) return p;
     }
     std::fputs("benchmark: out of memory\n", stderr);
     std::abort();
@@ -74,10 +98,10 @@ void* operator new(std::size_t size, std::align_val_t alignment) {
 void* operator new[](std::size_t size, std::align_val_t alignment) {
     return counted_allocate(size, static_cast<std::size_t>(alignment));
 }
-void operator delete(void* p, std::align_val_t) noexcept { std::free(p); }
-void operator delete[](void* p, std::align_val_t) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t, std::align_val_t) noexcept { std::free(p); }
-void operator delete[](void* p, std::size_t, std::align_val_t) noexcept { std::free(p); }
+void operator delete(void* p, std::align_val_t) noexcept { aligned_deallocate(p); }
+void operator delete[](void* p, std::align_val_t) noexcept { aligned_deallocate(p); }
+void operator delete(void* p, std::size_t, std::align_val_t) noexcept { aligned_deallocate(p); }
+void operator delete[](void* p, std::size_t, std::align_val_t) noexcept { aligned_deallocate(p); }
 
 namespace {
 
