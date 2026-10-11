@@ -1383,8 +1383,10 @@ TEST(AdaptiveConcurrency, RoutesAndFeedbackConcurrentlySmoke) {
 
 TEST(AdaptiveConcurrency, ConcurrentRoutesDriveEvaluationStateMachine) {
     // 并发 route() 反复触发"合并 + 互斥锁内重评估"路径；路由线程同时
-    // 持续喂样维持窗口证据（差分语义下空窗口会 fail-open），末期降载
-    // 必须处于激活态（状态机在并发下不丢窗口、不崩溃）。
+    // 持续喂样维持窗口证据——并发阶段验证状态机在交错下不崩溃、不丢账
+    // （路由零失败）；随后由主线程确定性驱动三个足额超阈窗口收官，验证
+    // 状态机终态（差分语义下收尾窗口样本不足 min_window_samples 时会
+    // fail-open 解除激活态，属设计语义；闸门终态不得依赖调度交错运气）。
     AdaptiveScheduler scheduler{shed_config()};
     const auto capabilities = gpu_capabilities();
 
@@ -1408,9 +1410,24 @@ TEST(AdaptiveConcurrency, ConcurrentRoutesDriveEvaluationStateMachine) {
     for (auto& thread : threads) {
         thread.join();
     }
+    // 收官确定性驱动：并发阶段已验证状态机在交错下不崩溃、不丢账；
+    // 但收尾窗口的样本量取决于线程交错（不足 min_window_samples 时
+    // fail-open 解除激活态，属设计语义），终态闸门状态必须由主线程的
+    // 确定性窗口决定，而不是调度器的交错运气。
+    RoutingStatus probe_status = RoutingStatus::Accepted;
+    for (int w = 0; w < 3; ++w) {  // shed_breach_windows=3
+        feed_breach(scheduler, QosClass::Standard);
+        const RoutingDecision probe =
+            scheduler.route(auto_request(QosClass::BestEffort), {});
+        if (w == 2) {
+            probe_status = probe.status;
+        }
+    }
     EXPECT_TRUE(scheduler.load_shed_active(QosClass::Standard))
-        << "1600 evidence-carrying concurrent windows must engage the shed "
-           "state machine";
+        << "three deterministic full-evidence breach windows must engage the "
+           "shed state machine regardless of prior concurrent interleaving";
+    EXPECT_EQ(probe_status, RoutingStatus::Rejected)
+        << "third deterministic breach window must reject BestEffort probes";
 }
 
 // ---------------------------------------------------------------------------
