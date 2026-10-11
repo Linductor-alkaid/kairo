@@ -371,7 +371,7 @@ bool FeedbackAggregator::register_key(const FeedbackKey& key) {
 
 std::shared_ptr<const FeedbackSnapshot> FeedbackAggregator::snapshot()
     const noexcept {
-    return snapshot_.load(std::memory_order_acquire);
+    return snapshot_.load();
 }
 
 std::shared_ptr<const FeedbackSnapshot> FeedbackAggregator::refresh() const {
@@ -484,7 +484,7 @@ std::shared_ptr<const FeedbackSnapshot> FeedbackAggregator::refresh() const {
                   return lhs.key.executor_name < rhs.key.executor_name;
               });
 
-    snapshot_.store(std::move(merged), std::memory_order_release);
+    snapshot_.store(std::move(merged));
     last_merge_steady_ns_.store(steady_ns_now(), std::memory_order_release);
     return snapshot();
 }

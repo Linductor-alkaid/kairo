@@ -181,6 +181,62 @@ struct FeedbackAggregatorConfig {
         100'000'000, 1'000'000'000, 10'000'000'000};
 };
 
+namespace detail {
+
+/**
+ * @brief 合并快照的 RCU 发布槽（先 release 发布、acquire 读取；旧快照
+ *  由 shared_ptr 引用计数回收）。
+ *
+ * `std::atomic<std::shared_ptr<T>>` 需要较新的标准库特化（libstdc++ 12+、
+ * MSVC、libc++ 19+）；缺失该特化的工具链（libstdc++ 11、NDK 的 libc++）
+ * 回落到 C++11 起即存在的 `atomic_load/atomic_store` 自由函数——libstdc++
+ * 下两者共用同一锁池实现，语义与性能特征一致。自由函数自 C++20 起标记
+ * 弃用，弃用告警仅在回落分支内关闭。
+ *
+ * 测试钩子：定义 `KAIRO_FORCE_SHARED_PTR_ATOMIC_FREE_FUNCS` 可在拥有
+ * `atomic<shared_ptr>` 的工具链上强制编译回落分支，供回归验证。
+ */
+#if defined(KAIRO_FORCE_SHARED_PTR_ATOMIC_FREE_FUNCS)
+#define KAIRO_SNAPSHOT_SLOT_USE_FREE_FUNCS 1
+#elif defined(__cpp_lib_atomic_shared_ptr) && __cpp_lib_atomic_shared_ptr >= 201711L
+#define KAIRO_SNAPSHOT_SLOT_USE_FREE_FUNCS 0
+#else
+#define KAIRO_SNAPSHOT_SLOT_USE_FREE_FUNCS 1
+#endif
+
+struct SnapshotSlot {
+#if !KAIRO_SNAPSHOT_SLOT_USE_FREE_FUNCS
+    std::atomic<std::shared_ptr<const FeedbackSnapshot>> ptr;
+
+    std::shared_ptr<const FeedbackSnapshot> load() const noexcept {
+        return ptr.load(std::memory_order_acquire);
+    }
+    void store(std::shared_ptr<const FeedbackSnapshot> value) noexcept {
+        ptr.store(std::move(value), std::memory_order_release);
+    }
+#else
+    std::shared_ptr<const FeedbackSnapshot> ptr;
+
+    std::shared_ptr<const FeedbackSnapshot> load() const noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+        return std::atomic_load_explicit(&ptr, std::memory_order_acquire);
+#pragma GCC diagnostic pop
+    }
+    void store(std::shared_ptr<const FeedbackSnapshot> value) noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+        std::atomic_store_explicit(&ptr, std::move(value),
+                                   std::memory_order_release);
+#pragma GCC diagnostic pop
+    }
+#endif
+};
+
+#undef KAIRO_SNAPSHOT_SLOT_USE_FREE_FUNCS
+
+}  // namespace detail
+
 /**
  * @brief 执行期反馈聚合器（0.7.0 M2）。
  *
@@ -252,7 +308,7 @@ private:
     FeedbackAggregatorConfig config_;
     std::unique_ptr<Shards> shards_;
     // 以下状态在 const 读方法（refresh 路径）中变更：
-    mutable std::atomic<std::shared_ptr<const FeedbackSnapshot>> snapshot_;
+    mutable detail::SnapshotSlot snapshot_;
     mutable std::atomic<int64_t> last_merge_steady_ns_{0};
     mutable std::mutex merge_mutex_;  // 串行化合并与键登记（读路径无锁，不受影响）
     mutable std::atomic<uint64_t> merge_count_{0};
