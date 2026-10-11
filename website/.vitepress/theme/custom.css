@@ -58,7 +58,11 @@
 .VPHomeFeatures { padding-top: 32px; padding-bottom: 96px; }
 .VPFeature { border: 0; border-radius: 10px; background: var(--vp-c-bg-soft); }
 .VPFeature .title { font-weight: 500; }
-.VPDoc .content { padding-top: 48px; padding-bottom: 96px; }
+/* 仅正文栏（.container 的直接子级）；不得命中右侧目录容器
+   VPDocAsideOutline .content——VP 的 scrollspy 按零内边距几何硬编码
+   指示条位置（marker = 链接 offsetTop + 39），额外 padding 会让
+   指示条整体偏上一行。 */
+.VPDoc .container > .content { padding-top: 48px; padding-bottom: 96px; }
 .language-not-found { min-height: calc(100vh - 64px); padding: 96px 24px; }
 .language-not-found .container { max-width: 1280px; margin: 0 auto; }
 .language-not-found .content { max-width: 680px; }
