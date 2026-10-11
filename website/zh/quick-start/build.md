@@ -25,7 +25,7 @@ export ANDROID_NDK_HOME=/path/to/android-ndk-r26c
 scripts/build_android.sh --abi arm64-v8a --api 21
 ```
 
-Android 构建、AGP 接入和 `c++_shared` 打包见 [PACKAGE_ANDROID.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/PACKAGE_ANDROID.md)。首次路径不要求 CUDA、OpenCL 或实时权限。
+Android 构建、AGP 接入和 `c++_shared` 打包见 [PACKAGE_ANDROID.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/packaging/PACKAGE_ANDROID.md)。首次路径不要求 CUDA、OpenCL 或实时权限。
 
 ## 加入自己的工程
 

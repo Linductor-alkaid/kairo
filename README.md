@@ -36,7 +36,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-Kairo requires C++20 and CMake 3.16+. Linux and Windows are supported. Android CPU-only support is available through the NDK toolchain; see [PACKAGE_ANDROID.md](docs/PACKAGE_ANDROID.md). GPU backends are optional and do not affect the ordinary CPU path when no GPU is available.
+Kairo requires C++20 and CMake 3.16+. Linux and Windows are supported. Android CPU-only support is available through the NDK toolchain; see [PACKAGE_ANDROID.md](docs/packaging/PACKAGE_ANDROID.md). GPU backends are optional and do not affect the ordinary CPU path when no GPU is available.
 
 ### Submit your first task
 
@@ -99,7 +99,7 @@ Kairo deliberately keeps the following boundaries:
 - It cannot safely force arbitrary running C++ functions to terminate. Cancellation (`request_task_cancel` / `StopToken`) is a cooperative request, not preemption; long-lived work must poll its stop token. `TaskOptions::deadline` remains advisory routing/diagnostics and never triggers cancellation by itself.
 - `submit_periodic()` is soft periodic work on the ordinary thread pool, not a dedicated realtime thread.
 - Default async submission is unbounded by default; configure `max_in_flight_tasks` explicitly when structured overload rejection is required (covers facade submits including serial dispatch, but not timer firing or realtime/GPU — see `docs/API.md` §3.10). `queue_capacity` only sizes per-worker local queues and is not a backpressure bound.
-- Facade timer handles (`TimerHandle`) dispatch expiry work to the ordinary thread pool. They do not bind to external event loops (asio strands); timers that must execute and be destroyed on one strand stay application-managed. See the [external event loop interop guide](docs/external_event_loop_interop.md).
+- Facade timer handles (`TimerHandle`) dispatch expiry work to the ordinary thread pool. They do not bind to external event loops (asio strands); timers that must execute and be destroyed on one strand stay application-managed. See the [external event loop interop guide](docs/design/external_event_loop_interop.md).
 
 Since 0.4.0, key communication synchronization paths use fixed storage and atomic implementations. “Synchronization lock-free” does not cover payload operations, callbacks, page faults, or OS scheduling. `Topic<T>` belongs to the ordinary control plane and is not a realtime primitive. See the [migration notes](docs/MIGRATION.md) for exact guarantees.
 

@@ -240,5 +240,5 @@ PATH=/path/to/platform-tools:$PATH ANDROID_SERIAL=<serial> \
     --soak-seconds 600
 ```
 
-设备矩阵与验证结果见 [docs/performance/android_a3_validation.md](performance/android_a3_validation.md)。
-big.LITTLE 真机验证在发布前为强制 gate，见 [docs/RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)。
+设备矩阵与验证结果见 [docs/performance/android_a3_validation.md](../performance/android_a3_validation.md)。
+big.LITTLE 真机验证在发布前为强制 gate，见 [docs/RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md)。

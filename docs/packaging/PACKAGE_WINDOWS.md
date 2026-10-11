@@ -6,7 +6,7 @@
 > 声明 `dllexport` 注解，MSVC 下的 DLL 不会导出任何符号，因此配置期会直接
 > 报错（`KAIRO_BUILD_SHARED=ON` + MSVC）。Windows 打包当前仅提供静态库：
 > 使用默认的 Visual Studio（MSVC）生成器时，下文所有打包命令都需要传
-> `-BuildShared:$false` 跳过动态库，直到导出宏补齐。详见 [BUILD.md](BUILD.md)。
+> `-BuildShared:$false` 跳过动态库，直到导出宏补齐。详见 [BUILD.md](../BUILD.md)。
 
 ---
 
@@ -115,7 +115,7 @@ cmake --install build_static --config Release
 > **Windows (MSVC) 限制**：`KAIRO_BUILD_SHARED=ON` + MSVC 会在配置期直接报错
 > （库尚未声明 `dllexport` 注解，DLL 不会导出任何符号），以下命令在当前实现下
 > 无法完成配置。Windows 打包请使用上方静态库流程，直到导出宏补齐；详见页首
-> 限制与 [BUILD.md](BUILD.md)。
+> 限制与 [BUILD.md](../BUILD.md)。
 
 ```powershell
 # 配置
@@ -295,6 +295,6 @@ A: 分别运行两次构建：
 
 ## 相关文档
 
-- [BUILD.md](BUILD.md) - 通用构建说明
-- [API.md](API.md) - API 使用文档
-- [README.md](../README.md) - 项目说明
+- [BUILD.md](../BUILD.md) - 通用构建说明
+- [API.md](../API.md) - API 使用文档
+- [README.md](../../README.md) - 项目说明

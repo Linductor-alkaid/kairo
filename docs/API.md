@@ -509,7 +509,7 @@ TimerHandle submit_periodic_cancellable(int64_t period_ms,
 **能力边界**：facade 定时器把到期工作派发到默认异步线程池，不绑定 asio strand
 等外部序列化上下文，不承诺与外部 strand 同上下文执行或销毁。需要在同一 strand
 上执行与销毁的 timer 在 T2 验收前继续由应用侧管理（见
-[外部事件循环互操作指南](external_event_loop_interop.md)）。
+[外部事件循环互操作指南](design/external_event_loop_interop.md)）。
 
 #### 集成契约：普通周期任务不是实时线程
 
@@ -571,7 +571,7 @@ size_t closure_graveyard_size() const;
 只承诺 `stop_requested()` 轮询（Android fallback 同语义）。
 
 与外部事件循环（asio strand 等）的取消/定时边界见
-[外部事件循环互操作指南](external_event_loop_interop.md)。
+[外部事件循环互操作指南](design/external_event_loop_interop.md)。
 
 ### 3.11 总量有界 admission（max_in_flight_tasks）
 

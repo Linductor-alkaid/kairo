@@ -7,7 +7,7 @@ description: Host an io_context or strand-like loop as a worker, understand whic
 
 Your application may already own an event loop — typically asio's `io_context` with `strand`s. Kairo's core library does not depend on asio or any third-party loop; this guide describes how the two cooperate correctly, which dispatches executor cannot observe, and the discipline that keeps the blind spot safe.
 
-The full guide lives in [`docs/external_event_loop_interop.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/external_event_loop_interop.md). The compilable companion example (a mutex-and-condvar serial loop that reproduces strand semantics without any SDK dependency) is [`examples/event_loop_interop.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/event_loop_interop.cpp):
+The full guide lives in [`docs/design/external_event_loop_interop.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/design/external_event_loop_interop.md). The compilable companion example (a mutex-and-condvar serial loop that reproduces strand semantics without any SDK dependency) is [`examples/event_loop_interop.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/event_loop_interop.cpp):
 
 <<< @/../examples/event_loop_interop.cpp{14-40}
 
@@ -43,4 +43,4 @@ Do not poll-and-sleep to detect batch completion. The serial side advances a `co
 
 - [Cancellation and Timers](/en/realtime-and-communication/cancellation-and-timers) for the cancellation semantics themselves.
 - [Blocking I/O Workers](/en/realtime-and-communication/blocking-io-workers) for the full worker contract.
-- `docs/external_event_loop_interop.md` for the complete guide with the asio-mapping table.
+- `docs/design/external_event_loop_interop.md` for the complete guide with the asio-mapping table.

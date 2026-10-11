@@ -90,7 +90,7 @@ scripts/build_android.sh \
 ```
 
 产物位于 `build-android/<abi>/<static|shared>/install`。NDK/AGP/`c++_shared` 打包说明见
-[PACKAGE_ANDROID.md](PACKAGE_ANDROID.md)，设备测试脚本见 `scripts/run_android_tests.sh` 与
+[PACKAGE_ANDROID.md](packaging/PACKAGE_ANDROID.md)，设备测试脚本见 `scripts/run_android_tests.sh` 与
 `scripts/capture_android_device_info.sh`。
 
 > Android 不支持 CUDA，OpenCL 也不在一期范围。Android 上的 priority / affinity /

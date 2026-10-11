@@ -319,7 +319,7 @@ readelf -d build_linux/shared/install/lib/libkairo.so
 
 ## 相关文档
 
-- [BUILD.md](BUILD.md) - 通用构建说明
-- [API.md](API.md) - API 使用文档
-- [README.md](../README.md) - 项目说明
+- [BUILD.md](../BUILD.md) - 通用构建说明
+- [API.md](../API.md) - API 使用文档
+- [README.md](../../README.md) - 项目说明
 - [PACKAGE_WINDOWS.md](PACKAGE_WINDOWS.md) - Windows 打包指南

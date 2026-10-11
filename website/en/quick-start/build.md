@@ -25,7 +25,7 @@ export ANDROID_NDK_HOME=/path/to/android-ndk-r26c
 scripts/build_android.sh --abi arm64-v8a --api 21
 ```
 
-For Android packaging, AGP integration, and `c++_shared`, see [PACKAGE_ANDROID.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/PACKAGE_ANDROID.md). CUDA, OpenCL, and real-time privileges are not needed for this first path.
+For Android packaging, AGP integration, and `c++_shared`, see [PACKAGE_ANDROID.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/packaging/PACKAGE_ANDROID.md). CUDA, OpenCL, and real-time privileges are not needed for this first path.
 
 ## Use it from your project
 

@@ -228,7 +228,7 @@ schema 2 → 3，以及若干可观察行为变化。Android CPU-only 交叉编�
 **T2 验收前不得迁移**的定时器：`asio::steady_timer`（或任何外部事件循环的
 定时器）中"到期回调与 timer 对象销毁必须在同一 strand 上发生"的场景——facade
 定时器把到期工作派发到默认异步线程池，不提供 strand 所有权或同上下文销毁保证
-（见 [外部事件循环互操作指南](external_event_loop_interop.md) §5）。
+（见 [外部事件循环互操作指南](design/external_event_loop_interop.md) §5）。
 
 #### 从私有 deadline 轮询迁移到 StopToken 协作取消
 

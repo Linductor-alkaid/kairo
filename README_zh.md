@@ -36,7 +36,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-要求 C++20 和 CMake 3.16+。支持 Linux 与 Windows；Android 提供 CPU-only 支持，可通过 NDK 工具链构建，见 [PACKAGE_ANDROID.md](docs/PACKAGE_ANDROID.md)。GPU 后端是可选能力，没有可用 GPU 时不影响普通 CPU 路径。
+要求 C++20 和 CMake 3.16+。支持 Linux 与 Windows；Android 提供 CPU-only 支持，可通过 NDK 工具链构建，见 [PACKAGE_ANDROID.md](docs/packaging/PACKAGE_ANDROID.md)。GPU 后端是可选能力，没有可用 GPU 时不影响普通 CPU 路径。
 
 ### 提交第一个任务
 
@@ -99,7 +99,7 @@ Kairo 有意保持以下边界：
 - 它不能安全地强制终止任意正在运行的 C++ 函数；取消（`request_task_cancel` / `StopToken`）是协作请求而非抢占，长期工作必须轮询停止令牌；`TaskOptions::deadline` 仍只是路由/诊断提示，不会自动触发取消。
 - `submit_periodic()` 是普通线程池上的软周期任务，不等同于专用实时线程。
 - 默认异步提交默认不限制总量在途数；需要结构化过载拒绝时显式配置 `max_in_flight_tasks`（覆盖普通/优先级/批量/串行等 facade 提交，不含 timer 派发与 realtime/GPU，见 `docs/API.md` §3.10）。`queue_capacity` 只是每 worker 本地队列参数，不是背压边界。
-- Facade 定时句柄（`TimerHandle`）把到期工作派发到普通线程池；它不绑定外部事件循环（asio strand），必须在同一 strand 上执行并销毁的定时器仍由应用自行管理。见[外部事件循环互操作指南](docs/external_event_loop_interop.md)。
+- Facade 定时句柄（`TimerHandle`）把到期工作派发到普通线程池；它不绑定外部事件循环（asio strand），必须在同一 strand 上执行并销毁的定时器仍由应用自行管理。见[外部事件循环互操作指南](docs/design/external_event_loop_interop.md)。
 
 自 0.4.0 起，通信组件为关键同步路径提供固定存储和原子实现，但“同步无锁”不覆盖 payload 操作、callback、缺页或 OS 调度。`Topic<T>` 属于普通控制面，不是实时原语。精确保证见[迁移说明](docs/MIGRATION.md)。
 

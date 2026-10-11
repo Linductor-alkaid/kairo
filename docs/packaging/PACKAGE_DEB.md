@@ -334,11 +334,11 @@ reprepro -b repo includedeb focal dist/*.deb
 
 ## 相关文档
 
-- [BUILD.md](BUILD.md) - 通用构建说明
+- [BUILD.md](../BUILD.md) - 通用构建说明
 - [PACKAGE_LINUX.md](PACKAGE_LINUX.md) - Linux tar.gz 打包指南
 - [PACKAGE_WINDOWS.md](PACKAGE_WINDOWS.md) - Windows 打包指南
-- [API.md](API.md) - API 使用文档
-- [README.md](../README.md) - 项目说明
+- [API.md](../API.md) - API 使用文档
+- [README.md](../../README.md) - 项目说明
 
 ---
 
