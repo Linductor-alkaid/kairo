@@ -1,6 +1,8 @@
 #include "kairo/executor.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <memory>
 
 // Executor facade — 路由与调度单元：意图路由（dispatch/route_task）、可注入
 // 调度器生命周期、结构化决策记录与调度指标（0.6.1）、failure 事件面板、
@@ -8,6 +10,54 @@
 // （v0.7.0 M0：自 executor.cpp 按职责拆分，纯结构改动，零行为变化。）
 
 namespace kairo {
+
+namespace {
+
+int64_t steady_now_ns() noexcept {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+}  // namespace
+
+Executor::CapabilityView Executor::acquire_route_capabilities(bool needs) const {
+    constexpr auto relaxed = std::memory_order_relaxed;
+    if (!needs) {
+        return {};
+    }
+
+    // 命中路径预算：一次 acquire load + epoch/TTL 两个整数比较 + 一次
+    // 时钟采样（时钟本来就要为 TTL 服务，采样结果不另作他用）。未命中
+    // 才付 CR-106 惰性采集的注册表锁成本。
+    const int64_t ttl_ns =
+        capability_cache_ttl_ns_.load(std::memory_order_relaxed);
+    const int64_t now_ns = steady_now_ns();
+    if (ttl_ns > 0) {
+        if (std::shared_ptr<const CapabilitySnapshot> cached =
+                capability_cache_.load()) {
+            const bool epoch_unchanged =
+                cached->manager_epoch == manager_->get_state_epoch();
+            const bool within_ttl =
+                now_ns - cached->collected_ns < ttl_ns;
+            if (epoch_unchanged && within_ttl) {
+                scheduling_counters_.capability_cache_hit.fetch_add(1, relaxed);
+                return CapabilityView{std::move(cached), true};
+            }
+        }
+    }
+
+    // 未命中：实时采集并发布。发布持有一份 shared_ptr、返回视图持有
+    // 另一份——并发未命中各自采集、最后发布者胜出，被覆盖的旧快照由
+    // 引用计数兜底回收（在读者手中保持有效）；采集每 TTL 至多一轮，
+    // 不为它引入热路径互斥。
+    scheduling_counters_.capability_cache_miss.fetch_add(1, relaxed);
+    auto fresh = std::make_shared<CapabilitySnapshot>();
+    fresh->manager_epoch = manager_->get_state_epoch();
+    fresh->collected_ns = now_ns;
+    fresh->capabilities = manager_->get_executor_capabilities();
+    capability_cache_.store(fresh);
+    return CapabilityView{std::move(fresh), false};
+}
 
 RoutingDecision Executor::route_dispatch(const TaskOptions& options) const {
     // CR-106: 与 route_task 同理——intent 不支持或未指定 preferred_executor
@@ -17,10 +67,11 @@ RoutingDecision Executor::route_dispatch(const TaskOptions& options) const {
         (options.intent != ExecutionIntent::LowLatency &&
          options.intent != ExecutionIntent::RealtimeQueue) ||
         !options.preferred_executor || options.preferred_executor->empty();
-    return task_router_.route_dispatch(
-        options,
-        policy_rejected ? std::vector<ExecutorCapability>{}
-                        : manager_->get_executor_capabilities());
+    // 0.7.1 §3.0.1：与 route_task 共用能力快照 TTL 缓存；纯策略拒绝
+    // 不消费能力表（不触发采集/计数）。
+    CapabilityView capability_view =
+        policy_rejected ? CapabilityView{} : acquire_route_capabilities(true);
+    return task_router_.route_dispatch(options, capability_view.get());
 }
 
 DispatchResult Executor::dispatch_auto(TaskOptions options, std::function<void()> task) {
@@ -63,6 +114,22 @@ DispatchResult Executor::dispatch_auto(TaskOptions options, std::function<void()
 
 std::vector<ExecutorCapability> Executor::get_executor_capabilities() const {
     return manager_->get_executor_capabilities();
+}
+
+void Executor::set_capability_cache_ttl(std::chrono::nanoseconds ttl) noexcept {
+    // 先失效缓存再改 TTL：从"长 TTL 切到 0"的瞬时窗口内，旧快照不会
+    // 被误判为命中（改完后下一次访问按新 TTL 判定，0 即必采集）。
+    capability_cache_.store(nullptr);
+    capability_cache_ttl_ns_.store(ttl.count(), std::memory_order_release);
+}
+
+std::chrono::nanoseconds Executor::capability_cache_ttl() const noexcept {
+    return std::chrono::nanoseconds(
+        capability_cache_ttl_ns_.load(std::memory_order_acquire));
+}
+
+void Executor::invalidate_capability_cache() noexcept {
+    capability_cache_.store(nullptr);
 }
 
 void Executor::set_failure_callback(ExecutorFailureCallback callback) {
@@ -165,14 +232,21 @@ RoutingDecision Executor::route_task(const TaskOptions& options,
     // 不会读取能力表——此前每次 submit_auto 仍全量锁 5 把注册表采能力，是
     // submit_auto 相对 submit 慢 65-70% 的主要构成。惰性采集：仅在
     // CpuOrGpu 意图（真正消费能力表）时才执行。
-    // CR-106 惰性采集：仅在真正消费能力表的路径（CpuOrGpu / affinity
-    // 相交性检查）才执行采集，其余保持纯策略判定。
+    // CR-106 惰性采集 + 0.7.1 §3.0.1 缓存化：仅在真正消费能力表的路径
+    // （CpuOrGpu / affinity 相交性检查）才取能力快照，其余保持纯策略
+    // 判定；取快照经 TTL 缓存（默认 100ms，manager state_epoch 变化主动
+    // 失效），命中路径零注册表锁。命中时决策附带 CapabilityCacheHit
+    // 诊断位与 capability_from_cache 字段标记来源。
     const bool needs_capabilities =
         cpu_gpu_task || !options.affinity.cpus.empty();
+    CapabilityView capability_view = acquire_route_capabilities(needs_capabilities);
     RoutingDecision decision = task_scheduler_->route(
         TaskRouter::Request{options, cpu_gpu_task, gpu_selected},
-        needs_capabilities ? manager_->get_executor_capabilities()
-                           : std::vector<ExecutorCapability>{});
+        capability_view.get());
+    if (capability_view.from_cache) {
+        decision.diagnostics |= RoutingDiagnostics::CapabilityCacheHit;
+        decision.capability_from_cache = true;
+    }
     // 0.6.1 兼容归一化：0.6.0 风格的自定义调度器只设置 reason（拒绝类
     // reason ∈ {Rejected, BackendUnavailable, BackendNotRunning,
     // CapacityPressure}）而不设置 status。这类决策统一升级为
@@ -313,6 +387,11 @@ SchedulingMetrics Executor::get_scheduling_metrics() const {
         scheduling_counters_.load_shedding_rejected.load(relaxed);
     metrics.priority_promoted_count =
         scheduling_counters_.priority_promoted.load(relaxed);
+    // 0.7.1 §3.0.1：能力快照缓存行为计数（访问点统计，与决策记录解耦）。
+    metrics.capability_cache_hit_count =
+        scheduling_counters_.capability_cache_hit.load(relaxed);
+    metrics.capability_cache_miss_count =
+        scheduling_counters_.capability_cache_miss.load(relaxed);
     return metrics;
 }
 

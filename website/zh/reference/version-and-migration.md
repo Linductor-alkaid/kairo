@@ -16,6 +16,29 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
 | 选项、编译器与后端前置 | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | 当前完整签名 | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
+## 0.7.1 开发快照：submit_auto 路由智能化（进行中）
+
+0.7.1 按 `docs/design/roadmap_v0.7.md` §3 推进，当前为开发快照、未发布；
+已落地部分（§3.0.1）全部为 additive，无必需迁移：
+
+- **能力快照 TTL 缓存（默认开启）**：`submit_auto` 的 CpuOrGpu / affinity
+  路由与 `dispatch_auto` 的能力消费经 100ms TTL 缓存读取，命中路径不再
+  逐次锁注册表采集（配对基准移除端到端 ~37% 采集成本）。后端注册/启停
+  经 manager `state_epoch` 立即失效缓存；决策结果与关闭缓存逐项一致。
+  控制入口：`set_capability_cache_ttl()`（0 关闭）/
+  `invalidate_capability_cache()`。
+- **`submit_fast()`**：零路由快速提交（等价 NORMAL 优先级直投默认池，
+  不产出路由决策）。仅用于确定 CPU-only、无调度约束、不需要路由
+  可观测性的提交；边界说明见[如何选择提交接口](/zh/guides/choosing-submit-api)。
+- **新诊断通道**：诊断位 `CapabilityCacheHit`（`1u<<7`）与
+  `RoutingDecision::capability_from_cache` 标记决策消费的快照来源；
+  `SchedulingMetrics` 新增 `capability_cache_hit_count` /
+  `capability_cache_miss_count`。
+- 完整语义见 `docs/design/scheduling_runtime.md` §10 与
+  [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md)
+  的"从 0.7.0 升级到 0.7.1"一节；ResourceLease / deadline policy
+  （§3.1/§3.2）尚未落地。
+
 ## 0.7.0：Runtime-aware Scheduling
 
 0.7.0（2026-10-10 发布）按 `docs/design/roadmap_v0.7.md` 落地；以下能力均为 additive：

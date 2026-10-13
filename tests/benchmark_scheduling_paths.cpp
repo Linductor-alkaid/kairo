@@ -19,6 +19,12 @@
  *      a) policy-only request (no capabilities consumed);
  *      b) affinity request against a populated capability snapshot.
  *   4. Capability snapshot collection cost (get_executor_capabilities).
+ *   5. Capability snapshot cache A/B (0.7.1 §3.0.1):
+ *      a) CpuOrGpu submit route with the cache disabled (fresh
+ *         collection per submit) vs warm cache (hit path) — paired,
+ *         same process; acceptance line: warm ≤ 0.9 × fresh;
+ *      b) submit_fast() vs submit_auto bare builder — paired; acceptance
+ *         line: submit_fast must not be slower than submit_auto bare.
  *
  * Config: env KAIRO_BENCHMARK_TASKS (default 20000 per phase).
  * Output: human-readable text (default) or JSON lines (--json).
@@ -314,6 +320,140 @@ int main(int argc, char** argv) {
         }
         report(config, "get_executor_capabilities", elapsed_ns(begin, end),
                config.tasks);
+    }
+
+    // ---- 5. Capability snapshot cache A/B (0.7.1 §3.0.1) ----
+    // CpuOrGpu 提交在无 GPU 后端时被结构化拒绝，提交协议不触达 worker；
+    // 测量的是完整的"路由 + 决策 + 拒绝结算"路径，缓存开关是唯一变量
+    //（拒绝 future 直接析构，不经 get() 的异常开销）。
+    {
+        Executor cold_executor;
+        init_executor(cold_executor, 4);
+        cold_executor.set_recent_routing_capacity(0);
+        cold_executor.set_capability_cache_ttl(std::chrono::nanoseconds(0));
+        Executor warm_executor;
+        init_executor(warm_executor, 4);
+        warm_executor.set_recent_routing_capacity(0);
+
+        auto submit_cpuorgpu = [](Executor& executor) {
+            return executor.submit_auto(
+                cpu_gpu_task([] {}, [](void*) {}).name("bench-cache-ab"));
+        };
+        auto measure = [&](Executor& executor) {
+            const auto begin = Clock::now();
+            constexpr size_t kBatch = 512;
+            std::vector<std::future<void>> futures;
+            futures.reserve(kBatch);
+            for (size_t i = 0; i < config.tasks; i += kBatch) {
+                const size_t batch = std::min(kBatch, config.tasks - i);
+                futures.clear();
+                for (size_t j = 0; j < batch; ++j) {
+                    futures.push_back(submit_cpuorgpu(executor));
+                }
+                // 拒绝就绪的 future 直接析构；get() 的异常开销属配对
+                // 共同变量，不进入测量。
+            }
+            const auto end = Clock::now();
+            return elapsed_ns(begin, end);
+        };
+        measure(cold_executor);   // warmup
+        measure(warm_executor);   // warmup（首采后缓存恒命中）
+        const double fresh_ns = measure(cold_executor);
+        const double warm_ns = measure(warm_executor);
+        report(config, "CpuOrGpu route, fresh collection (cache off)",
+               fresh_ns, config.tasks);
+        report(config, "CpuOrGpu route, warm cache (hit)", warm_ns,
+               config.tasks);
+        const auto warm_metrics = warm_executor.get_scheduling_metrics();
+        if (warm_metrics.capability_cache_hit_count <
+            static_cast<uint64_t>(config.tasks) - 1) {
+            std::fprintf(stderr,
+                         "capability cache acceptance failed: expected all-hit "
+                         "warm path (hits=%llu, tasks=%zu)\n",
+                         static_cast<unsigned long long>(
+                             warm_metrics.capability_cache_hit_count),
+                         config.tasks);
+            return 1;
+        }
+        // 验收线：缓存命中路径不得慢于实时采集路径（配对同进程；
+        // 路线图目标是 route 级 ~120ns → ~60ns，端到端按 ≥10% 改进设线）。
+        if (warm_ns > fresh_ns * 0.9) {
+            std::fprintf(stderr,
+                         "capability cache acceptance failed: warm %.0f ns/op "
+                         "> 0.9 x fresh %.0f ns/op\n",
+                         warm_ns / static_cast<double>(config.tasks),
+                         fresh_ns / static_cast<double>(config.tasks));
+            return 1;
+        }
+        if (!config.json_output) {
+            std::printf("%-46s %10.0f ns/op  (paired A/B, %.1f%% removed)\n",
+                        "capability collection cost removed",
+                        (fresh_ns - warm_ns) / static_cast<double>(config.tasks),
+                        100.0 * (fresh_ns - warm_ns) / fresh_ns);
+        }
+    }
+
+    // ---- 6. submit_fast vs submit_auto bare builder（0.7.1 §3.0.1）----
+    {
+        Executor executor;
+        init_executor(executor, 4);
+        executor.set_recent_routing_capacity(0);
+
+        auto measure_bare_auto = [&](size_t tasks) {
+            const auto begin = Clock::now();
+            constexpr size_t kBatch = 512;
+            std::vector<std::future<void>> futures;
+            futures.reserve(kBatch);
+            for (size_t i = 0; i < tasks; i += kBatch) {
+                const size_t batch = std::min(kBatch, tasks - i);
+                futures.clear();
+                for (size_t j = 0; j < batch; ++j) {
+                    futures.push_back(
+                        executor.submit_auto(kairo::task([] {})));
+                }
+                for (auto& future : futures) {
+                    future.get();
+                }
+            }
+            const auto end = Clock::now();
+            return elapsed_ns(begin, end);
+        };
+        auto measure_submit_fast = [&](size_t tasks) {
+            const auto begin = Clock::now();
+            constexpr size_t kBatch = 512;
+            std::vector<std::future<void>> futures;
+            futures.reserve(kBatch);
+            for (size_t i = 0; i < tasks; i += kBatch) {
+                const size_t batch = std::min(kBatch, tasks - i);
+                futures.clear();
+                for (size_t j = 0; j < batch; ++j) {
+                    futures.push_back(executor.submit_fast([] {}));
+                }
+                for (auto& future : futures) {
+                    future.get();
+                }
+            }
+            const auto end = Clock::now();
+            return elapsed_ns(begin, end);
+        };
+
+        measure_submit_fast(512);      // warmup
+        measure_bare_auto(512);        // warmup
+        const double fast_ns = measure_submit_fast(config.tasks);
+        const double auto_ns = measure_bare_auto(config.tasks);
+        report(config, "submit_fast (no routing)", fast_ns, config.tasks);
+        report(config, "submit_auto bare builder (policy route)", auto_ns,
+               config.tasks);
+        // 验收线：submit_fast 不产出路由决策，端到端不得慢于 submit_auto
+        // 裸 builder（允许 5% 调度噪声）。
+        if (fast_ns > auto_ns * 1.05) {
+            std::fprintf(stderr,
+                         "submit_fast acceptance failed: %.0f ns/op > 1.05 x "
+                         "%.0f ns/op\n",
+                         fast_ns / static_cast<double>(config.tasks),
+                         auto_ns / static_cast<double>(config.tasks));
+            return 1;
+        }
     }
 
     if (!config.json_output) {

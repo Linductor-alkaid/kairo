@@ -4,6 +4,60 @@
 
 ---
 
+## [Unreleased] — 0.7.1 开发快照
+
+v0.7.1 第一阶段：submit_auto 路由智能化（`docs/design/roadmap_v0.7.md`
+§3.0.1）。全部为 additive；默认行为与 0.7.0 决策逐项一致
+（`tests/test_capability_cache.cpp` 锁定缓存开/关的决策一致性）。
+
+### 调度
+
+- **能力快照 TTL 缓存（submit_auto 路由智能化 §3.0.1）**：`submit_auto`
+  的 CpuOrGpu / affinity 路由与 `dispatch_auto` 的能力消费默认经 TTL
+  缓存（100ms）读取，命中路径不再逐次锁 Manager 注册表采集。不可变
+  快照经 M2 同款可移植 RCU 槽发布（`scheduling::detail::SnapshotSlot`
+  泛化为 `SnapshotSlotT<T>`，既有别名不变）；命中判据为 manager
+  `state_epoch` 未变且未过 TTL——注册/启停/shutdown 主动失效，TTL 只
+  兜底 pending_work / GPU 可用内存等运行期数值漂移。facade 的
+  `start_realtime_task` / `start_blocking_io_worker` 此前绕过注册表
+  启停后端，现于成功后调用新增的
+  `ExecutorManager::notify_backend_state_changed()` 推进 epoch。
+  命中决策带 `RoutingDiagnostics::CapabilityCacheHit`（`1u<<7`）位与
+  `RoutingDecision::capability_from_cache` 字段；`SchedulingMetrics`
+  新增 `capability_cache_hit_count` / `capability_cache_miss_count`
+  （访问点统计，与决策记录解耦）。控制 API：
+  `Executor::set_capability_cache_ttl()`（0 关闭）/
+  `capability_cache_ttl()` / `invalidate_capability_cache()`；公开的
+  `get_executor_capabilities()` 保持实时采集语义不经缓存。
+  验收（配对 A/B，验收线内置 `benchmark_scheduling_paths` §5）：缓存
+  命中移除端到端 36.6% 采集成本（1415 → 898 ns/op，Windows MSVC
+  Release；线 warm ≤ 0.9 × fresh）。契约测试
+  `tests/test_capability_cache.cpp`（14 用例）：计数与来源标记、TTL
+  过期/关闭/重设、TTL 内注册-启动-停止主动失效、决策一致性矩阵、
+  并发 + epoch 扰动下 hit+miss 守恒。
+
+### 提交路径
+
+- **`submit_fast()`（零路由快速路径，§3.0.1）**：等价
+  `submit_priority(NORMAL, f, args...)` 且不产出 `RoutingDecision`
+  （不计数、不进 recent decisions、不咨询 `effective_priority_for`）；
+  admission 与空 callable 拒绝语义与 submit 系列一致。使用边界（roadmap
+  §7 风险表）：仅推荐确定 CPU-only、无 deadline/QoS/affinity/resource
+  约束且不需要路由可观测性的提交，不作为默认推荐 API。验收：端到端
+  1731 ns/op vs `submit_auto` 裸 builder 2523 ns/op（-31%；线
+  fast ≤ 1.05 × bare）。
+
+### 文档
+
+- `docs/design/scheduling_runtime.md` 新增 §10（能力缓存与 submit_fast
+  设计语义与验收）；`docs/API.md` §3.7/§3.8、`docs/MIGRATION.md` 新增
+  "从 0.7.0 升级到 0.7.1"（无必需迁移）；website 中英选型页新增
+  "何时用 submit_fast（以及何时不该用）"，版本与迁移页新增 0.7.1 开发
+  快照小节；`docs/skill` 调度卡（kairo-integration / kairo-maintainer）
+  同步新 API 与诊断通道。
+
+---
+
 ## [0.7.0] - 2026-10-10
 
 v0.7.0 前置清债（M0，`docs/design/roadmap_v0.7.md` §2.1）：在引入任何

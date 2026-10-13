@@ -331,6 +331,7 @@ if (backpressure_drops > 0) {
 | 需求 | API | 返回值语义 |
 |------|-----|------------|
 | 普通短 CPU 任务 | `submit_auto([] { return value; })` | `std::future<T>`：任务完成或异常 |
+| 零路由开销的 CPU 任务（0.7.1 开发快照） | `submit_fast([] { return value; })` | `std::future<T>`：提交/完成语义同 `submit`，不产出路由决策 |
 | 独立 CPU/GPU 实现 | `submit_auto(cpu_gpu_task(cpu, gpu)...)` | `std::future<void>`：已接受路径的完成或异常 |
 | 指定无锁低延迟队列 | `dispatch_auto(TaskOptions{LowLatency, ...}, task)` | `DispatchResult::accepted`：仅表示有界队列已接收 |
 | 指定实时队列 | `dispatch_auto(TaskOptions{RealtimeQueue, ...}, task)` | `DispatchResult::accepted`：仅表示后续周期已接收 |
@@ -339,6 +340,10 @@ if (backpressure_drops > 0) {
 ```cpp
 auto decoded = ex.submit_auto(
     kairo::task([] { return decode(); }).name("decode"));
+
+// 0.7.1 submit_fast：确定是 CPU-only、无 deadline/QoS/affinity/resource
+// 约束、且不需要路由可观测性时，跳过路由直接以 NORMAL 优先级提交。
+auto quick = ex.submit_fast([] { return checksum(); });
 
 kairo::TaskOptions rt;
 rt.intent = kairo::ExecutionIntent::RealtimeQueue;
@@ -353,6 +358,23 @@ if (!admission.accepted) {
 - `dispatch_auto()` 的接收结果不是完成通知。实时任务的 drop/backpressure 继续由 `RealtimeExecutorStatus` 计数和 failure event 观察。
 - `get_last_routing_decision()`、`get_recent_routing_decisions()` 与 `set_routing_callback()` 提供独立的路由解释；`ExecutorFailureEvent` 仍用于实际拒绝和执行失败。
 - `get_executor_capabilities()` 返回所有已注册后端的建议性状态快照，只用于显示/预检；实际投递仍可能因并发 stop 或满队列被拒绝。
+- **`submit_fast()` 使用边界（0.7.1 开发快照）**：等价于
+  `submit_priority(NORMAL, f, args...)` 且不产出 `RoutingDecision`——不计入
+  `SchedulingMetrics` 的 accepted/rejected 计数，也不进入 recent routing
+  decisions。需要意图路由、QoS 映射、deadline 或结构化拒绝时用
+  `submit_auto`；需要自定义优先级时用 `submit_priority`。admission
+  （`max_in_flight_tasks`）与空 callable 拒绝语义与 `submit` 系列一致。
+- **能力快照 TTL 缓存（0.7.1 开发快照）**：`submit_auto` 的
+  CpuOrGpu / affinity 路由与 `dispatch_auto` 的能力消费默认经 TTL 缓存
+  读取（默认 100ms），命中路径不再逐次锁注册表采集（配对 A/B 实测移除
+  端到端 ~37% 路由采集成本）。命中时决策带
+  `RoutingDiagnostics::CapabilityCacheHit` 位与
+  `RoutingDecision::capability_from_cache == true`；
+  `set_capability_cache_ttl(0ns)` 完全关闭缓存，`invalidate_capability_cache()`
+  立即失效。后端注册/启停（含 facade 的 realtime / blocking-IO start、
+  lockfree 启停、shutdown）通过 manager `state_epoch` 主动失效缓存——
+  TTL 只兜底 `pending_work` / GPU 可用内存等运行期数值漂移，语义仍遵守
+  0.6.1 的弱一致契约（未知即宽容；feasibility hint 非 reservation）。
 
 ### 3.8 Scheduling Runtime（deadline / QoS / affinity / resource）
 
@@ -455,6 +477,20 @@ reason 细分的 `deadline_rejected_count` /
   需补新分支；以 `RoutingDecision::status` 为权威判据的代码不受影响。
   选型与风险边界见网站"何时使用 AdaptiveScheduler"页
   （`website/zh/guides/adaptive-scheduling.md`）。
+
+**0.7.1 开发快照（submit_auto 路由智能化，roadmap §3.0.1）**：
+`SchedulingMetrics` 新增 `capability_cache_hit_count` /
+`capability_cache_miss_count`（能力缓存访问点统计，与决策记录解耦、
+不受 CR-106 观测开关影响）；`RoutingDiagnostics` 新增
+`CapabilityCacheHit`（`1u<<7`），与 `RoutingDecision` 新增的
+`capability_from_cache` 字段同置——仅标记决策消费的能力快照来源，
+不改变决策语义（缓存开/关的决策逐项一致，契约测试
+`test_capability_cache.cpp` 锁定）。缓存控制 API：`set_capability_cache_ttl()`
+（默认 100ms，0 关闭）/ `capability_cache_ttl()` /
+`invalidate_capability_cache()`；`get_executor_capabilities()` 公开
+查询保持实时采集语义，不经缓存。`ExecutorManager` 新增
+`notify_backend_state_changed()`：绕过注册表直接变更后端状态的集成方
+（如自定义生命周期管理）应调用它推进 `state_epoch`，使缓存立即失效。
 
 ### 3.9 延迟与周期任务
 

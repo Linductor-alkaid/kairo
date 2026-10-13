@@ -171,6 +171,10 @@ void ExecutorManager::bump_state_epoch() noexcept {
     state_epoch_.fetch_add(1, std::memory_order_release);
 }
 
+void ExecutorManager::notify_backend_state_changed() noexcept {
+    bump_state_epoch();
+}
+
 // 获取默认异步执行器（线程池）
 // 若尚未初始化，则使用默认配置懒初始化一次（线程安全由 std::call_once 保证）
 // shutdown 后不再懒初始化，直接返回 nullptr

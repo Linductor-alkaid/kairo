@@ -12,6 +12,7 @@ Do not start with an executor class name. First ask what the caller must confirm
 | Problem | Default API | Result means | When to read more |
 | --- | --- | --- | --- |
 | One finite background operation | `submit_auto(lambda)` | Future completion or exception | Priority, delay, batch, or dependencies |
+| Verified unconstrained hot short task (0.7.1) | `submit_fast(lambda)` | Future completion or exception | Read the boundary below first |
 | Independent CPU/GPU implementations | `submit_auto(cpu_gpu_task(...))` | Future completion or exception on selected path | Registration, diagnostics, or GPU tuning |
 | Verified lock-free single-consumer path | `dispatch_auto(LowLatency)` | Bounded queue admission | Capacity, object pool, shutdown |
 | Existing periodic real-time queue | `dispatch_auto(RealtimeQueue)` | Bounded queue admission | Cycle budget, drops, permissions |
@@ -19,7 +20,7 @@ Do not start with an executor class name. First ask what the caller must confirm
 | Soft periodic maintenance | `submit_periodic()` | Task ID and periodic status | Strict period or low jitter |
 | Dependencies, delays, priorities, batches | Matching explicit Facade API | Future, handle, or task ID | Composite scheduling semantics |
 
-`submit_auto(lambda)` is the ordinary developer's default entry. It safely uses the default asynchronous pool; it does not infer that pressure, a deadline, or priority should select GPU, lock-free, or real-time work.
+`submit_auto(lambda)` is the ordinary developer's default entry. It safely uses the default asynchronous pool; it does not infer that pressure, a deadline, or priority should select GPU, lock-free, or real-time work. Since 0.7.1 the capability snapshots consumed by CpuOrGpu / affinity routing are read through a TTL cache (default 100 ms; backend registration/start/stop invalidates immediately), so hits no longer take the registry locks on every submit.
 
 Before choosing by scenario, read [how automatic routing matches a target](/en/guides/execution-models-and-routing) if names, intents, fallback, and capability snapshots are still unclear.
 
@@ -51,6 +52,18 @@ auto decoded = future.get();
 ```
 
 Value capture gives the task stable input. `future.get()` is the completion and exception boundary; `get_last_routing_decision()` explains why the default Facade selected its path. `submit()` remains a valid explicit entry when existing thread-pool semantics or compatibility require it. A reference, raw pointer, or `this` must be proven to outlive the task.
+
+## When `submit_fast` applies — and when it does not
+
+`submit_fast(lambda)` (0.7.1) is a zero-routing fast path: equivalent to submitting to the default pool at NORMAL priority, and it produces **no routing decision** (nothing in `SchedulingMetrics` or recent decisions). Paired benchmarks show roughly 30% faster than the bare `submit_auto` builder.
+
+Use it only when all of the following hold:
+
+- The task is certainly CPU-only and will never need GPU, lock-free, or real-time backends;
+- No deadline, QoS, affinity, resource constraint, or custom priority applies;
+- Routing decisions are not needed for observability or audit.
+
+If any of these fails, use `submit_auto` (keeps intent routing and structured diagnostics) or the matching explicit API. It is not the recommended default — routing observability has been the troubleshooting backbone of the scheduling system since 0.6.x; confirm the path is genuinely hot before trading it away for tens of nanoseconds.
 
 ## Bounded admission: `dispatch_auto()` only for known constraints
 

@@ -53,6 +53,11 @@ Semantic boundaries:
 
 Use it only for long-lived, shape-stable workloads whose callers can respond to rejection; expect no benefit during the learning period (cold start), and treat decision sequences as non-reproducible (troubleshoot via `RoutingDecision`, the three new `SchedulingMetrics` counters, and `load_shed_active()` / `priority_promoted()` / `feedback_snapshot()` / `format_state_text()`). Selection guide: `website/en/guides/adaptive-scheduling.md`. The default path (no injection) is byte-for-byte 0.6.1 behavior.
 
+## Routing Fast Path (0.7.1; dev snapshot)
+
+- **Capability snapshot TTL cache (default on)**: the capability reads behind `submit_auto` CpuOrGpu/affinity routing and `dispatch_auto` go through a 100 ms TTL cache instead of taking the registry locks per submit. Backend registration/start/stop (including facade realtime / blocking-IO start and shutdown) invalidates the cache immediately via the manager `state_epoch`; the TTL only bounds drift of runtime numbers (queue depth, GPU free memory). Decisions are identical with the cache on or off; cache hits are marked with `RoutingDiagnostics::CapabilityCacheHit` (`1u<<7`) and `RoutingDecision::capability_from_cache`. Control: `set_capability_cache_ttl()` (0 disables), `invalidate_capability_cache()`; new `SchedulingMetrics` counters `capability_cache_hit_count` / `capability_cache_miss_count`. The public `get_executor_capabilities()` stays uncached (always fresh).
+- **`submit_fast(f, args...)`**: zero-routing submission equivalent to `submit_priority(NORMAL, ...)` with no `RoutingDecision` (no metrics, no recent-decisions entry). Use only for certain CPU-only work with no deadline/QoS/affinity/resource constraints and no routing-observability requirement; otherwise prefer `submit_auto`.
+
 ## Integration Pitfalls
 
 - Priority chooses waiting work first; it cannot preempt a task already running. Sustained critical work can starve lower priorities.

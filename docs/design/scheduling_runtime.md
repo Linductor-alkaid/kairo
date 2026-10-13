@@ -350,3 +350,63 @@ resource 拒绝、自定义 IScheduler 注入、以及全量行为回归；0.6.1
 契约加固（set_scheduler 时序、所有权与销毁、shutdown 竞争、旧式
 拒绝归一化、高并发 route()、deadline 边界与同时 deadline、
 capability 缺失退化）、结构化决策/指标/反馈断言与调度基准。
+
+## 10. 0.7.1 能力快照缓存与 submit_fast（roadmap §3.0.1，开发快照）
+
+### 10.1 能力快照 TTL 缓存
+
+CR-106 之后，`submit_auto` 的 CpuOrGpu / affinity 路由与 `dispatch_auto`
+的能力消费仍要每次锁 Manager 注册表采集能力快照（5 把注册表锁 +
+vector 构建）。0.7.1 把该采集缓存化：
+
+- **载体**：Executor 内不可变 `CapabilitySnapshot`（`manager_epoch` +
+  `collected_ns` + `std::vector<ExecutorCapability>`），经 M2 同款可移植
+  RCU 槽（`scheduling::detail::SnapshotSlotT`，本版自
+  `SnapshotSlot` 泛化，既有别名不变）发布。命中路径 = 一次 acquire
+  load + epoch/TTL 两个整数比较 + 一次时钟采样。
+- **命中判据**：`cached->manager_epoch == manager.get_state_epoch()`
+  且 `now - collected_ns < ttl`。TTL 默认 100ms（roadmap §3.0.1 的
+  保守取值），`set_capability_cache_ttl()` 可调，0 表示完全关闭
+  （每次实时采集，回到 CR-106 行为）；`invalidate_capability_cache()`
+  立即丢弃。TTL 以采集**前**的时钟样本计，有效窗口略短于名义值。
+- **主动失效**：manager `state_epoch` 在注册集合与可观测运行状态变化
+  时推进（register/start/stop/shutdown）。0.7.1 补齐两处此前绕过
+  注册表的转换：facade `start_realtime_task` / `start_blocking_io_worker`
+  在执行器对象上启停，成功后显式调用新增的
+  `ExecutorManager::notify_backend_state_changed()` 推进 epoch。
+  因此 TTL 只兜底 `pending_work`、GPU 可用内存等**运行期数值**漂移；
+  生命周期状态（registered/running）不跨转换陈旧。
+- **弱一致语义不变**：缓存只影响快照新鲜度，不改变 0.6.1 契约——
+  快照是 advisory（未知即宽容、feasibility hint 非 reservation），
+  缓存开/关的路由决策逐项一致（`test_capability_cache.cpp` 锁定）。
+  并发未命中各自采集、最后发布者胜出（每 TTL 至多一轮，不为它引入
+  热路径互斥）；被覆盖的旧快照由 shared_ptr 引用计数在读者手中兜底。
+- **可观测性**：`SchedulingMetrics` 新增 `capability_cache_hit_count` /
+  `capability_cache_miss_count`（访问点统计，与决策记录解耦、不受
+  CR-106 观测开关影响）；命中产出的决策带
+  `RoutingDiagnostics::CapabilityCacheHit`（`1u<<7`）位与
+  `RoutingDecision::capability_from_cache == true`（位与字段同置，
+  掩码过滤与逐条判读两便）。公开的 `get_executor_capabilities()`
+  保持实时采集语义，不经缓存（预检/显示用途依赖最新值）。
+
+### 10.2 submit_fast()
+
+零路由快速提交路径：等价 `submit_priority(NORMAL, f, args...)` 且
+不产出 `RoutingDecision`（不计数、不进 recent decisions、不咨询
+`effective_priority_for`）。admission 与空 callable 拒绝语义与
+`submit` 系列一致。使用边界（roadmap §7 风险表）：仅推荐给确定是
+CPU-only、无 deadline/QoS/affinity/resource 约束、且不需要路由
+可观测性的提交；文档明确"不作为默认推荐 API"。后续 §3.1
+ResourceLease 落地后，声明 `ResourceRequirements` 的提交仍须走路由。
+
+### 10.3 验收（配对 A/B，验收线内置 `benchmark_scheduling_paths` §5/§6）
+
+- 缓存命中路径移除端到端 36.6% 的采集成本（fresh 1415 ns/op →
+  warm 898 ns/op，Windows MSVC Release；验收线 warm ≤ 0.9 × fresh），
+  对应 roadmap §7.1 的 route 级 ~120ns → ~60ns 目标方向；
+- `submit_fast` 1731 ns/op vs `submit_auto` 裸 builder 2523 ns/op
+  （-31%；验收线 fast ≤ 1.05 × bare）；
+- 契约测试 `test_capability_cache.cpp`（14 用例）：命中/未命中计数
+  与来源标记、TTL 过期/关闭/重设、注册-启动-停止的 TTL 内主动失效、
+  决策一致性矩阵、`submit_fast` 语义与 admission、并发 + epoch 扰动
+  下的 hit+miss 守恒。

@@ -4,6 +4,47 @@
 
 ---
 
+## 从 0.7.0 升级到 0.7.1（开发快照：无必需迁移）
+
+0.7.1 当前为开发快照（roadmap §3.0.1 submit_auto 路由智能化已落地；
+ResourceLease / deadline policy 见路线图 §3.1/§3.2，尚未落地）。
+已落地部分全部为 additive，**不迁移任何代码即可升级**。
+
+### 行为差异（默认开启，语义 additive）
+
+- **能力快照 TTL 缓存**：`submit_auto` 的 CpuOrGpu / affinity 路由与
+  `dispatch_auto` 的能力消费默认经 TTL 缓存（100ms）读取，不再逐次
+  采集。这是 0.6.1 弱一致契约内的性能优化：决策结果与关闭缓存逐项
+  一致（契约测试锁定）；生命周期状态（注册/启停/shutdown）经 manager
+  `state_epoch` 主动失效，缓存不会跨生命周期转换陈旧。需要逐次实时
+  采集的行为时 `executor.set_capability_cache_ttl(std::chrono::nanoseconds(0))`
+  完全关闭。
+- **路由决策新增来源标记**：命中缓存的决策带
+  `RoutingDiagnostics::CapabilityCacheHit`（`1u<<7`）位与
+  `RoutingDecision::capability_from_cache == true`。以掩码过滤诊断位
+  或对 `RoutingDecision` 做穷举处理的代码需知悉新位；以
+  `status` 为权威判据的代码不受影响。
+- **`SchedulingMetrics` 新增两个字段**：
+  `capability_cache_hit_count` / `capability_cache_miss_count`
+  （字段追加，按字段名读取的代码不受影响）。
+
+### 新增公开 API（均为 additive）
+
+| API | 说明 |
+|---|---|
+| `Executor::submit_fast(f, args...)` | 零路由快速提交：等价 `submit_priority(NORMAL, ...)` 且不产出路由决策。仅用于确定 CPU-only、无调度约束、不需要路由可观测性的提交 |
+| `Executor::set_capability_cache_ttl()` / `capability_cache_ttl()` | 能力缓存 TTL 控制（默认 100ms，0 关闭），任意时刻可调 |
+| `Executor::invalidate_capability_cache()` | 立即失效能力快照缓存 |
+| `ExecutorManager::notify_backend_state_changed()` | 绕过注册表直接变更后端 running 状态的集成方须调用它，使能力缓存立即失效 |
+
+### 自定义调度器实现者
+
+`IScheduler` 接口无变化。`route()` 收到的能力快照可能来自 TTL 缓存
+（至多滞后一个 TTL，生命周期转换不陈旧）——依赖快照做可行性判断的
+调度器本就须遵守 0.6.1 弱一致契约，无需改动。
+
+---
+
 ## 从 0.6.x 升级到 0.7.0：Runtime-aware Scheduling（无必需迁移）
 
 0.7.0 是 additive 版本：默认行为与 0.6.1 逐项一致（0.6.1 契约测试

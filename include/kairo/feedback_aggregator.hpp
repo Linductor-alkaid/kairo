@@ -204,26 +204,27 @@ namespace detail {
 #define KAIRO_SNAPSHOT_SLOT_USE_FREE_FUNCS 1
 #endif
 
-struct SnapshotSlot {
+template <typename T>
+struct SnapshotSlotT {
 #if !KAIRO_SNAPSHOT_SLOT_USE_FREE_FUNCS
-    std::atomic<std::shared_ptr<const FeedbackSnapshot>> ptr;
+    std::atomic<std::shared_ptr<const T>> ptr;
 
-    std::shared_ptr<const FeedbackSnapshot> load() const noexcept {
+    std::shared_ptr<const T> load() const noexcept {
         return ptr.load(std::memory_order_acquire);
     }
-    void store(std::shared_ptr<const FeedbackSnapshot> value) noexcept {
+    void store(std::shared_ptr<const T> value) noexcept {
         ptr.store(std::move(value), std::memory_order_release);
     }
 #else
-    std::shared_ptr<const FeedbackSnapshot> ptr;
+    std::shared_ptr<const T> ptr;
 
-    std::shared_ptr<const FeedbackSnapshot> load() const noexcept {
+    std::shared_ptr<const T> load() const noexcept {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
         return std::atomic_load_explicit(&ptr, std::memory_order_acquire);
 #pragma GCC diagnostic pop
     }
-    void store(std::shared_ptr<const FeedbackSnapshot> value) noexcept {
+    void store(std::shared_ptr<const T> value) noexcept {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
         std::atomic_store_explicit(&ptr, std::move(value),
@@ -232,6 +233,10 @@ struct SnapshotSlot {
     }
 #endif
 };
+
+// 既有名字保持不变：FeedbackAggregator 的快照槽（0.7.0 M2 用户可见的
+// detail 别名）。
+using SnapshotSlot = SnapshotSlotT<FeedbackSnapshot>;
 
 #undef KAIRO_SNAPSHOT_SLOT_USE_FREE_FUNCS
 

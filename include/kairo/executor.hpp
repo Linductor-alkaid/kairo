@@ -64,6 +64,29 @@ public:
     IScheduler* get_scheduler() const noexcept { return task_scheduler_.get(); }
 
     /**
+     * @brief 设置能力快照缓存的 TTL（0.7.1 §3.0.1）。
+     *
+     * submit_auto 的 CpuOrGpu / affinity 路由消费的能力快照默认经 TTL
+     * 缓存读取（默认 100ms），避免每次提交都锁 5 把注册表采集。TTL 为 0
+     * 表示完全关闭缓存（每次路由实时采集，回到 CR-106 惰性采集行为）。
+     * 可在任意时刻调用；下一次路由生效。后端注册/启停由 manager 的
+     * state_epoch 主动失效缓存，TTL 只兜底 pending_work / GPU 可用内存
+     * 等运行期数值漂移。
+     */
+    void set_capability_cache_ttl(std::chrono::nanoseconds ttl) noexcept;
+
+    /** @brief 当前能力快照缓存 TTL（0 表示缓存关闭）。 */
+    std::chrono::nanoseconds capability_cache_ttl() const noexcept;
+
+    /**
+     * @brief 立即失效能力快照缓存（下次路由重新采集）。
+     *
+     * 供绕过 manager 注册表 API 直接变更后端状态的调用方使用；常规
+     * 注册/启停路径已由 state_epoch 自动失效。
+     */
+    void invalidate_capability_cache() noexcept;
+
+    /**
      * @brief 获取单例实例
      * 
      * 使用全局 ExecutorManager 单例，同一进程内共享。
@@ -743,6 +766,24 @@ public:
     std::future<void> submit_auto(CpuGpuTask<CpuFunction, GpuFunction> task);
 
     /**
+     * @brief 零路由快速提交路径（0.7.1 §3.0.1）。
+     *
+     * 跳过路由决策，直接以 NORMAL 优先级提交到默认异步池——等价于
+     * `submit_priority(NORMAL, f, args...)`，且不产出 RoutingDecision
+     * （不计入 SchedulingMetrics 的 accepted/rejected 计数，也不进入
+     * recent routing decisions）。
+     *
+     * 使用边界：仅适用于确定是 CPU-only、无 deadline/QoS/affinity/
+     * resource 约束、且不需要路由可观测性的提交。需要意图路由、QoS
+     * 映射或结构化拒绝时用 submit_auto；需要自定义优先级时用
+     * submit_priority。admission（max_in_flight_tasks）与空任务拒绝
+     * 语义与 submit 系列一致。
+     */
+    template<typename F, typename... Args>
+    auto submit_fast(F&& f, Args&&... args)
+        -> std::future<typename std::invoke_result<F, Args...>::type>;
+
+    /**
      * @brief 更新调度器配置
      *
      * @param config 调度器配置
@@ -777,6 +818,38 @@ private:
                                bool cpu_gpu_task,
                                std::optional<bool> gpu_selected = std::nullopt) const;
     RoutingDecision route_dispatch(const TaskOptions& options) const;
+
+    // ---- 0.7.1 §3.0.1：能力快照 TTL 缓存（submit_auto 路由智能化）----
+    /**
+     * @brief 一次路由消费的不可变能力快照（RCU 发布，读者持有保活）。
+     *
+     * epoch 为发布时的 manager state_epoch；collected_ns 为采集时点
+     * （steady 纳秒）。两者共同决定命中：epoch 相同且未过 TTL。
+     */
+    struct CapabilitySnapshot {
+        uint64_t manager_epoch = 0;
+        int64_t collected_ns = 0;
+        std::vector<ExecutorCapability> capabilities;
+    };
+
+    /**
+     * @brief 路由用能力快照获取（命中返回缓存视图，未命中采集并发布）。
+     *
+     * held 的 shared_ptr 保证快照在本次路由期间有效（并发覆盖发布时
+     * 旧快照由引用计数兜底回收）。from_cache 为 false 表示本次为实时
+     * 采集（TTL 过期 / epoch 变化 / 缓存关闭）。needs == false 时 held
+     * 为空且不计 hit/miss 计数（纯策略路径不消费能力表）。
+     */
+    struct CapabilityView {
+        std::shared_ptr<const CapabilitySnapshot> held;
+        bool from_cache = false;
+
+        const std::vector<ExecutorCapability>& get() const noexcept {
+            static const std::vector<ExecutorCapability> kEmpty;
+            return held ? held->capabilities : kEmpty;
+        }
+    };
+    CapabilityView acquire_route_capabilities(bool needs) const;
 
     void record_result_failure(const ExecutorResult& result,
                                FailureKind kind,
@@ -1110,7 +1183,8 @@ private:
     // 0.6.1 Scheduling Runtime 指标：无锁单调计数。与 record_routing_decision
     // 的 CR-106 观测开关无关（调度健康度必须无需预先配置即可观察），提交
     // 路径上每条决策只付若干次 relaxed 原子累加。独占缓存行避免与相邻
-    // 热点字段伪共享。
+    // 热点字段伪共享。mutable：const 的 route_task 也计数（能力缓存
+    // hit/miss 在访问点统计，0.7.1 §3.0.1）。
     struct alignas(64) SchedulingMetricsCounters {
         std::atomic<uint64_t> accepted{0};
         std::atomic<uint64_t> accepted_degraded{0};
@@ -1126,8 +1200,20 @@ private:
         std::atomic<uint64_t> adaptive_history{0};
         std::atomic<uint64_t> load_shedding_rejected{0};
         std::atomic<uint64_t> priority_promoted{0};
+        // 0.7.1 §3.0.1：能力快照缓存行为计数。
+        std::atomic<uint64_t> capability_cache_hit{0};
+        std::atomic<uint64_t> capability_cache_miss{0};
     };
-    SchedulingMetricsCounters scheduling_counters_;
+    mutable SchedulingMetricsCounters scheduling_counters_;
+
+    // 0.7.1 §3.0.1 能力快照缓存：immutable 快照经 RCU 槽发布（与 M2
+    // FeedbackAggregator 同款可移植原子 shared_ptr 模式），route_task /
+    // route_dispatch 命中路径一次 acquire load + 两个整数比较，未命中
+    // （TTL 过期或 manager state_epoch 变化）才锁注册表采集并重发布。
+    // 并发未命中各自采集、最后发布者胜出——采集稀有（每 TTL 至多一轮），
+    // 不引入热路径互斥。TTL 为 0 表示缓存关闭（每次实时采集）。
+    mutable scheduling::detail::SnapshotSlotT<CapabilitySnapshot> capability_cache_;
+    std::atomic<int64_t> capability_cache_ttl_ns_{100'000'000};  // 100ms
 
     // 0.6.1 feedback 热路径开关：仅当注入的 IScheduler 声明
     // wants_feedback() 时，submit_auto 才为任务附加测量包装（时间戳采样
@@ -2920,6 +3006,19 @@ auto Executor::submit_auto(F&& f, Args&&... args)
     TaskOptions options;
     record_routing_decision(route_task(options, false));
     return submit(std::forward<F>(f), std::forward<Args>(args)...);
+}
+
+// 0.7.1 §3.0.1 零路由快速路径：与 submit_auto(F&&) 的差别只有"不做路由
+// 判定、不产出决策"——DIRECT 提交 NORMAL 优先级、无调度元数据，提交
+// 协议（promise/异常/admission/软超时结算）与 submit_priority 完全一致。
+template<typename F, typename... Args>
+auto Executor::submit_fast(F&& f, Args&&... args)
+    -> std::future<typename std::invoke_result<F, Args...>::type> {
+    return submit_priority_scheduled(
+        static_cast<int>(TaskPriority::NORMAL),
+        std::nullopt,
+        std::forward<F>(f),
+        std::forward<Args>(args)...);
 }
 
 template<typename Function>

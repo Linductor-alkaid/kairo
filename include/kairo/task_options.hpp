@@ -110,6 +110,10 @@ constexpr uint32_t ResourceInfeasible = 1u << 1;
 constexpr uint32_t AdaptiveHistory = 1u << 2;
 /** 0.7.0 M3：拒绝由 QoS 降载状态机触发（reason == LoadShedding）。 */
 constexpr uint32_t LoadShedding = 1u << 3;
+/** 0.7.1 §3.0.1：本次路由消费的能力快照来自 TTL 缓存而非实时采集
+ *  （配对的 RoutingDecision::capability_from_cache 布尔字段；位与字段
+ *  同置，诊断位便于掩码过滤）。 */
+constexpr uint32_t CapabilityCacheHit = 1u << 7;
 }  // namespace RoutingDiagnostics
 
 /** @brief RoutingStatus 的稳定名称（诊断与测试输出）。 */
@@ -212,6 +216,11 @@ struct RoutingDecision {
     // 0.6.1：结构化次要诊断（RoutingDiagnostics 位组合）。
     uint32_t diagnostics = RoutingDiagnostics::None;
     bool fell_back = false;
+    // 0.7.1 §3.0.1：路由消费的能力快照来自 TTL 缓存（与
+    // RoutingDiagnostics::CapabilityCacheHit 同置）。快照内容弱一致：
+    // 相对实时采集至多滞后 capability_cache_ttl（默认 100ms），后端
+    // 注册/启停由 manager state_epoch 主动失效。
+    bool capability_from_cache = false;
     std::string detail;
     std::chrono::steady_clock::time_point timestamp =
         std::chrono::steady_clock::now();

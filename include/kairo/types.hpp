@@ -252,6 +252,12 @@ struct SchedulingMetrics {
     uint64_t priority_promoted_count = 0;     // 调度器调整了 QoS 默认排队
                                               // 优先级的提交次数（有界 +1 级；
                                               // 显式 priority 不受影响）
+    // ---- 0.7.1 submit_auto 路由智能化（roadmap §3.0.1）----
+    uint64_t capability_cache_hit_count = 0;  // 路由消费的能力快照命中
+                                              // TTL 缓存（未付采集成本）
+    uint64_t capability_cache_miss_count = 0; // TTL 过期 / manager 状态
+                                              // epoch 变化 / 缓存关闭下的
+                                              // 实时采集次数
 };
 
 /**

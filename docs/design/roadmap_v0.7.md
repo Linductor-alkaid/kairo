@@ -11,6 +11,9 @@
 > **M3 AdaptiveScheduler MVP 已落地**（§2.4，分支 feat/adaptive-scheduler）。
 > **0.7.0 文档与发布已落地**（§2.5，分支 docs/v070-website-migration-sync）；
 > 0.7.0 里程碑全部完成，下一版本为 0.7.1（§3）。
+> **0.7.1 §3.0.1 已落地**（能力快照 TTL 缓存 + submit_fast，分支
+> feat/v071-capability-cache；设计语义 `scheduling_runtime.md` §10，
+> 验收记录见该节 §10.3）。§3.0.2/§3.0.3/§3.1/§3.2 未落地。
 > 输入：`docs/design/scheduling_runtime.md` §5/§6、`docs/CODE_REVIEW_2026-09-30.md`
 > 未结项、`CHANGELOG.md` 0.6.x 边界声明。
 
@@ -147,7 +150,7 @@ constraint filter → candidate generation → scoring/ranking → selection
 
 ## 3. v0.7.1 — submit_auto 智能化增强 + Resource Reservation + deadline policy
 
-### 3.0 submit_auto 路由智能化（新增，来自 2026-10-13 设计评审）
+### 3.0 submit_auto 路由智能化（新增，来自 2026-10-13 设计评审）✅ 3.0.1 已落地（2026-10-14，feat/v071-capability-cache）
 
 **问题**：`submit_auto` 虽名为"auto"，但路由能力未充分体现：
 - 默认 `DefaultScheduler` 是确定性的意图路由，未利用执行反馈
@@ -156,7 +159,16 @@ constraint filter → candidate generation → scoring/ranking → selection
 
 **方向**：分三阶段增强 auto 路由的智能性和性能。
 
-#### 3.0.1 能力快照缓存与快速路径（短期，预计 1-2 周）
+#### 3.0.1 能力快照缓存与快速路径（短期，预计 1-2 周）✅ 已落地（2026-10-14）
+
+> 落地形态说明：缓存载体为 Executor 内整表不可变快照（`manager_epoch` +
+> `collected_ns` + capabilities vector）经 M2 同款 RCU 槽发布，未按下方
+> 草图采用 per-backend 类型原子分片——route 消费的是整张能力表，分片
+> 命中路径需每次重组 vector（热路径堆分配），与快速路径目标冲突。
+> 主动失效由 manager `state_epoch` 承担（注册/启停/shutdown 全覆盖，
+> facade 直接启停 realtime / blocking-IO 的两处转换补
+> `notify_backend_state_changed()`）。设计语义与验收数据见
+> `docs/design/scheduling_runtime.md` §10。
 
 - **能力快照 TTL 缓存**：当前每次 `submit_auto` 都锁定并采集执行器能力（CR-106 优化了
   CPU-only 路径走纯策略判定）。引入 TTL-based 缓存（默认 100ms），热路径读取缓存快照：

@@ -16,6 +16,34 @@ The latest release record is `v0.7.0`. This site uses that stable version as its
 | Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | Complete current signatures | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
+## 0.7.1 development snapshot: smarter submit_auto routing (in progress)
+
+0.7.1 advances `docs/design/roadmap_v0.7.md` §3; this is an unreleased
+development snapshot. The landed part (§3.0.1) is fully additive, no
+migration required:
+
+- **Capability snapshot TTL cache (default on)**: the capability reads
+  behind `submit_auto` CpuOrGpu/affinity routing and `dispatch_auto` go
+  through a 100 ms TTL cache; hits no longer take the registry locks per
+  submit (paired benchmarks remove ~37% end-to-end collection cost).
+  Backend registration/start/stop invalidates immediately via the manager
+  `state_epoch`; decisions are identical with the cache on or off.
+  Controls: `set_capability_cache_ttl()` (0 disables) /
+  `invalidate_capability_cache()`.
+- **`submit_fast()`**: zero-routing submission (equivalent to a NORMAL
+  priority direct submit, produces no routing decision). Only for certain
+  CPU-only work without scheduling constraints and without a need for
+  routing observability; boundaries in [Choose a Submission
+  API](/en/guides/choosing-submit-api).
+- **New diagnostics channel**: the `CapabilityCacheHit` bit (`1u<<7`) and
+  `RoutingDecision::capability_from_cache` mark the provenance of the
+  consumed snapshot; `SchedulingMetrics` gains
+  `capability_cache_hit_count` / `capability_cache_miss_count`.
+- Full semantics: `docs/design/scheduling_runtime.md` §10 and the
+  "upgrading from 0.7.0 to 0.7.1" section of
+  [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md).
+  ResourceLease / deadline policy (§3.1/§3.2) are not landed yet.
+
 ## 0.7.0: Runtime-aware Scheduling
 
 0.7.0 (released 2026-10-10) lands per `docs/design/roadmap_v0.7.md`; everything below is additive:
