@@ -30,11 +30,10 @@ migration required:
   `state_epoch`; decisions are identical with the cache on or off.
   Controls: `set_capability_cache_ttl()` (0 disables) /
   `invalidate_capability_cache()`.
-- **`submit_fast()`**: zero-routing submission (equivalent to a NORMAL
-  priority direct submit, produces no routing decision). Only for certain
-  CPU-only work without scheduling constraints and without a need for
-  routing observability; boundaries in [Choose a Submission
-  API](/en/guides/choosing-submit-api).
+- **Plain submission review outcome**: the `submit_fast()` sketched by
+  §3.0.1 proved semantically redundant with `submit` and the plain
+  channel measured ~31% faster; it was removed per review and `submit`
+  retained (see [Choose a Submission API](/en/guides/choosing-submit-api)).
 - **New diagnostics channel**: the `CapabilityCacheHit` bit (`1u<<7`) and
   `RoutingDecision::capability_from_cache` mark the provenance of the
   consumed snapshot; `SchedulingMetrics` gains

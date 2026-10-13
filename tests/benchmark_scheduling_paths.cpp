@@ -23,8 +23,9 @@
  *      a) CpuOrGpu submit route with the cache disabled (fresh
  *         collection per submit) vs warm cache (hit path) — paired,
  *         same process; acceptance line: warm ≤ 0.9 × fresh;
- *      b) submit_fast() vs submit_auto bare builder — paired; acceptance
- *         line: submit_fast must not be slower than submit_auto bare.
+ *      b) submit vs submit_auto bare builder — paired; acceptance line:
+ *         submit must not be slower than submit_auto bare (it does
+ *         strictly less work).
  *
  * Config: env KAIRO_BENCHMARK_TASKS (default 20000 per phase).
  * Output: human-readable text (default) or JSON lines (--json).
@@ -393,13 +394,17 @@ int main(int argc, char** argv) {
         }
     }
 
-    // ---- 6. submit_fast vs submit_auto bare builder（0.7.1 §3.0.1）----
+    // ---- 6. 纯提交路径对比：submit vs submit_auto bare builder ----
+    // （0.7.1 §3.0.1 评审后续：曾评估的 submit_fast 与 submit 语义重复，
+    // 实测普通通道快 31.4%（1881 vs 2473 ns/op，配对同进程），按评审
+    // 决定移除、保留 submit。本节守卫：submit（严格更少工作）不得慢于
+    // submit_auto 裸 builder。
     {
         Executor executor;
         init_executor(executor, 4);
         executor.set_recent_routing_capacity(0);
 
-        auto measure_bare_auto = [&](size_t tasks) {
+        auto measure = [&](bool with_routing, size_t tasks) {
             const auto begin = Clock::now();
             constexpr size_t kBatch = 512;
             std::vector<std::future<void>> futures;
@@ -408,26 +413,9 @@ int main(int argc, char** argv) {
                 const size_t batch = std::min(kBatch, tasks - i);
                 futures.clear();
                 for (size_t j = 0; j < batch; ++j) {
-                    futures.push_back(
-                        executor.submit_auto(kairo::task([] {})));
-                }
-                for (auto& future : futures) {
-                    future.get();
-                }
-            }
-            const auto end = Clock::now();
-            return elapsed_ns(begin, end);
-        };
-        auto measure_submit_fast = [&](size_t tasks) {
-            const auto begin = Clock::now();
-            constexpr size_t kBatch = 512;
-            std::vector<std::future<void>> futures;
-            futures.reserve(kBatch);
-            for (size_t i = 0; i < tasks; i += kBatch) {
-                const size_t batch = std::min(kBatch, tasks - i);
-                futures.clear();
-                for (size_t j = 0; j < batch; ++j) {
-                    futures.push_back(executor.submit_fast([] {}));
+                    futures.push_back(with_routing
+                                          ? executor.submit_auto(kairo::task([] {}))
+                                          : executor.submit([] {}));
                 }
                 for (auto& future : futures) {
                     future.get();
@@ -437,20 +425,20 @@ int main(int argc, char** argv) {
             return elapsed_ns(begin, end);
         };
 
-        measure_submit_fast(512);      // warmup
-        measure_bare_auto(512);        // warmup
-        const double fast_ns = measure_submit_fast(config.tasks);
-        const double auto_ns = measure_bare_auto(config.tasks);
-        report(config, "submit_fast (no routing)", fast_ns, config.tasks);
+        measure(false, 512);  // warmup ×2
+        measure(true, 512);
+        const double submit_ns = measure(false, config.tasks);
+        const double auto_ns = measure(true, config.tasks);
+        report(config, "submit (plain task channel)", submit_ns, config.tasks);
         report(config, "submit_auto bare builder (policy route)", auto_ns,
                config.tasks);
-        // 验收线：submit_fast 不产出路由决策，端到端不得慢于 submit_auto
-        // 裸 builder（允许 5% 调度噪声）。
-        if (fast_ns > auto_ns * 1.05) {
+        // 验收线：submit 不做路由，端到端不得慢于 submit_auto 裸 builder
+        // （允许 5% 调度噪声）。
+        if (submit_ns > auto_ns * 1.05) {
             std::fprintf(stderr,
-                         "submit_fast acceptance failed: %.0f ns/op > 1.05 x "
+                         "submit acceptance failed: %.0f ns/op > 1.05 x "
                          "%.0f ns/op\n",
-                         fast_ns / static_cast<double>(config.tasks),
+                         submit_ns / static_cast<double>(config.tasks),
                          auto_ns / static_cast<double>(config.tasks));
             return 1;
         }

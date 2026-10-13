@@ -33,7 +33,6 @@ deadline policy、§3.1 资源预留 ResourceLease、§3.0.2/§3.0.3 自动
 
 | API | 说明 |
 |---|---|
-| `Executor::submit_fast(f, args...)` | 零路由快速提交：等价 `submit_priority(NORMAL, ...)` 且不产出路由决策。仅用于确定 CPU-only、无调度约束、不需要路由可观测性的提交 |
 | `Executor::set_capability_cache_ttl()` / `capability_cache_ttl()` | 能力缓存 TTL 控制（默认 100ms，0 关闭），任意时刻可调 |
 | `Executor::invalidate_capability_cache()` | 立即失效能力快照缓存 |
 | `ExecutorManager::notify_backend_state_changed()` | 绕过注册表直接变更后端 running 状态的集成方须调用它，使能力缓存立即失效 |

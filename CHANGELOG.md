@@ -121,23 +121,23 @@ v0.7.1 全部四个阶段：submit_auto 路由智能化（roadmap §3.0.1 含
 
 ### 提交路径
 
-- **`submit_fast()`（零路由快速路径，§3.0.1）**：等价
-  `submit_priority(NORMAL, f, args...)` 且不产出 `RoutingDecision`
-  （不计数、不进 recent decisions、不咨询 `effective_priority_for`）；
-  admission 与空 callable 拒绝语义与 submit 系列一致。使用边界（roadmap
-  §7 风险表）：仅推荐确定 CPU-only、无 deadline/QoS/affinity/resource
-  约束且不需要路由可观测性的提交，不作为默认推荐 API。验收：端到端
-  1731 ns/op vs `submit_auto` 裸 builder 2523 ns/op（-31%；线
-  fast ≤ 1.05 × bare）。
+- **`submit_fast()` 评审移除（§3.0.1 收敛）**：路线图曾规划零路由
+  快速提交路径；实现后与 `submit` 语义重复（等价
+  `submit_priority(NORMAL, ...)`），配对实测普通提交通道反而快
+  31.4%（1881 vs 2473 ns/op，Windows MSVC Release），按 2026-10-14
+  评审决定移除该 API、保留 `submit`。零路由语义本就由 `submit`
+  承载（submit 系列从不产出路由决策）；§3.0.1 的实际性能收益由
+  能力快照缓存承载。基准 `benchmark_scheduling_paths` §6 改为
+  submit vs submit_auto 裸 builder 守卫（submit ≤ 1.05 × bare）。
 
 ### 文档
 
-- `docs/design/scheduling_runtime.md` 新增 §10（能力缓存与 submit_fast
-  设计语义与验收）与 §11（deadline policy 设计语义与验收矩阵）；
+- `docs/design/scheduling_runtime.md` 新增 §10（能力缓存设计语义与验收、
+  submit_fast 评审移除记录）与 §11（deadline policy 设计语义与验收矩阵）；
   `docs/API.md` §3.7/§3.8、`docs/MIGRATION.md` 新增
-  "从 0.7.0 升级到 0.7.1"（无必需迁移）；website 中英选型页新增
-  "何时用 submit_fast（以及何时不该用）"，版本与迁移页新增 0.7.1 开发
-  快照小节；`docs/skill` 调度卡（kairo-integration / kairo-maintainer）
+  "从 0.7.0 升级到 0.7.1"（无必需迁移）；版本与迁移页新增 0.7.1 开发
+  快照小节（含 submit_fast 评审移除结论），中英选型页同步纯提交路径
+  评审结论；`docs/skill` 调度卡（kairo-integration / kairo-maintainer）
   同步新 API 与诊断通道。
 
 ---

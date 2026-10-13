@@ -12,7 +12,6 @@ description: 先区分完成、接收和生命周期结果，再按业务约束�
 | 业务问题 | 默认接口 | 返回结果表示 | 何时进一步了解 |
 | --- | --- | --- | --- |
 | 一次性后台工作 | `submit_auto(lambda)` | `future` 的完成或异常 | 需要 priority、delay、batch 或 dependency |
-| 确认无约束的极热短任务（0.7.1） | `submit_fast(lambda)` | `future` 的完成或异常 | 使用前读下方边界说明 |
 | 独立 CPU/GPU 实现 | `submit_auto(cpu_gpu_task(...))` | 已选路径的 future 完成或异常 | 需要后端注册、GPU 诊断或调参 |
 | 已验证的无锁单消费者路径 | `dispatch_auto(LowLatency)` | 有界队列接收 | 需要容量、对象池和关闭细节 |
 | 已存在的周期实时队列 | `dispatch_auto(RealtimeQueue)` | 有界队列接收 | 需要周期预算、drop 与平台权限 |
@@ -53,17 +52,7 @@ auto decoded = future.get();
 
 按值捕获 `frame` 让任务拥有稳定输入。`future.get()` 是完成和异常传播边界；`get_last_routing_decision()` 则解释默认 Facade 为什么选择该路径。需要直接控制已有线程池语义或维护兼容代码时，`submit()` 仍是有效的显式入口。
 
-## 何时用 `submit_fast`（以及何时不该用）
-
-`submit_fast(lambda)` 是 0.7.1 引入的零路由快速路径：等价于以 NORMAL 优先级直接提交默认池，且**不产出路由决策**（不进入 `SchedulingMetrics` 与 recent decisions）。配对基准实测比 `submit_auto` 裸 builder 快约三成。
-
-只应同时满足以下条件时使用：
-
-- 任务确定是 CPU-only，永远不会需要 GPU / 无锁 / 实时后端；
-- 不需要 deadline、QoS、affinity、resource 约束与自定义优先级；
-- 不依赖路由决策做可观测性或审计。
-
-任何一条不满足，就用 `submit_auto`（保留意图路由与结构化诊断）或对应显式 API。它不是默认推荐入口——路由可观测性是 0.6.x 以来调度体系的排障基础，为省几十纳秒放弃它之前，先确认该路径真的足够热。
+按值捕获 `frame` 让任务拥有稳定输入。`future.get()` 是完成和异常传播边界；`get_last_routing_decision()` 则解释默认 Facade 为什么选择该路径。完全不需要路由语义的裸提交用 `submit()`（0.7.1 评审曾评估过独立的 `submit_fast` 快速路径，实测普通提交通道本身快于优先级通道约 31%，故收敛回 `submit`，未引入新 API）。需要意图路由、QoS 映射或结构化诊断时用 `submit_auto`。
 
 ## 何时使用显式 future API
 

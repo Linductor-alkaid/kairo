@@ -351,7 +351,7 @@ resource 拒绝、自定义 IScheduler 注入、以及全量行为回归；0.6.1
 拒绝归一化、高并发 route()、deadline 边界与同时 deadline、
 capability 缺失退化）、结构化决策/指标/反馈断言与调度基准。
 
-## 10. 0.7.1 能力快照缓存与 submit_fast（roadmap §3.0.1，开发快照）
+## 10. 0.7.1 能力快照缓存（roadmap §3.0.1，开发快照）
 
 ### 10.1 能力快照 TTL 缓存
 
@@ -389,27 +389,31 @@ vector 构建）。0.7.1 把该采集缓存化：
   掩码过滤与逐条判读两便）。公开的 `get_executor_capabilities()`
   保持实时采集语义，不经缓存（预检/显示用途依赖最新值）。
 
-### 10.2 submit_fast()
+### 10.2 submit_fast() 的评审移除
 
-零路由快速提交路径：等价 `submit_priority(NORMAL, f, args...)` 且
-不产出 `RoutingDecision`（不计数、不进 recent decisions、不咨询
-`effective_priority_for`）。admission 与空 callable 拒绝语义与
-`submit` 系列一致。使用边界（roadmap §7 风险表）：仅推荐给确定是
-CPU-only、无 deadline/QoS/affinity/resource 约束、且不需要路由
-可观测性的提交；文档明确"不作为默认推荐 API"。后续 §3.1
-ResourceLease 落地后，声明 `ResourceRequirements` 的提交仍须走路由。
-
+路线图 §3.0.1 曾规划零路由快速提交 API（提交至优先级通道
+`submit_priority(NORMAL, ...)`，不产出 `RoutingDecision`）。实现后
+按评审要求与 `submit` 做配对实测：**普通提交通道反而快 31.4%**
+（1881 vs 2473 ns/op，Windows MSVC Release，20000 任务配对同进程）
+——优先级通道的 promise/atomic_bool/bind 间接层比 submit 的
+CR-107 PromiseCell 合并控制块更重。且两者的用户可见语义本就重复
+（submit 系列从不产出路由决策、也不表达 QoS/deadline）。按
+2026-10-14 评审决定：**移除 `submit_fast`，保留 `submit`**。
+推论：零路由语义无需新 API 承载；§3.0.1 的实际性能收益由 §10.1
+的能力快照缓存承载。`benchmark_scheduling_paths` §6 改为 submit vs
+submit_auto 裸 builder 守卫（submit ≤ 1.05 × bare，实测快约 30%）。
 ### 10.3 验收（配对 A/B，验收线内置 `benchmark_scheduling_paths` §5/§6）
 
 - 缓存命中路径移除端到端 36.6% 的采集成本（fresh 1415 ns/op →
   warm 898 ns/op，Windows MSVC Release；验收线 warm ≤ 0.9 × fresh），
   对应 roadmap §7.1 的 route 级 ~120ns → ~60ns 目标方向；
-- `submit_fast` 1731 ns/op vs `submit_auto` 裸 builder 2523 ns/op
-  （-31%；验收线 fast ≤ 1.05 × bare）；
+- submit（普通通道）2042 ns/op vs `submit_auto` 裸 builder 2906 ns/op
+  （-30%；验收线 submit ≤ 1.05 × bare）；submit_fast 评审实测
+  2473 ns/op，慢于 submit 31.4%，据此移除（见 §10.2）；
 - 契约测试 `test_capability_cache.cpp`（14 用例）：命中/未命中计数
   与来源标记、TTL 过期/关闭/重设、注册-启动-停止的 TTL 内主动失效、
-  决策一致性矩阵、`submit_fast` 语义与 admission、并发 + epoch 扰动
-  下的 hit+miss 守恒。
+  决策一致性矩阵、纯提交路径（submit）无决策语义与 admission、
+  并发 + epoch 扰动下的 hit+miss 守恒。
 
 ## 11. 0.7.1 deadline policy（roadmap §3.2，开发快照）
 

@@ -1,4 +1,4 @@
-// 0.7.1 §3.0.1 能力快照 TTL 缓存 + submit_fast 契约测试
+// 0.7.1 §3.0.1 能力快照 TTL 缓存契约测试
 // (docs/design/roadmap_v0.7.md §3.0.1；设计语义见
 // docs/design/scheduling_runtime.md §9)。
 //
@@ -14,7 +14,7 @@
 //  D. 决策一致性：缓存开/关产生逐项相同的 status/reason/backend/executor
 //     （缓存只影响快照新鲜度，不影响决策语义）；公开的
 //     get_executor_capabilities() 绕过缓存保持实时。
-//  E. submit_fast：NORMAL 优先级直投默认池、返回值/异常经 future 传递、
+//  E. 纯提交路径守卫（submit）：返回值/异常经 future 传递、
 //     不产出 RoutingDecision（accepted/rejected 计数与 recent decisions
 //     不变）、admission 上界生效、空 callable 拒绝语义与 submit 一致。
 //  F/G. 并发冒烟 + 计数守恒：多提交线程 CpuOrGpu + dispatch_auto 与
@@ -297,38 +297,39 @@ TEST(CapabilityCacheTest, CachedAndFreshRoutingDecisionsAreIdentical) {
 }
 
 // ---------------------------------------------------------------------------
-// E. submit_fast
+// E. 纯提交路径守卫（submit；0.7.1 评审后 submit_fast 已移除，
+//    实测普通通道快 31.4%，无路由决策语义由 submit 自身承载）
 // ---------------------------------------------------------------------------
 
-TEST(SubmitFastTest, ExecutesOnDefaultPoolAndReturnsValue) {
+TEST(PlainSubmissionPathTest, ExecutesOnDefaultPoolAndReturnsValue) {
     Executor executor;
     init_executor(executor, 2);
 
-    auto value_future = executor.submit_fast([] { return 42; });
+    auto value_future = executor.submit([] { return 42; });
     EXPECT_EQ(value_future.get(), 42);
 
     std::atomic<int> side_effect{0};
-    auto void_future = executor.submit_fast([&] { ++side_effect; });
+    auto void_future = executor.submit([&] { ++side_effect; });
     void_future.get();
     EXPECT_EQ(side_effect.load(), 1);
 }
 
-TEST(SubmitFastTest, ExceptionPropagatesThroughFuture) {
+TEST(PlainSubmissionPathTest, ExceptionPropagatesThroughFuture) {
     Executor executor;
     init_executor(executor, 2);
 
-    auto future = executor.submit_fast(
-        []() -> int { throw std::runtime_error("submit_fast boom"); });
+    auto future = executor.submit(
+        []() -> int { throw std::runtime_error("submit boom"); });
     EXPECT_THROW(future.get(), std::runtime_error);
 }
 
-TEST(SubmitFastTest, ProducesNoRoutingDecisionsOrMetrics) {
+TEST(PlainSubmissionPathTest, ProducesNoRoutingDecisionsOrMetrics) {
     Executor executor;
     init_executor(executor, 2);
     executor.set_recent_routing_capacity(8);
 
     const auto before = executor.get_scheduling_metrics();
-    (void)executor.submit_fast([] {});
+    (void)executor.submit([] {});
     const auto after = executor.get_scheduling_metrics();
 
     EXPECT_EQ(after.accepted_count, before.accepted_count);
@@ -342,31 +343,31 @@ TEST(SubmitFastTest, ProducesNoRoutingDecisionsOrMetrics) {
     EXPECT_EQ(with_auto.accepted_count, before.accepted_count + 1);
 }
 
-TEST(SubmitFastTest, RespectsBoundedAdmission) {
+TEST(PlainSubmissionPathTest, RespectsBoundedAdmission) {
     Executor executor;
     init_executor(executor, 1);
     executor.set_max_in_flight_tasks(1);
 
-    // 占满唯一 admission 名额并阻塞 worker：后续 submit_fast 立即以
+    // 占满唯一 admission 名额并阻塞 worker：后续 submit 立即以
     // CapacityExhausted 就绪（不阻塞提交线程）。
     std::atomic<bool> gate{false};
-    auto blocker = executor.submit_fast([&] {
+    auto blocker = executor.submit([&] {
         while (!gate.load(std::memory_order_acquire)) {
             std::this_thread::sleep_for(milliseconds(1));
         }
     });
-    auto rejected = executor.submit_fast([] {});
+    auto rejected = executor.submit([] {});
     EXPECT_THROW(rejected.get(), CapacityExhaustedException);
     gate.store(true, std::memory_order_release);
     blocker.get();
 }
 
-TEST(SubmitFastTest, EmptyCallableRejectionMatchesSubmitSemantics) {
+TEST(PlainSubmissionPathTest, EmptyCallableRejectionMatchesSubmitSemantics) {
     Executor executor;
     init_executor(executor, 2);
 
     std::function<void()> empty;
-    auto future = executor.submit_fast(empty);
+    auto future = executor.submit(empty);
     EXPECT_THROW(future.get(), std::invalid_argument);
 }
 

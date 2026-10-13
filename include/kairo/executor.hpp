@@ -826,24 +826,6 @@ public:
     std::future<void> submit_auto(CpuGpuTask<CpuFunction, GpuFunction> task);
 
     /**
-     * @brief 零路由快速提交路径（0.7.1 §3.0.1）。
-     *
-     * 跳过路由决策，直接以 NORMAL 优先级提交到默认异步池——等价于
-     * `submit_priority(NORMAL, f, args...)`，且不产出 RoutingDecision
-     * （不计入 SchedulingMetrics 的 accepted/rejected 计数，也不进入
-     * recent routing decisions）。
-     *
-     * 使用边界：仅适用于确定是 CPU-only、无 deadline/QoS/affinity/
-     * resource 约束、且不需要路由可观测性的提交。需要意图路由、QoS
-     * 映射或结构化拒绝时用 submit_auto；需要自定义优先级时用
-     * submit_priority。admission（max_in_flight_tasks）与空任务拒绝
-     * 语义与 submit 系列一致。
-     */
-    template<typename F, typename... Args>
-    auto submit_fast(F&& f, Args&&... args)
-        -> std::future<typename std::invoke_result<F, Args...>::type>;
-
-    /**
      * @brief 更新调度器配置
      *
      * @param config 调度器配置
@@ -3286,20 +3268,6 @@ auto Executor::submit_auto(F&& f, Args&&... args)
     annotate_auto_inference(options, decision);
     record_routing_decision(std::move(decision));
     return submit(std::forward<F>(f), std::forward<Args>(args)...);
-}
-
-// 0.7.1 §3.0.1 零路由快速路径：与 submit_auto(F&&) 的差别只有"不做路由
-// 判定、不产出决策"——DIRECT 提交 NORMAL 优先级、无调度元数据，提交
-// 协议（promise/异常/admission/软超时结算）与 submit_priority 完全一致。
-template<typename F, typename... Args>
-auto Executor::submit_fast(F&& f, Args&&... args)
-    -> std::future<typename std::invoke_result<F, Args...>::type> {
-    return submit_priority_scheduled(
-        static_cast<int>(TaskPriority::NORMAL),
-        std::nullopt,
-        nullptr,
-        std::forward<F>(f),
-        std::forward<Args>(args)...);
 }
 
 template<typename Function>

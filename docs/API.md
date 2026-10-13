@@ -331,7 +331,7 @@ if (backpressure_drops > 0) {
 | 需求 | API | 返回值语义 |
 |------|-----|------------|
 | 普通短 CPU 任务 | `submit_auto([] { return value; })` | `std::future<T>`：任务完成或异常 |
-| 零路由开销的 CPU 任务（0.7.1 开发快照） | `submit_fast([] { return value; })` | `std::future<T>`：提交/完成语义同 `submit`，不产出路由决策 |
+| 普通提交（无路由语义） | `submit([] { return value; })` | `std::future<T>`：任务完成或异常；不产出路由决策 |
 | 独立 CPU/GPU 实现 | `submit_auto(cpu_gpu_task(cpu, gpu)...)` | `std::future<void>`：已接受路径的完成或异常 |
 | 指定无锁低延迟队列 | `dispatch_auto(TaskOptions{LowLatency, ...}, task)` | `DispatchResult::accepted`：仅表示有界队列已接收 |
 | 指定实时队列 | `dispatch_auto(TaskOptions{RealtimeQueue, ...}, task)` | `DispatchResult::accepted`：仅表示后续周期已接收 |
@@ -340,10 +340,6 @@ if (backpressure_drops > 0) {
 ```cpp
 auto decoded = ex.submit_auto(
     kairo::task([] { return decode(); }).name("decode"));
-
-// 0.7.1 submit_fast：确定是 CPU-only、无 deadline/QoS/affinity/resource
-// 约束、且不需要路由可观测性时，跳过路由直接以 NORMAL 优先级提交。
-auto quick = ex.submit_fast([] { return checksum(); });
 
 kairo::TaskOptions rt;
 rt.intent = kairo::ExecutionIntent::RealtimeQueue;
@@ -358,12 +354,6 @@ if (!admission.accepted) {
 - `dispatch_auto()` 的接收结果不是完成通知。实时任务的 drop/backpressure 继续由 `RealtimeExecutorStatus` 计数和 failure event 观察。
 - `get_last_routing_decision()`、`get_recent_routing_decisions()` 与 `set_routing_callback()` 提供独立的路由解释；`ExecutorFailureEvent` 仍用于实际拒绝和执行失败。
 - `get_executor_capabilities()` 返回所有已注册后端的建议性状态快照，只用于显示/预检；实际投递仍可能因并发 stop 或满队列被拒绝。
-- **`submit_fast()` 使用边界（0.7.1 开发快照）**：等价于
-  `submit_priority(NORMAL, f, args...)` 且不产出 `RoutingDecision`——不计入
-  `SchedulingMetrics` 的 accepted/rejected 计数，也不进入 recent routing
-  decisions。需要意图路由、QoS 映射、deadline 或结构化拒绝时用
-  `submit_auto`；需要自定义优先级时用 `submit_priority`。admission
-  （`max_in_flight_tasks`）与空 callable 拒绝语义与 `submit` 系列一致。
 - **能力快照 TTL 缓存（0.7.1 开发快照）**：`submit_auto` 的
   CpuOrGpu / affinity 路由与 `dispatch_auto` 的能力消费默认经 TTL 缓存
   读取（默认 100ms），命中路径不再逐次锁注册表采集（配对 A/B 实测移除

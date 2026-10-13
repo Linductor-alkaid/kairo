@@ -27,9 +27,9 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
   经 manager `state_epoch` 立即失效缓存；决策结果与关闭缓存逐项一致。
   控制入口：`set_capability_cache_ttl()`（0 关闭）/
   `invalidate_capability_cache()`。
-- **`submit_fast()`**：零路由快速提交（等价 NORMAL 优先级直投默认池，
-  不产出路由决策）。仅用于确定 CPU-only、无调度约束、不需要路由
-  可观测性的提交；边界说明见[如何选择提交接口](/zh/guides/choosing-submit-api)。
+- **纯提交路径评审结论**：§3.0.1 曾规划的 `submit_fast()` 经实测与
+  `submit` 语义重复且普通通道快约 31%，按评审决定移除、保留
+  `submit`（见[如何选择提交接口](/zh/guides/choosing-submit-api)）。
 - **新诊断通道**：诊断位 `CapabilityCacheHit`（`1u<<7`）与
   `RoutingDecision::capability_from_cache` 标记决策消费的快照来源；
   `SchedulingMetrics` 新增 `capability_cache_hit_count` /
