@@ -7,8 +7,9 @@
 ## 从 0.7.0 升级到 0.7.1（开发快照：无必需迁移）
 
 0.7.1 当前为开发快照（roadmap §3.0.1 submit_auto 路由智能化、§3.2
-deadline policy、§3.1 资源预留 ResourceLease 已落地）。已落地部分
-全部为 additive（资源预留默认关闭），**不迁移任何代码即可升级**。
+deadline policy、§3.1 资源预留 ResourceLease、§3.0.2/§3.0.3 自动
+推断与执行器自动选择已落地）。已落地部分全部为 additive（资源预留
+与自动推断默认关闭），**不迁移任何代码即可升级**。
 
 ### 行为差异（默认开启，语义 additive）
 
@@ -42,6 +43,9 @@ deadline policy、§3.1 资源预留 ResourceLease 已落地）。已落地部�
 | `DeadlinePolicy` / `TaskCancellationReason::DeadlineMissed` | 新枚举值；对 `TaskCancellationReason` 穷举 switch 的代码需补新分支 |
 | `ExecutorConfig::enable_resource_reservation` + `resource_quota` | 0.7.1 §3.1：资源预留（默认关闭；未启用时行为与开销与 0.7.0 完全一致）。启用后声明 `resources()` 的提交在 admission 扣留配额、任务终态归还、不足以 `CapacityPressure`+`ResourceInfeasible` 结构化拒绝 |
 | `<kairo/resource_lease.hpp>`：`ResourceQuota` / `ResourceLease` / `ReservationResult` / `try_reserve()` / `get_resource_reservation_status()` | 手动预留与诊断快照；`ResourceRequirements` 新增 `gpu_concurrent_slots` / `cpu_exclusive_cores` 维度（联合需求全或无授予） |
+| `ExecutorConfig::enable_auto_inference` + `set_auto_inference_enabled()` | 0.7.1 §3.0.2：任务特征自动推断（默认关闭）。启用后 submit_auto 产**建议性**推断（`AutoInferredIntent` `1u<<5` 位 + `RoutingDecision::inferred_reason` + detail 建议；路由不被改变），为历史采样附加测量包装；显式 intent 优先（计 `auto_inference_rejected_count`） |
+| `IScheduler::select_bounded_executor()` | 0.7.1 §3.0.3：有界 dispatch 执行器自动选择咨询（默认返回空，行为不变；AdaptiveScheduler 按瞬时队列负载选 lockfree）。未指定 preferred_executor 的 `dispatch_auto(LowLatency)` 注入 AdaptiveScheduler 后被自动选择（`AutoExecutorSelection` `1u<<6`） |
+| `SchedulingMetrics` 新增 `auto_inferred_count` / `auto_inference_rejected_count` / `auto_executor_selected_count` | 自动推断与自动选择的决策级计数 |
 
 ### deadline policy 语义要点（0.6.x 行为不变的部分）
 

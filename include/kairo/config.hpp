@@ -101,6 +101,13 @@ struct ExecutorConfig {
     // 时所有提交路径行为与开销与 0.7.0 完全一致。
     bool enable_resource_reservation = false;
     ResourceQuota resource_quota;
+    // 0.7.1 §3.0.2：任务特征自动推断（默认关闭）。启用后 submit_auto
+    // 按（有界的）同名任务历史与名称模式产出**建议性**推断
+    // （AutoInferredIntent 诊断位 + inferred_reason + detail 建议；
+    // 建议优先于切换，路由不被改变），并为历史采样附加测量包装
+    // （提交路径增加时间采样与终态回调开销——与 wants_feedback 同级）。
+    // 显式 intent 的提交不产建议（计 auto_inference_rejected_count）。
+    bool enable_auto_inference = false;
 };
 
 /**

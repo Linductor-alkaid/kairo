@@ -262,6 +262,14 @@ struct SchedulingMetrics {
     // ---- 0.7.1 submit_auto 路由智能化（roadmap §3.0.1）----
     uint64_t capability_cache_hit_count = 0;  // 路由消费的能力快照命中
                                               // TTL 缓存（未付采集成本）
+    uint64_t auto_inferred_count = 0;         // §3.0.2：决策携带推断建议
+                                              //（AutoInferredIntent 位；
+                                              // 建议优先于切换）
+    uint64_t auto_inference_rejected_count = 0;  // §3.0.2：推断有话可说但
+                                                 // 用户显式 intent 优先
+    uint64_t auto_executor_selected_count = 0;   // §3.0.3：有界 dispatch
+                                                 // 执行器由调度器按负载
+                                                 // 自动选择
     uint64_t capability_cache_miss_count = 0; // TTL 过期 / manager 状态
                                               // epoch 变化 / 缓存关闭下的
                                               // 实时采集次数

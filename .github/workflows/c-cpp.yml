@@ -214,7 +214,8 @@ jobs:
           test_executor_manager \
           test_capability_cache \
           test_deadline_policy \
-          test_resource_lease
+          test_resource_lease \
+          test_auto_inference
 
     - name: 运行 TSAN 并发测试
       working-directory: build-tsan
@@ -222,7 +223,7 @@ jobs:
         TSAN_OPTIONS: halt_on_error=1 history_size=7 second_deadlock_stack=1
       run: |
         ctest -C Release --output-on-failure --verbose \
-          -R '^(test_comm_channel|test_comm_double_buffer|test_comm_mailbox|test_comm_phase_gate|test_comm_topic|test_thread_pool|test_thread_pool_resize_uaf|test_thread_pool_resize_status|test_dispatcher_resize_under_load|test_concurrent_stop_submit|test_self_stop_handoff|test_shutdown_drain_reentrancy|test_timer_handle|test_timer_thread_lifecycle_race|test_lockfree_task_executor|test_lockfree_mpsc|test_batch_integration|test_executor_manager|test_capability_cache|test_deadline_policy|test_resource_lease)$'
+          -R '^(test_comm_channel|test_comm_double_buffer|test_comm_mailbox|test_comm_phase_gate|test_comm_topic|test_thread_pool|test_thread_pool_resize_uaf|test_thread_pool_resize_status|test_dispatcher_resize_under_load|test_concurrent_stop_submit|test_self_stop_handoff|test_shutdown_drain_reentrancy|test_timer_handle|test_timer_thread_lifecycle_race|test_lockfree_task_executor|test_lockfree_mpsc|test_batch_integration|test_executor_manager|test_capability_cache|test_deadline_policy|test_resource_lease|test_auto_inference)$'
 
   realtime-allocation-guard:
     name: Realtime communication allocation guard - gcc 11 Release

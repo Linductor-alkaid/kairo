@@ -15,7 +15,9 @@
 > feat/v071-capability-cache；设计语义 `scheduling_runtime.md` §10，
 > 验收记录见该节 §10.3）。**§3.2 已落地**（deadline policy +
 > 依赖传播，`scheduling_runtime.md` §11）。**§3.1 已落地**（资源预留
-> ResourceLease，`scheduling_runtime.md` §12）。§3.0.2/§3.0.3 未落地。
+> ResourceLease，`scheduling_runtime.md` §12）。**§3.0.2/§3.0.3 已
+> 落地**（自动推断建议 + 执行器自动选择，`scheduling_runtime.md`
+> §13）——**§3 全部落地**；0.7.1 剩发布收尾（定版 + §5.2 稳定化）。
 > 输入：`docs/design/scheduling_runtime.md` §5/§6、`docs/CODE_REVIEW_2026-09-30.md`
 > 未结项、`CHANGELOG.md` 0.6.x 边界声明。
 
@@ -152,7 +154,7 @@ constraint filter → candidate generation → scoring/ranking → selection
 
 ## 3. v0.7.1 — submit_auto 智能化增强 + Resource Reservation + deadline policy
 
-### 3.0 submit_auto 路由智能化（新增，来自 2026-10-13 设计评审）✅ 3.0.1 已落地（2026-10-14，feat/v071-capability-cache）
+### 3.0 submit_auto 路由智能化（新增，来自 2026-10-13 设计评审）✅ 全部落地（§3.0.1/§3.0.1 缓存 + §3.0.2/§3.0.3，feat/v071-capability-cache）
 
 **问题**：`submit_auto` 虽名为"auto"，但路由能力未充分体现：
 - 默认 `DefaultScheduler` 是确定性的意图路由，未利用执行反馈
@@ -208,7 +210,16 @@ constraint filter → candidate generation → scoring/ranking → selection
 - `submit_fast()` 路径 ~35ns，相比当前 `submit_auto` 纯策略路径 ~50ns 有 30% 改进
 - 配对 A/B 基准，TSAN 全绿
 
-#### 3.0.2 任务特征自动推断（中期，预计 1-2 月）
+#### 3.0.2 任务特征自动推断（中期，预计 1-2 月）✅ 已落地（2026-10-14，建议优先于切换）
+
+> 落地形态说明：推断为**建议性**注解（`AutoInferredIntent` 位 +
+> `inferred_reason` + detail 建议），不改写 intent/路由——submit_auto
+> 的 `std::future` 契约只有默认池能履行，lockfree/realtime 是有界
+> dispatch 语义（草图中的 `intent = LowLatency` 直接改写不可实现，
+> 该形态留给 dispatch_auto 的显式意图表达）。历史为按任务名的有界
+> 64 键表（`<kairo/task_inference.hpp>`）；opt-in
+> `enable_auto_inference` 默认关闭。设计语义与偏差清单见
+> `docs/design/scheduling_runtime.md` §13。
 
 扩展 `TaskOptions` 的自动分析能力，减少用户显式指定意图的需求：
 
@@ -258,7 +269,17 @@ auto submit_auto(F&& f) {
 - 推断结果记录到 `RoutingDecision::diagnostics` 新增位 `AutoInferredIntent`
 - 提供 `disable_auto_inference()` 配置选项，完全关闭推断回退到纯意图路由
 
-#### 3.0.3 AdaptiveScheduler 的进一步扩展（与 3.0.2 并行）
+#### 3.0.3 AdaptiveScheduler 的进一步扩展（与 3.0.2 并行）✅ 已落地（2026-10-14）
+
+> 落地形态说明：①执行器选择优化经新虚方法
+> `IScheduler::select_bounded_executor` 生效（AdaptiveScheduler 按能力
+> 快照瞬时队列负载选 lockfree，并列取名字序；lockfree 反馈在 v0.7.2
+> 接入前不做历史负载——冷启动即安全）；②动态意图调整建议并入 §3.0.2
+> 的建议注解形态；③冷启动保守启发式由 M3 既有行为覆盖（min_samples
+> 不足回退 0.6.1 启发式）。验收线偏差："多 lockfree p99 >20%"依赖
+> lockfree queue_wait 测量（v0.7.2 §4.1），本阶段以最小负载当选的
+> 确定性断言替代；"热路径 <80ns"由 §3.0.1 缓存命中路径覆盖。见
+> `docs/design/scheduling_runtime.md` §13。
 
 扩展 0.7.0 M3 的 `AdaptiveScheduler`，增加以下能力：
 

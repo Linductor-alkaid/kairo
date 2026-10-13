@@ -135,6 +135,21 @@ public:
     int effective_priority_for(const TaskOptions& options,
                                int default_priority) const override;
 
+    /**
+     * @brief 有界 dispatch 执行器自动选择（0.7.1 §3.0.3）。
+     *
+     * LowLatency 意图 + 多个 lockfree 执行器 + 用户未显式指定
+     * preferred_executor 时，按瞬时队列负载（pending_work 相对
+     * capacity_hint 的占用率；未知容量按绝对 pending_work）选最空闲
+     * 者，并列取名字序（确定性）。registered/running 之外的候选与
+     * 已满候选被过滤；无可用候选返回空（facade 保持既有策略拒绝）。
+     * 冷启动即安全：选择只用能力快照，不依赖执行期历史（lockfree
+     * 后端的反馈通道在 v0.7.2 接入）。
+     */
+    std::optional<std::string> select_bounded_executor(
+        ExecutionIntent intent,
+        const std::vector<ExecutorCapability>& candidates) const override;
+
     /** @brief 生效配置（含构造期夹取结果）。运行期只读。 */
     const AdaptiveSchedulerConfig& config() const noexcept { return config_; }
 

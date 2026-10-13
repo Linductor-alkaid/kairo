@@ -49,7 +49,15 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
   `CapacityPressure` + `ResourceInfeasible` 结构化拒绝。手动入口
   `try_reserve()`（RAII `ResourceLease`）；未启用时行为与开销与
   0.7.0 完全一致。
-- 完整语义见 `docs/design/scheduling_runtime.md` §10/§11/§12 与
+- **自动推断与执行器自动选择（§3.0.2/§3.0.3，默认关闭）**：
+  `enable_auto_inference` 启用后 submit_auto 按任务名模式与完成
+  间隔规律产出**建议性**推断（`AutoInferredIntent` 位 +
+  `inferred_reason` + detail 建议；路由不被改变）；注入
+  AdaptiveScheduler 后，未指定 preferred_executor 的
+  `dispatch_auto(LowLatency)` 按瞬时队列负载自动选择 lockfree
+  执行器（`AutoExecutorSelection` 位）。
+- 完整语义见 `docs/design/scheduling_runtime.md`
+  §10/§11/§12/§13 与
   [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md)
   的"从 0.7.0 升级到 0.7.1"一节。
 

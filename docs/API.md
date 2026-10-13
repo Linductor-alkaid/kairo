@@ -527,6 +527,25 @@ ReservationResult`（RAII `ResourceLease`，move-only、`release()`
 `docs/design/scheduling_runtime.md` §12，终态释放矩阵见
 `tests/test_resource_lease.cpp`。
 
+**0.7.1 开发快照（自动推断与执行器自动选择，roadmap §3.0.2/§3.0.3）**：
+opt-in——`ExecutorConfig::enable_auto_inference`（运行期
+`set_auto_inference_enabled()` 可调）启用后，submit_auto 按任务名
+模式（`*_io_*` / `*_read_*` / `*_write_*` → 阻塞 I/O；
+`*_realtime_*` / `*_control_*` → 低延迟）与同名任务完成间隔规律
+（σ/μ<10% → periodic，≥4 个间隔）产出**建议性**推断：决策带
+`RoutingDiagnostics::AutoInferredIntent`（`1u<<5`）位 + 新增
+`RoutingDecision::inferred_reason` 字段 + detail 建议（建议优先于
+切换，路由不被改变）；显式 intent 优先，被覆盖的推断计
+`auto_inference_rejected_count`，产出的建议计 `auto_inferred_count`。
+历史为按任务名的有界表（64 键）。注入 AdaptiveScheduler 后，
+未指定 preferred_executor 的 `dispatch_auto(LowLatency)` 提交由
+调度器按瞬时队列负载自动选择 lockfree 执行器
+（`RoutingDiagnostics::AutoExecutorSelection` `1u<<6` +
+`auto_executor_selected_count`；`IScheduler::select_bounded_executor`
+默认返回空，DefaultScheduler 行为不变）。设计语义见
+`docs/design/scheduling_runtime.md` §13，契约见
+`tests/test_auto_inference.cpp`。
+
 ### 3.9 延迟与周期任务
 
 > ⚠️ **API 范围提示**：`submit_delayed`、`submit_periodic` **仅在 `Executor` Facade 类中提供**，**不属于** `IAsyncExecutor`、`IExecutor` 或 `ThreadPool` 的接口。用户直接对底层 `ThreadPool` 实例调用这些方法会编译失败。延迟与周期任务统一由 Facade 内部的 `ExecutorManager` 调度，底层 `ThreadPool` 不感知任务时间维度。

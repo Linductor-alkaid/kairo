@@ -7,6 +7,7 @@
 #include "scheduler.hpp"
 #include "feedback_aggregator.hpp"
 #include "task_cancellation.hpp"
+#include "task_inference.hpp"
 #include "timer.hpp"
 #include "serial_execution_context.hpp"
 #include "interfaces.hpp"
@@ -99,6 +100,22 @@ public:
 
     /** @brief 资源预留注册表状态快照（诊断用，0.7.1 §3.1）。 */
     ResourceReservationStatus get_resource_reservation_status() const;
+
+    /**
+     * @brief 运行期开关任务特征自动推断（0.7.1 §3.0.2）。
+     *
+     * 默认值来自 ExecutorConfig::enable_auto_inference（false）。启用
+     * 时 submit_auto 为历史采样附加测量包装（与 wants_feedback 同级
+     * 开销）并产出建议性推断（AutoInferredIntent 位 + inferred_reason +
+     * detail 建议；建议优先于切换）；关闭即回到纯意图路由。任意时刻
+     * 可调。
+     */
+    void set_auto_inference_enabled(bool enabled) noexcept;
+
+    /** @brief 当前自动推断开关状态。 */
+    bool auto_inference_enabled() const noexcept {
+        return auto_inference_enabled_.load(std::memory_order_acquire);
+    }
 
     /**
      * @brief 获取单例实例
@@ -1276,6 +1293,10 @@ private:
         std::atomic<uint64_t> capability_cache_miss{0};
         // 0.7.1 §3.2：DropIfLate 丢弃计数（missed 计数含 RunAnyway 观测）。
         std::atomic<uint64_t> deadline_dropped{0};
+        // 0.7.1 §3.0.2/§3.0.3：自动推断建议 / 显式覆盖 / 执行器自动选择。
+        std::atomic<uint64_t> auto_inferred{0};
+        std::atomic<uint64_t> auto_inference_rejected{0};
+        std::atomic<uint64_t> auto_executor_selected{0};
     };
     mutable SchedulingMetricsCounters scheduling_counters_;
 
@@ -1291,6 +1312,28 @@ private:
     // 0.7.1 §3.1 资源预留：仅 enable_resource_reservation 时创建
     // （initialize()），未启用时所有提交路径零开销、行为同 0.7.0。
     std::unique_ptr<detail::ResourceReservationRegistry> resource_reservations_;
+
+    // 0.7.1 §3.0.2 任务特征自动推断：有界同名历史表（总是存在，开销
+    // 仅在开关开启时发生）+ 运行期开关。启用时 submit_auto 附加测量
+    // 包装（feedback 通道供表采样）并注解建议性推断。
+    std::unique_ptr<detail::TaskInferenceTable> task_inference_ =
+        std::make_unique<detail::TaskInferenceTable>();
+    std::atomic<bool> auto_inference_enabled_{false};
+
+    /**
+     * @brief 推断注解（0.7.1 §3.0.2，建议优先于切换）。
+     *
+     * 推断关闭或无信号时不做任何事。用户显式 intent（!= Auto）时若
+     * 推断有话可说，计 auto_inference_rejected_count；否则注解决策
+     * （AutoInferredIntent 位 + inferred_reason + detail 建议）并计
+     * auto_inferred_count。
+     */
+    void annotate_auto_inference(const TaskOptions& options,
+                                 RoutingDecision& decision) const noexcept;
+
+    /** @brief 重缓存反馈门（wants_feedback() 或自动推断开启时附加测量包装）。 */
+    void refresh_feedback_gate() noexcept;
+
 
     // 0.6.1 feedback 热路径开关：仅当注入的 IScheduler 声明
     // wants_feedback() 时，submit_auto 才为任务附加测量包装（时间戳采样
@@ -3237,7 +3280,11 @@ template<typename F, typename... Args>
 auto Executor::submit_auto(F&& f, Args&&... args)
     -> std::future<typename std::invoke_result<F, Args...>::type> {
     TaskOptions options;
-    record_routing_decision(route_task(options, false));
+    RoutingDecision decision = route_task(options, false);
+    // 0.7.1 §3.0.2：裸 callable 路径同样产出推断建议（共享池化键
+    // "submit_auto"，名称模式不适用于匿名 lambda）。
+    annotate_auto_inference(options, decision);
+    record_routing_decision(std::move(decision));
     return submit(std::forward<F>(f), std::forward<Args>(args)...);
 }
 
@@ -3281,6 +3328,9 @@ auto Executor::submit_auto(TaskBuilder<Function> task)
     // shutdown 排空）归还。
     std::shared_ptr<detail::TerminalReleaser> terminal_release;
     RoutingDecision decision = route_task(options, false);
+    // 0.7.1 §3.0.2：自动推断注解（建议优先于切换；在预留改写前注解，
+    // 预留拒绝的决策不携带推断噪音——annotate 内部跳过 Rejected）。
+    annotate_auto_inference(options, decision);
     if (decision.status != RoutingStatus::Rejected && resource_reservations_ &&
         detail::ResourceReservationRegistry::requires_reservation(
             options.resources)) {

@@ -92,6 +92,26 @@ public:
     }
 
     /**
+     * @brief 有界 dispatch 的执行器自动选择咨询（0.7.1 §3.0.3）。
+     *
+     * 仅当用户声明了 LowLatency/RealtimeQueue 意图但**未**显式指定
+     * preferred_executor 时被 facade 咨询；返回执行器名则按该名字路由
+     * （决策带 AutoExecutorSelection 诊断位），返回空表示不做自动选择
+     * ——facade 保持既有策略（结构化拒绝）。
+     *
+     * 默认实现返回空：DefaultScheduler 与 0.6.x 语义的自定义调度器
+     * 行为不变。选择依据与候选集见 AdaptiveScheduler 的覆写（瞬时
+     * 队列负载；lockfree 后端的执行期反馈接入在 v0.7.2）。
+     */
+    virtual std::optional<std::string> select_bounded_executor(
+        ExecutionIntent intent,
+        const std::vector<ExecutorCapability>& candidates) const {
+        (void)intent;
+        (void)candidates;
+        return std::nullopt;
+    }
+
+    /**
      * @brief 是否需要执行期反馈（0.6.1 热路径开关）。
      *
      * 返回 false（默认）时，submit_auto 不为任务附加测量包装，反馈通道

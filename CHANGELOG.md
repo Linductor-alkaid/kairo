@@ -6,12 +6,14 @@
 
 ## [Unreleased] — 0.7.1 开发快照
 
-v0.7.1 前三个阶段：submit_auto 路由智能化（roadmap §3.0.1）、
-deadline policy（roadmap §3.2）与资源预留 ResourceLease（roadmap
-§3.1）。全部为 additive（资源预留默认关闭）；默认行为与 0.7.0
-逐项一致（`tests/test_capability_cache.cpp` 锁定缓存开/关的决策
-一致性，`tests/test_deadline_policy.cpp` 锁定默认策略 = 0.6.x，
-`tests/test_resource_lease.cpp` 锁定未启用预留 = 0.7.0）。
+v0.7.1 全部四个阶段：submit_auto 路由智能化（roadmap §3.0.1 含
+§3.0.2/§3.0.3）、deadline policy（§3.2）与资源预留 ResourceLease
+（§3.1）。全部为 additive（资源预留与自动推断默认关闭）；默认行为
+与 0.7.0 逐项一致（`tests/test_capability_cache.cpp` 锁定缓存开/关
+的决策一致性，`tests/test_deadline_policy.cpp` 锁定默认策略 =
+0.6.x，`tests/test_resource_lease.cpp` 锁定未启用预留 = 0.7.0，
+`tests/test_auto_inference.cpp` 锁定默认无推断/DefaultScheduler
+不做执行器自动选择）。
 
 ### 调度
 
@@ -90,6 +92,32 @@ deadline policy（roadmap §3.2）与资源预留 ResourceLease（roadmap
   - 契约测试 `tests/test_resource_lease.cpp`（12 用例：opt-in 边界、
     手动授予/拒绝/RAII、GPU 各维度、任务绑定终态归还、并发超卖、
     终态释放矩阵、tracked 预留、多维全或无）。
+
+- **任务特征自动推断与执行器自动选择（roadmap §3.0.2/§3.0.3）**：
+  - **自动推断（opt-in，`enable_auto_inference` 默认关闭；运行期
+    `set_auto_inference_enabled()` 可调）**：submit_auto 按任务名
+    模式与同名任务完成间隔规律（有界 64 键历史表
+    `<kairo/task_inference.hpp>`，采样经反馈通道，启用时自动附加
+    测量包装）产出**建议性**推断——决策带 `AutoInferredIntent`
+    （`1u<<5`）位 + `RoutingDecision::inferred_reason` + detail 建议
+    （blocking → start_worker / 低延迟 → dispatch_auto /
+    periodic → submit_periodic），路由**不被改变**（submit_auto 的
+    future 契约只有默认池能履行——"建议优先于切换"的强制形态）；
+    显式 intent 优先并计 `auto_inference_rejected_count`，建议计
+    `auto_inferred_count`。
+  - **执行器自动选择（随 AdaptiveScheduler 注入 opt-in）**：
+    `IScheduler` 新增 `select_bounded_executor()` 虚方法（默认返回
+    空，DefaultScheduler 与既有自定义调度器行为不变）；未指定
+    preferred_executor 的 `dispatch_auto(LowLatency)` 由
+    AdaptiveScheduler 按瞬时队列负载（pending_work/capacity_hint）
+    选择 lockfree 执行器，并列取名字序，决策带 `AutoExecutorSelection`
+    （`1u<<6`）位 + `auto_executor_selected_count`。选择只用能力
+    快照（经 TTL 缓存）——lockfree 反馈通道在 v0.7.2 接入前不做
+    历史负载（冷启动即安全）。
+  - 契约测试 `tests/test_auto_inference.cpp`（11 用例：opt-in 边界、
+    模式注解与路由不变、显式覆盖、运行期开关、推断表 EWMA/periodic/
+    键空间上界、自动选择单元矩阵与 dispatch 集成、DefaultScheduler
+    回归守卫）。
 
 ### 提交路径
 

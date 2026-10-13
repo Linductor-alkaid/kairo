@@ -137,6 +137,11 @@ ExecutorResult Executor::initialize(const ExecutorConfig& config) {
             std::make_unique<detail::ResourceReservationRegistry>(
                 config.resource_quota);
     }
+    // 0.7.1 §3.0.2：任务特征自动推断 opt-in（历史表常驻，开关控制
+    // 注解与测量包装）。
+    auto_inference_enabled_.store(config.enable_auto_inference,
+                                  std::memory_order_release);
+    refresh_feedback_gate();
     // 默认池由同一配置创建，其队列计时器时长与本值一致；parked 依赖图任务
     // 的 facade 侧超时定时器（D1）据此武装。
     default_task_timeout_ms_.store(config.task_timeout_ms, std::memory_order_release);

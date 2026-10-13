@@ -60,13 +60,34 @@ Executor::CapabilityView Executor::acquire_route_capabilities(bool needs) const 
 }
 
 RoutingDecision Executor::route_dispatch(const TaskOptions& options) const {
+    // 0.7.1 §3.0.3 执行器自动选择：意图受支持但用户未显式指定
+    // preferred_executor 时，咨询注入的调度器（默认实现返回空，行为
+    // 不变；AdaptiveScheduler 按能力快照的瞬时队列负载选择）。选择
+    // 消费能力快照——经 TTL 缓存（§3.0 联动）。
+    const bool intent_supported =
+        options.intent == ExecutionIntent::LowLatency ||
+        options.intent == ExecutionIntent::RealtimeQueue;
+    const bool has_explicit_executor =
+        options.preferred_executor && !options.preferred_executor->empty();
+    if (intent_supported && !has_explicit_executor) {
+        CapabilityView selection_view = acquire_route_capabilities(true);
+        if (auto selected = task_scheduler_->select_bounded_executor(
+                options.intent, selection_view.get())) {
+            TaskOptions effective = options;
+            effective.preferred_executor = selected;
+            RoutingDecision decision =
+                task_router_.route_dispatch(effective, selection_view.get());
+            decision.diagnostics |= RoutingDiagnostics::AutoExecutorSelection;
+            decision.detail +=
+                "; executor auto-selected by scheduler (min queued load)";
+            return decision;
+        }
+    }
+
     // CR-106: 与 route_task 同理——intent 不支持或未指定 preferred_executor
     // 时是纯策略拒绝（TaskRouter::route_dispatch 的早退分支），能力采集
     // 仅在通过前置校验后才执行。
-    const bool policy_rejected =
-        (options.intent != ExecutionIntent::LowLatency &&
-         options.intent != ExecutionIntent::RealtimeQueue) ||
-        !options.preferred_executor || options.preferred_executor->empty();
+    const bool policy_rejected = !intent_supported || !has_explicit_executor;
     // 0.7.1 §3.0.1：与 route_task 共用能力快照 TTL 缓存；纯策略拒绝
     // 不消费能力表（不触发采集/计数）。
     CapabilityView capability_view =
@@ -152,6 +173,63 @@ ResourceReservationStatus Executor::get_resource_reservation_status() const {
         return {};
     }
     return resource_reservations_->status();
+}
+
+void Executor::set_auto_inference_enabled(bool enabled) noexcept {
+    auto_inference_enabled_.store(enabled, std::memory_order_release);
+    // 推断历史经反馈通道采样：开关切换需同步测量包装门。
+    refresh_feedback_gate();
+}
+
+void Executor::refresh_feedback_gate() noexcept {
+    scheduling_feedback_enabled_.store(
+        task_scheduler_ ? (task_scheduler_->wants_feedback() ||
+                           auto_inference_enabled_.load(std::memory_order_acquire))
+                        : false,
+        std::memory_order_release);
+}
+
+void Executor::annotate_auto_inference(const TaskOptions& options,
+                                       RoutingDecision& decision) const noexcept {
+    if (decision.status == RoutingStatus::Rejected ||
+        !auto_inference_enabled_.load(std::memory_order_acquire) ||
+        !task_inference_) {
+        return;
+    }
+    const int64_t now_ns = steady_now_ns();
+    const TaskCharacteristics characteristics = task_inference_->analyze(
+        options.name.empty() ? std::string("submit_auto") : options.name,
+        now_ns);
+    const char* reason = nullptr;
+    const char* suggestion = nullptr;
+    if (characteristics.is_blocking_io) {
+        reason = "blocking_io_pattern";
+        suggestion = "consider start_worker(BlockingWorkerSpec) for a "
+                     "dedicated blocking-I/O worker";
+    } else if (characteristics.needs_low_latency) {
+        reason = "low_latency_pattern";
+        suggestion =
+            "consider dispatch_auto(LowLatency) with a lock-free executor "
+            "for bounded low-latency dispatch";
+    } else if (characteristics.is_periodic) {
+        reason = "periodic_pattern";
+        suggestion = "consider submit_periodic() for regular soft-period work";
+    }
+    if (reason == nullptr) {
+        return;
+    }
+    if (options.intent != ExecutionIntent::Auto) {
+        // 用户显式 intent 优先：推断被覆盖，计数不注解决策。
+        scheduling_counters_.auto_inference_rejected.fetch_add(
+            1, std::memory_order_relaxed);
+        return;
+    }
+    decision.diagnostics |= RoutingDiagnostics::AutoInferredIntent;
+    decision.inferred_reason = reason;
+    decision.detail += decision.detail.empty() ? "" : "; ";
+    decision.detail +=
+        std::string("auto-inference (") + reason +
+        "): " + suggestion;
 }
 
 bool Executor::evaluate_deadline_policy(int64_t deadline_ns,
@@ -354,8 +432,8 @@ void Executor::set_scheduler(std::unique_ptr<IScheduler> scheduler) {
     }
     // 0.6.1：缓存 feedback 开关。wants_feedback() == false（默认，含
     // DefaultScheduler）时 submit_auto 不附加测量包装，反馈通道零开销。
-    scheduling_feedback_enabled_.store(task_scheduler_->wants_feedback(),
-                                       std::memory_order_release);
+    // 0.7.1 §3.0.2：自动推断开启时同样需要反馈流（历史采样）。
+    refresh_feedback_gate();
 }
 
 void Executor::record_routing_decision(RoutingDecision decision) {
@@ -444,6 +522,13 @@ void Executor::count_routing_metrics(const RoutingDecision& decision) {
     if (decision.diagnostics & RoutingDiagnostics::AdaptiveHistory) {
         scheduling_counters_.adaptive_history.fetch_add(1, relaxed);
     }
+    // 0.7.1 §3.0.2/§3.0.3：自动推断建议与执行器自动选择计数。
+    if (decision.diagnostics & RoutingDiagnostics::AutoInferredIntent) {
+        scheduling_counters_.auto_inferred.fetch_add(1, relaxed);
+    }
+    if (decision.diagnostics & RoutingDiagnostics::AutoExecutorSelection) {
+        scheduling_counters_.auto_executor_selected.fetch_add(1, relaxed);
+    }
 }
 
 SchedulingMetrics Executor::get_scheduling_metrics() const {
@@ -474,6 +559,13 @@ SchedulingMetrics Executor::get_scheduling_metrics() const {
     // 0.7.1 §3.2：deadline policy 丢弃计数。
     metrics.deadline_dropped_count =
         scheduling_counters_.deadline_dropped.load(relaxed);
+    // 0.7.1 §3.0.2/§3.0.3：自动推断与执行器自动选择计数。
+    metrics.auto_inferred_count =
+        scheduling_counters_.auto_inferred.load(relaxed);
+    metrics.auto_inference_rejected_count =
+        scheduling_counters_.auto_inference_rejected.load(relaxed);
+    metrics.auto_executor_selected_count =
+        scheduling_counters_.auto_executor_selected.load(relaxed);
     return metrics;
 }
 
@@ -485,6 +577,13 @@ void Executor::report_scheduling_feedback(const SchedulingFeedback& feedback) {
     // 0.7.0 M2 反馈聚合：worker 热路径无锁分片累加，noexcept（与下方
     // IScheduler 交付解耦；仅 wants_feedback() 时本通道有样本流入）。
     feedback_aggregator_.record(feedback);
+    // 0.7.1 §3.0.2：自动推断历史采样（仅推断开启时有流入）。
+    if (auto_inference_enabled_.load(std::memory_order_acquire) && task_inference_) {
+        task_inference_->record(
+            feedback,
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
     try {
         task_scheduler_->on_task_completed(feedback);
     } catch (...) {

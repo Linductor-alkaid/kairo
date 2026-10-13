@@ -511,3 +511,76 @@ CancelIfLate 协作完成（不抛异常）→ 下游照常执行；协作退出
   边界、手动授予/拒绝/RAII、GPU 各维度、任务绑定预留终态归还、
   并发超卖结构化拒绝、终态释放矩阵（异常/软超时/丢弃/admission
   拒绝）、tracked 预留与拒绝、多维全或无。
+
+## 13. 0.7.1 任务特征自动推断与执行器自动选择（roadmap §3.0.2/§3.0.3，开发快照）
+
+### 13.1 任务特征自动推断（§3.0.2，opt-in）
+
+`ExecutorConfig::enable_auto_inference`（默认关闭；运行期
+`set_auto_inference_enabled()` 可调）。启用时：
+
+- **采样**：submit_auto 附加测量包装（与 `wants_feedback()` 同级开销；
+  反馈门为 `wants_feedback() || enable_auto_inference`），完成反馈经
+  `report_scheduling_feedback` 喂入 `detail::TaskInferenceTable`——
+  按任务名的有界历史表（64 键，满后丢弃新名称并计数；record 在
+  worker 线程、analyze 在提交线程，互斥锁保护）。表内维护执行时长
+  EWMA 与完成间隔 EW 均值/方差（完成间隔近似提交间隔，文档化偏差）。
+- **推断规则（确定性，全部只建议不切换）**：
+  - blocking I/O：名称含 `_io_` / `_read_` / `_write_`（纯名称模式
+    即命中——建议的误报代价只是噪音，历史时长仅作为
+    `estimated_duration_ns` 报告值）；
+  - 低延迟：名称含 `_realtime_` / `_control_`；
+  - periodic：≥4 个完成间隔且 σ/μ < 10%。
+- **注解（建议优先于切换）**：submit_auto（裸 builder 两路）在路由
+  后注解 `RoutingDiagnostics::AutoInferredIntent`（`1u<<5`）位 +
+  新增 `RoutingDecision::inferred_reason` 字段 + detail 建议
+  （blocking → start_worker；低延迟 → dispatch_auto(LowLatency)；
+  periodic → submit_periodic），计 `auto_inferred_count`。
+  **路由不被改变**——submit_auto 的 `std::future` 契约只有默认池能
+  履行（lockfree/realtime 是有界 dispatch 语义，无 future 通道），
+  这正是 §3.0.3 "建议优先于自动切换"原则的强制形态（对路线图草图
+  中 `intent = LowLatency` 直接改写的一处有意偏差）。
+- **显式优先**：用户显式 intent（≠ Auto）时推断被跳过，若有话可说
+  计 `auto_inference_rejected_count`（"推断结果被用户显式设置覆盖"）。
+  提交时点被拒绝的决策不注解。
+
+### 13.2 有界 dispatch 的执行器自动选择（§3.0.3.1，随调度器 opt-in）
+
+`IScheduler` 新增虚方法
+`select_bounded_executor(intent, candidates) -> optional<string>`：
+仅在用户声明 LowLatency/RealtimeQueue 意图但**未**显式指定
+preferred_executor 时被 `route_dispatch` 咨询；默认实现返回空
+（DefaultScheduler 与 0.6.x 自定义调度器行为不变，策略拒绝保持）。
+`AdaptiveScheduler` 覆写：LowLatency 意图下在 lockfree 候选中按
+**瞬时队列负载**（pending_work 相对 capacity_hint 占用率；未知容量
+按绝对 pending_work）选最空闲者，并列取名字序（确定性）；
+registered/running 之外的候选与已满候选被过滤，无可用候选返回空。
+选择依据是能力快照（经 §10 的 TTL 缓存，§3.0 联动的"缓存的能力
+快照包含资源可用量"形态之一），**不依赖执行期历史**——lockfree
+后端的反馈通道在 v0.7.2（§4.1）才接入，因此这里不做历史负载；
+命中时决策带 `RoutingDiagnostics::AutoExecutorSelection`（`1u<<6`）
+位 + detail 负载说明，计 `auto_executor_selected_count`。
+RealtimeQueue 不做负载选择（周期语义）。
+
+### 13.3 与路线图的偏差与未落地项
+
+- `RoutingDecision::original_intent` 未添加：推断从不改写 intent
+  （建议优先于切换），原始意图恒等于 requested_intent，字段无信息量。
+- §3.0.3.2（动态意图调整建议）并入 §3.0.2 的建议注解形态。
+- §3.0.3.3（冷启动保守启发式）由 0.7.0 M3 的既有行为覆盖
+  （min_samples 不足回退 0.6.1 启发式）。
+- 验收线偏差：§3.0.3 的"多 lockfree 场景 p99 queue_wait 降低 >20%"
+  依赖 lockfree 后端的 queue_wait 测量（v0.7.2 §4.1 反馈接入），
+  本阶段以"最小负载当选的确定性断言 + 并列/过滤/回归守卫"替代
+  （`tests/test_auto_inference.cpp`，11 用例）；"热路径 <80ns"由
+  §3.0.1 的缓存命中路径覆盖（898ns 端到端含提交协议，路由增量同
+  §3.0.1 实测）。
+
+### 13.4 验收（`tests/test_auto_inference.cpp`）
+
+opt-in 边界（默认零建议零计数）；blocking/低延迟模式注解与路由
+不变；显式 intent 覆盖计数；运行期开关回退；TaskInferenceTable
+EWMA/periodic/键空间上界单元；自动选择单元矩阵（最小负载、并列
+名字序、未运行/已满过滤、RealtimeQueue/空候选）；dispatch_auto
+集成（AdaptiveScheduler 注入后自动选择 + 指标；DefaultScheduler
+回归守卫）。

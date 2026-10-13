@@ -56,7 +56,15 @@ migration required:
   `CapacityPressure` + `ResourceInfeasible`. Manual entry point
   `try_reserve()` (RAII `ResourceLease`); with the switch off, behavior
   and cost match 0.7.0 exactly.
-- Full semantics: `docs/design/scheduling_runtime.md` §10/§11/§12 and the
+- **Auto inference and executor auto-selection (§3.0.2/§3.0.3, default
+  off)**: `enable_auto_inference` makes submit_auto produce
+  **suggestive** inferences from task-name patterns and completion
+  interval regularity (`AutoInferredIntent` bit + `inferred_reason` +
+  detail suggestion; routing is never changed); with AdaptiveScheduler
+  injected, `dispatch_auto(LowLatency)` without a preferred executor
+  picks the least-loaded lockfree executor (`AutoExecutorSelection`).
+- Full semantics: `docs/design/scheduling_runtime.md`
+  §10/§11/§12/§13 and the
   "upgrading from 0.7.0 to 0.7.1" section of
   [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md).
 
