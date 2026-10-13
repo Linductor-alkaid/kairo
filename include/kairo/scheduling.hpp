@@ -67,10 +67,19 @@ const char* deadline_policy_to_string(DeadlinePolicy policy) noexcept;
  *
  * 声明式描述任务对设备资源的要求，供调度器在路由/准入时与后端
  * 能力快照核对。不满足时任务被拒绝并携带原因，不会隐式降级。
+ *
+ * 0.7.1 §3.1 起另可表达预留需求（`gpu_concurrent_slots` /
+ * `cpu_exclusive_cores`）：facade 启用资源预留（`ExecutorConfig::
+ * enable_resource_reservation` + `resource_quota`）时，声明的量在
+ * admission 时从配额中真正扣留，任务终态（成功/异常/取消/shutdown
+ * 排空）释放；未启用预留时这些字段只参与既有路由可行性核对。
  */
 struct ResourceRequirements {
     size_t memory_bytes = 0;   // 0 = 不声明；用于 GPU 内存可行性检查
     int gpu_device = -1;       // -1 = 不指定；>=0 时要求 GPU 执行器使用该设备
+    // ---- 0.7.1 §3.1：预留维度（声明 >0 且启用预留时参与预留）----
+    size_t gpu_concurrent_slots = 0;  // GPU 并发槽需求；需 gpu_device >= 0
+    size_t cpu_exclusive_cores = 0;   // CPU 独占核需求
 };
 
 /**

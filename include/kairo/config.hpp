@@ -6,7 +6,9 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <unordered_map>
 #include "types.hpp"
+#include "resource_lease.hpp"
 
 namespace kairo {
 
@@ -91,6 +93,14 @@ struct ExecutorConfig {
     // PriorityScheduler（默认关闭）。语义见 ThreadPoolConfig 同名字段。
     bool enable_priority_aging = false;
     int64_t priority_aging_interval_ns = 100'000'000;
+    // 0.7.1 §3.1：资源预留（默认关闭）。启用后，声明了可预留需求
+    // （ResourceRequirements 的 memory_bytes / gpu_concurrent_slots /
+    // cpu_exclusive_cores）的提交在 admission 时从 resource_quota 中
+    // 真正扣留配额，任务终态（成功/异常/取消/shutdown 排空）归还；
+    // 配额不足以结构化拒绝（ResourceInfeasible 诊断位）结算。未启用
+    // 时所有提交路径行为与开销与 0.7.0 完全一致。
+    bool enable_resource_reservation = false;
+    ResourceQuota resource_quota;
 };
 
 /**

@@ -42,9 +42,16 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
   `CancelIfLate` 错过发协作停止请求（非抢占），用户代码经
   `kairo::get_stop_token()` 轮询。tracked 提交新增
   `submit_after(_with_handle)` 的 TaskBuilder 重载。
-- 完整语义见 `docs/design/scheduling_runtime.md` §10/§11 与
+- **资源预留 ResourceLease（§3.1，默认关闭）**：
+  `ExecutorConfig::enable_resource_reservation` + `resource_quota`
+  启用后，声明 `resources()` 的提交在 admission 时从显式配额真正
+  扣留（GPU 显存/并发槽、CPU 独占核），任务终态归还；配额不足以
+  `CapacityPressure` + `ResourceInfeasible` 结构化拒绝。手动入口
+  `try_reserve()`（RAII `ResourceLease`）；未启用时行为与开销与
+  0.7.0 完全一致。
+- 完整语义见 `docs/design/scheduling_runtime.md` §10/§11/§12 与
   [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md)
-  的"从 0.7.0 升级到 0.7.1"一节；ResourceLease（§3.1）尚未落地。
+  的"从 0.7.0 升级到 0.7.1"一节。
 
 ## 0.7.0：Runtime-aware Scheduling
 

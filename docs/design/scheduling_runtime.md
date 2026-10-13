@@ -469,3 +469,45 @@ CancelIfLate 协作完成（不抛异常）→ 下游照常执行；协作退出
 - 依赖传播矩阵：丢弃上游 → 下游 `DependencyCancelled`；RunAnyway /
   协作完成上游 → 下游正常执行；未错过 tracked 丢弃策略零作用。
 - 指标守恒：每次严格错过恰计一次 missed；dropped 只归 DropIfLate。
+
+## 12. 0.7.1 ResourceLease / 资源预留（roadmap §3.1，开发快照）
+
+闭合 §6.4 记录的 TOCTOU 窗口的 facade 级方案：admission 时从**显式
+声明的静态配额**中真正扣留资源，任务终态归还。
+
+- **opt-in（默认关闭）**：`ExecutorConfig::enable_resource_reservation`
+  + `resource_quota`（`ResourceQuota`：GPU 显存桶、GPU 并发槽桶、
+  CPU 独占核总量）。未启用时注册表不创建，所有提交路径行为与开销
+  与 0.7.0 完全一致。配额是显式声明值而非能力快照读数——预留是
+  facade 级的确定性簿记，闭合"多个声明相同资源的提交在 admission
+  与执行之间超卖"的窗口；硬件层弱一致语义（0.6.1 契约）不变。
+- **需求面**：`ResourceRequirements` 新增 `gpu_concurrent_slots` /
+  `cpu_exclusive_cores`（`memory_bytes` 复用为 GPU 显存需求）。
+  消费面：`submit_auto(TaskBuilder)` 与 tracked TaskBuilder 重载。
+  `CpuGpuTask` 的 GPU 投递路径本阶段不接入。
+- **授予语义（全或无）**：联合需求任一维度不足则整体拒绝、零部分
+  授予；GPU 维度未指定 device → `InvalidRequirement`，device 未在
+  配额中声明 → `NotConfigured`。互斥锁保护——预留只发生在声明资源
+  且启用预留的提交上，不在未声明快车道。
+- **决策一致性**：submit_auto 在记录决策**前**尝试预留，失败则改写
+  为 `CapacityPressure` + `ResourceInfeasible` 诊断位（计入既有
+  `resource_rejected_count`），保持 0.6.1 的"决策与实际投递结果
+  一致"不变式；tracked 路径以结构化拒绝结算（未创建图节点）。
+- **终态释放**：`detail::TerminalReleaser`（CAS 恰好一次 + 析构
+  兜底）经 `submit_priority_scheduled` / `submit_tracked_with_hook`
+  新增的 `terminal_release` 参数接入既有 admission 释放链——成功、
+  异常、协作取消、DropIfLate 丢弃、queued 软超时、提交拒绝、
+  shutdown 排空丢弃排队任务全部路径均归还（admission 机制的
+  CR-010/011 级异常路径覆盖原样复用）。
+- **手动入口**：`Executor::try_reserve(ResourceRequirements) ->
+  ReservationResult{ResourceLease, ReserveError}`（RAII、move-only、
+  `release()` 幂等）供任务绑定之外的用途；`Executor::
+  get_resource_reservation_status()` 输出 granted/rejected/active
+  计数与在租量。
+- **后续联动（未落地）**：调度器把 lease 可得性作为 candidate
+  filter 输入（roadmap §3.1）；能力缓存快照包含资源可用量供 auto
+  路由预过滤（roadmap §3.0 联动）。
+- **验收**：`tests/test_resource_lease.cpp`（12 用例）——opt-in
+  边界、手动授予/拒绝/RAII、GPU 各维度、任务绑定预留终态归还、
+  并发超卖结构化拒绝、终态释放矩阵（异常/软超时/丢弃/admission
+  拒绝）、tracked 预留与拒绝、多维全或无。

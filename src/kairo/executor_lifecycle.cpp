@@ -130,6 +130,13 @@ ExecutorResult Executor::initialize(const ExecutorConfig& config) {
         trim_task_graph_retention_locked();
     }
     max_in_flight_tasks_.store(config.max_in_flight_tasks, std::memory_order_release);
+    // 0.7.1 §3.1：资源预留 opt-in——仅在显式启用时创建注册表；未启用
+    // 时成员保持空，所有提交路径零开销、行为与 0.7.0 完全一致。
+    if (config.enable_resource_reservation) {
+        resource_reservations_ =
+            std::make_unique<detail::ResourceReservationRegistry>(
+                config.resource_quota);
+    }
     // 默认池由同一配置创建，其队列计时器时长与本值一致；parked 依赖图任务
     // 的 facade 侧超时定时器（D1）据此武装。
     default_task_timeout_ms_.store(config.task_timeout_ms, std::memory_order_release);

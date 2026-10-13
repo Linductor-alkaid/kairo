@@ -48,10 +48,17 @@ migration required:
   `CancelIfLate` issues a cooperative stop request (no preemption) and
   user code polls `kairo::get_stop_token()`. Tracked submissions gain
   TaskBuilder overloads of `submit_after(_with_handle)`.
-- Full semantics: `docs/design/scheduling_runtime.md` §10/§11 and the
+- **Resource reservation / ResourceLease (§3.1, default off)**:
+  `ExecutorConfig::enable_resource_reservation` + `resource_quota`
+  make submissions that declare `resources()` actually hold quota at
+  admission (GPU memory / slots, CPU exclusive cores) and release it at
+  task terminal state; shortfalls reject structurally with
+  `CapacityPressure` + `ResourceInfeasible`. Manual entry point
+  `try_reserve()` (RAII `ResourceLease`); with the switch off, behavior
+  and cost match 0.7.0 exactly.
+- Full semantics: `docs/design/scheduling_runtime.md` §10/§11/§12 and the
   "upgrading from 0.7.0 to 0.7.1" section of
   [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md).
-  ResourceLease (§3.1) is not landed yet.
 
 ## 0.7.0: Runtime-aware Scheduling
 

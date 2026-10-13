@@ -6,9 +6,9 @@
 
 ## 从 0.7.0 升级到 0.7.1（开发快照：无必需迁移）
 
-0.7.1 当前为开发快照（roadmap §3.0.1 submit_auto 路由智能化与 §3.2
-deadline policy 已落地；ResourceLease 见路线图 §3.1，尚未落地）。
-已落地部分全部为 additive，**不迁移任何代码即可升级**。
+0.7.1 当前为开发快照（roadmap §3.0.1 submit_auto 路由智能化、§3.2
+deadline policy、§3.1 资源预留 ResourceLease 已落地）。已落地部分
+全部为 additive（资源预留默认关闭），**不迁移任何代码即可升级**。
 
 ### 行为差异（默认开启，语义 additive）
 
@@ -40,6 +40,8 @@ deadline policy 已落地；ResourceLease 见路线图 §3.1，尚未落地）�
 | `submit_after / submit_after_with_handle` 的 TaskBuilder 重载 | 依赖任务携带完整 TaskOptions（deadline/策略/QoS/优先级）；上游 DropIfLate 丢弃时下游收 `DependencyCancelled` |
 | `kairo::get_stop_token()`（`<kairo/stop_token.hpp>`） | 当前任务执行线程的协作停止令牌：CancelIfLate 错过时已请求；非任务上下文返回空令牌 |
 | `DeadlinePolicy` / `TaskCancellationReason::DeadlineMissed` | 新枚举值；对 `TaskCancellationReason` 穷举 switch 的代码需补新分支 |
+| `ExecutorConfig::enable_resource_reservation` + `resource_quota` | 0.7.1 §3.1：资源预留（默认关闭；未启用时行为与开销与 0.7.0 完全一致）。启用后声明 `resources()` 的提交在 admission 扣留配额、任务终态归还、不足以 `CapacityPressure`+`ResourceInfeasible` 结构化拒绝 |
+| `<kairo/resource_lease.hpp>`：`ResourceQuota` / `ResourceLease` / `ReservationResult` / `try_reserve()` / `get_resource_reservation_status()` | 手动预留与诊断快照；`ResourceRequirements` 新增 `gpu_concurrent_slots` / `cpu_exclusive_cores` 维度（联合需求全或无授予） |
 
 ### deadline policy 语义要点（0.6.x 行为不变的部分）
 

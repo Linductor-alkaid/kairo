@@ -14,7 +14,8 @@
 > **0.7.1 §3.0.1 已落地**（能力快照 TTL 缓存 + submit_fast，分支
 > feat/v071-capability-cache；设计语义 `scheduling_runtime.md` §10，
 > 验收记录见该节 §10.3）。**§3.2 已落地**（deadline policy +
-> 依赖传播，`scheduling_runtime.md` §11）。§3.0.2/§3.0.3/§3.1 未落地。
+> 依赖传播，`scheduling_runtime.md` §11）。**§3.1 已落地**（资源预留
+> ResourceLease，`scheduling_runtime.md` §12）。§3.0.2/§3.0.3 未落地。
 > 输入：`docs/design/scheduling_runtime.md` §5/§6、`docs/CODE_REVIEW_2026-09-30.md`
 > 未结项、`CHANGELOG.md` 0.6.x 边界声明。
 
@@ -279,9 +280,18 @@ auto submit_auto(F&& f) {
 - 冷启动期间（< min_samples）误判率 < 5%（通过合成负载矩阵验证）
 - 热路径开销：能力缓存命中时 route 路径 < 80ns（相比 M3 的 ~120ns 进一步优化）
 
-### 3.1 ResourceLease / ReservationToken
+### 3.1 ResourceLease / ReservationToken ✅ 已落地（2026-10-14）
 
 闭合 §6.4 记录的 TOCTOU 窗口：admission 时就真正保留资源，而不是只做可行性判断。
+
+> 落地形态说明：配额为**显式静态声明**（`ExecutorConfig::resource_quota`，
+> opt-in 默认关闭），而非能力快照读数——预留是 facade 级确定性簿记，
+> 闭合的是多提交对同一资源声明维度的超卖窗口；硬件层弱一致契约不变。
+> 终态释放复用 admission 释放链（CAS 恰好一次 + 析构兜底，CR-010/011
+> 级异常路径覆盖原样复用）。首批维度：GPU 显存额度、GPU 并发槽、
+> CPU 独占核（静态配额式，非 §5 的"按绑核独占"形态——后者需池
+> 内核亲和调度支持，留待后续）。设计语义与验收见
+> `docs/design/scheduling_runtime.md` §12。
 
 - 资源类型（首批）：GPU 显存额度、GPU 并发槽、CPU 独占核（§5 "独占核 reservation"）。
 - 语义：`try_reserve(ResourceRequirements) -> expected<ResourceLease, ReserveError>`；lease 采用

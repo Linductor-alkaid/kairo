@@ -67,6 +67,10 @@ Use it only for long-lived, shape-stable workloads whose callers can respond to 
 - `CancelIfLate`: a cooperative stop request is issued before the user code starts (no preemption); poll `kairo::get_stop_token()` (empty token outside task context) and exit promptly.
 - Only applies when a `deadline` is declared; `CpuGpuTask` ignores it at this stage. Tracked submissions: `submit_after / submit_after_with_handle` accept a TaskBuilder (deadline/policy/QoS/priority), so a dropped upstream propagates `DependencyCancelled` downstream.
 
+## Resource Reservation (0.7.1; dev snapshot, opt-in)
+
+Enable via `ExecutorConfig::enable_resource_reservation` + `resource_quota` (`<kairo/resource_lease.hpp>`: GPU memory / concurrent slots per device, CPU exclusive cores). Submissions declaring `resources(...)` then hold quota from admission and release it at the task's terminal state (success, exception, cancellation, drop, soft timeout, submission rejection, shutdown drain). Shortfalls reject structurally (`CapacityPressure` + `ResourceInfeasible`); joint requirements grant all-or-nothing; the quota is a static declaration, not a capability-snapshot read, and the hardware-level weak-consistency contract is unchanged. Manual entry: `executor.try_reserve(req)` returns a RAII `ReservationResult`/`ResourceLease` (move-only, idempotent `release()`); `get_resource_reservation_status()` exposes granted/rejected/active counts. With the switch off, behavior and cost match 0.7.0 exactly.
+
 ## Integration Pitfalls
 
 - Priority chooses waiting work first; it cannot preempt a task already running. Sustained critical work can starve lower priorities.

@@ -132,6 +132,28 @@ void Executor::invalidate_capability_cache() noexcept {
     capability_cache_.store(nullptr);
 }
 
+ReservationResult Executor::try_reserve(
+    const ResourceRequirements& requirements) {
+    ReservationResult result;
+    if (!resource_reservations_) {
+        result.error = ReserveError::NotConfigured;
+        return result;
+    }
+    std::shared_ptr<detail::TerminalReleaser> releaser;
+    result.error = resource_reservations_->try_acquire(requirements, releaser);
+    if (result.error == ReserveError::None) {
+        result.lease = ResourceLease(std::move(releaser));
+    }
+    return result;
+}
+
+ResourceReservationStatus Executor::get_resource_reservation_status() const {
+    if (!resource_reservations_) {
+        return {};
+    }
+    return resource_reservations_->status();
+}
+
 bool Executor::evaluate_deadline_policy(int64_t deadline_ns,
                                         DeadlinePolicy policy,
                                         const std::string& executor_name,

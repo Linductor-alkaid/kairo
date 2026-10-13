@@ -6,10 +6,12 @@
 
 ## [Unreleased] — 0.7.1 开发快照
 
-v0.7.1 前两个阶段：submit_auto 路由智能化（roadmap §3.0.1）与
-deadline policy（roadmap §3.2）。全部为 additive；默认行为与 0.7.0
+v0.7.1 前三个阶段：submit_auto 路由智能化（roadmap §3.0.1）、
+deadline policy（roadmap §3.2）与资源预留 ResourceLease（roadmap
+§3.1）。全部为 additive（资源预留默认关闭）；默认行为与 0.7.0
 逐项一致（`tests/test_capability_cache.cpp` 锁定缓存开/关的决策
-一致性，`tests/test_deadline_policy.cpp` 锁定默认策略 = 0.6.x）。
+一致性，`tests/test_deadline_policy.cpp` 锁定默认策略 = 0.6.x，
+`tests/test_resource_lease.cpp` 锁定未启用预留 = 0.7.0）。
 
 ### 调度
 
@@ -64,6 +66,30 @@ deadline policy（roadmap §3.2）。全部为 additive；默认行为与 0.7.0
     miss 观测）；无 deadline 时策略字段无效。契约矩阵
     `tests/test_deadline_policy.cpp`（14 用例：边界不漂移、三策略 ×
     强制错过、依赖传播矩阵、指标守恒）。
+
+- **资源预留 ResourceLease（roadmap §3.1，additive，默认关闭）**：
+  `ExecutorConfig::enable_resource_reservation` + `resource_quota`
+  （新增公开头 `<kairo/resource_lease.hpp>`：GPU 显存/并发槽按
+  device 分桶、CPU 独占核总量的显式配额）启用后，声明了
+  `resources()` 的 `submit_auto(TaskBuilder)` 与 tracked TaskBuilder
+  提交在 admission 时从配额真正扣留，闭合多提交在 admission 与执行
+  之间超卖同一资源的 TOCTOU 窗口；任务终态归还。
+  - 授予全或无：联合需求任一维度不足整体拒绝、零部分授予；GPU 维度
+    缺 device → `InvalidRequirement`，device 未配额 → `NotConfigured`。
+  - 决策一致性：submit_auto 在记录决策前预留，失败改写为
+    `CapacityPressure` + `ResourceInfeasible`（计入既有
+    `resource_rejected_count`）；tracked 路径以结构化拒绝结算。
+  - 终态释放：`detail::TerminalReleaser`（CAS 恰好一次 + 析构兜底）
+    经 `submit_priority_scheduled` / `submit_tracked_with_hook` 新增
+    的 `terminal_release` 参数接入既有 admission 释放链——成功/异常/
+    协作取消/丢弃/软超时/提交拒绝/shutdown 排空全部路径归还。
+  - 手动入口：`Executor::try_reserve(req) -> ReservationResult`
+    （RAII `ResourceLease`，move-only、release 幂等）+ 诊断快照
+    `get_resource_reservation_status()`；`ResourceRequirements` 新增
+    `gpu_concurrent_slots` / `cpu_exclusive_cores` 维度。
+  - 契约测试 `tests/test_resource_lease.cpp`（12 用例：opt-in 边界、
+    手动授予/拒绝/RAII、GPU 各维度、任务绑定终态归还、并发超卖、
+    终态释放矩阵、tracked 预留、多维全或无）。
 
 ### 提交路径
 

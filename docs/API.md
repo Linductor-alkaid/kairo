@@ -511,6 +511,22 @@ deadline/策略/QoS/优先级；QoS→默认优先级映射与调度器咨询语
 `docs/design/scheduling_runtime.md` §11 与
 `tests/test_deadline_policy.cpp`。
 
+**0.7.1 开发快照（资源预留 ResourceLease，roadmap §3.1）**：
+opt-in——`ExecutorConfig::enable_resource_reservation` +
+`resource_quota`（`<kairo/resource_lease.hpp>` 的 `ResourceQuota`：
+GPU 显存/并发槽按 device 分桶、CPU 独占核总量）启用后，声明了
+`resources()` 的 `submit_auto(TaskBuilder)` 与 tracked TaskBuilder
+提交在 admission 时从配额真正扣留，任务终态（成功/异常/取消/丢弃/
+软超时/提交拒绝/shutdown 排空）归还；配额不足以
+`CapacityPressure` + `ResourceInfeasible` 结构化拒绝（决策记录前
+改写，保持决策/投递一致性）。未启用时行为与开销与 0.7.0 完全一致。
+`ResourceRequirements` 新增 `gpu_concurrent_slots` / `cpu_exclusive_cores`
+维度；联合需求全或无授予。手动入口 `try_reserve(req) ->
+ReservationResult`（RAII `ResourceLease`，move-only、`release()`
+幂等）与诊断快照 `get_resource_reservation_status()`。设计语义见
+`docs/design/scheduling_runtime.md` §12，终态释放矩阵见
+`tests/test_resource_lease.cpp`。
+
 ### 3.9 延迟与周期任务
 
 > ⚠️ **API 范围提示**：`submit_delayed`、`submit_periodic` **仅在 `Executor` Facade 类中提供**，**不属于** `IAsyncExecutor`、`IExecutor` 或 `ThreadPool` 的接口。用户直接对底层 `ThreadPool` 实例调用这些方法会编译失败。延迟与周期任务统一由 Facade 内部的 `ExecutorManager` 调度，底层 `ThreadPool` 不感知任务时间维度。
