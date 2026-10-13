@@ -132,6 +132,63 @@ void Executor::invalidate_capability_cache() noexcept {
     capability_cache_.store(nullptr);
 }
 
+bool Executor::evaluate_deadline_policy(int64_t deadline_ns,
+                                        DeadlinePolicy policy,
+                                        const std::string& executor_name,
+                                        const std::string& task_id,
+                                        StopSource* cancel_target) noexcept {
+    // 无 deadline 或未严格错过（恰好相等接受，与 0.6.1 准入边界一致）：
+    // 不产生任何观测或处置。
+    if (deadline_ns <= 0) {
+        return true;
+    }
+    const int64_t now_ns = steady_now_ns();
+    if (now_ns <= deadline_ns) {
+        return true;
+    }
+
+    constexpr auto relaxed = std::memory_order_relaxed;
+    scheduling_counters_.deadline_missed.fetch_add(1, relaxed);
+
+    switch (policy) {
+    case DeadlinePolicy::DropIfLate: {
+        scheduling_counters_.deadline_dropped.fetch_add(1, relaxed);
+        return false;
+    }
+    case DeadlinePolicy::CancelIfLate:
+        // 协作式取消请求，不是抢占：任务仍启动，用户代码经
+        // this_task::get_stop_token() 观测并自行退出。
+        if (cancel_target) {
+            cancel_target->request_stop();
+        }
+        return true;
+    case DeadlinePolicy::RunAnyway:
+    default: {
+        // 0.6.x miss-observe：记录 failure 事件（任务仍执行）。
+        ExecutorFailureEvent event;
+        event.kind = FailureKind::DeadlineMissed;
+        event.executor_name = executor_name;
+        event.task_id = task_id;
+        event.message = "task started after declared deadline";
+        record_failure(std::move(event));
+        return true;
+    }
+    }
+}
+
+bool Executor::is_deadline_drop_exception(std::exception_ptr exception) noexcept {
+    if (!exception) {
+        return false;
+    }
+    try {
+        std::rethrow_exception(exception);
+    } catch (const TaskCancelled& cancelled) {
+        return cancelled.reason() == TaskCancellationReason::DeadlineMissed;
+    } catch (...) {
+        return false;
+    }
+}
+
 void Executor::set_failure_callback(ExecutorFailureCallback callback) {
     std::lock_guard<std::mutex> lock(failure_mutex_);
     failure_callback_ = std::move(callback);
@@ -392,6 +449,9 @@ SchedulingMetrics Executor::get_scheduling_metrics() const {
         scheduling_counters_.capability_cache_hit.load(relaxed);
     metrics.capability_cache_miss_count =
         scheduling_counters_.capability_cache_miss.load(relaxed);
+    // 0.7.1 §3.2：deadline policy 丢弃计数。
+    metrics.deadline_dropped_count =
+        scheduling_counters_.deadline_dropped.load(relaxed);
     return metrics;
 }
 

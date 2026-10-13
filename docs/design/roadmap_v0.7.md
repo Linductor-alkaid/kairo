@@ -13,7 +13,8 @@
 > 0.7.0 里程碑全部完成，下一版本为 0.7.1（§3）。
 > **0.7.1 §3.0.1 已落地**（能力快照 TTL 缓存 + submit_fast，分支
 > feat/v071-capability-cache；设计语义 `scheduling_runtime.md` §10，
-> 验收记录见该节 §10.3）。§3.0.2/§3.0.3/§3.1/§3.2 未落地。
+> 验收记录见该节 §10.3）。**§3.2 已落地**（deadline policy +
+> 依赖传播，`scheduling_runtime.md` §11）。§3.0.2/§3.0.3/§3.1 未落地。
 > 输入：`docs/design/scheduling_runtime.md` §5/§6、`docs/CODE_REVIEW_2026-09-30.md`
 > 未结项、`CHANGELOG.md` 0.6.x 边界声明。
 
@@ -290,9 +291,19 @@ auto submit_auto(F&& f) {
 - 与 0.7.0 联动：调度器可以把 lease 的可得性作为 candidate filter 输入。
 - **与 3.0 联动**：缓存的能力快照包含资源可用量，auto 路由可以预先过滤资源不足的候选。
 
-### 3.2 deadline policy
+### 3.2 deadline policy ✅ 已落地（2026-10-14）
 
 在已有的 admit → EDF → miss-observe 之上，增加 per-task 策略：
+
+> 落地形态说明：裁决点为开始执行时（facade 包装层，与 0.6.1
+> miss-observe 同点同边界），而非池出队点——策略经由 facade 的
+> deadline 包装表达，覆盖 submit_auto(TaskBuilder) 与新增的
+> submit_after/submit_after_with_handle TaskBuilder 重载（依赖传播
+> 由此成为真实可测路径）；`DropIfLate` 终态复用取消类约定
+> （`TaskCancelled(DeadlineMissed)`，依赖方经既有归类规则收到
+> `DependencyCancelled`）；`CancelIfLate` 的令牌经新增
+> `kairo::get_stop_token()`（thread_local + RAII）暴露。设计语义与
+> 验收矩阵见 `docs/design/scheduling_runtime.md` §11。
 
 - `RunAnyway`（默认，等于 0.6.x 行为）/ `DropIfLate`（出队时已过期则不执行，以
   `DeadlineMissed` 终态结算）/ `CancelIfLate`（向任务的 StopToken 发协作式取消请求，**不是抢占**）。

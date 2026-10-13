@@ -179,6 +179,9 @@ struct TaskOptions {
     std::optional<std::string> preferred_executor;
     FallbackPolicy fallback = FallbackPolicy::NoFallback;
     std::optional<std::chrono::steady_clock::time_point> deadline;
+    // 0.7.1 §3.2：开始执行时已错过 deadline 的处置策略；仅与 deadline
+    // 同时声明时生效（无 deadline 时忽略）。见 DeadlinePolicy。
+    DeadlinePolicy deadline_policy = DeadlinePolicy::RunAnyway;
     QosClass qos = QosClass::Standard;
     AffinityHint affinity;
     ResourceRequirements resources;
@@ -274,6 +277,11 @@ public:
 
     TaskBuilder& deadline(std::chrono::steady_clock::time_point value) noexcept {
         options_.deadline = value;
+        return *this;
+    }
+
+    TaskBuilder& deadline_policy(DeadlinePolicy value) noexcept {
+        options_.deadline_policy = value;
         return *this;
     }
 

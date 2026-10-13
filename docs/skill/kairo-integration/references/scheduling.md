@@ -58,6 +58,15 @@ Use it only for long-lived, shape-stable workloads whose callers can respond to 
 - **Capability snapshot TTL cache (default on)**: the capability reads behind `submit_auto` CpuOrGpu/affinity routing and `dispatch_auto` go through a 100 ms TTL cache instead of taking the registry locks per submit. Backend registration/start/stop (including facade realtime / blocking-IO start and shutdown) invalidates the cache immediately via the manager `state_epoch`; the TTL only bounds drift of runtime numbers (queue depth, GPU free memory). Decisions are identical with the cache on or off; cache hits are marked with `RoutingDiagnostics::CapabilityCacheHit` (`1u<<7`) and `RoutingDecision::capability_from_cache`. Control: `set_capability_cache_ttl()` (0 disables), `invalidate_capability_cache()`; new `SchedulingMetrics` counters `capability_cache_hit_count` / `capability_cache_miss_count`. The public `get_executor_capabilities()` stays uncached (always fresh).
 - **`submit_fast(f, args...)`**: zero-routing submission equivalent to `submit_priority(NORMAL, ...)` with no `RoutingDecision` (no metrics, no recent-decisions entry). Use only for certain CPU-only work with no deadline/QoS/affinity/resource constraints and no routing-observability requirement; otherwise prefer `submit_auto`.
 
+## Deadline Policy (0.7.1; dev snapshot)
+
+`deadline_policy()` (TaskBuilder / `TaskOptions::deadline_policy`) decides what happens when a task starts after its declared deadline - same decision point and strictly-past boundary as the 0.6.1 miss observation, never affecting `DeadlineExpired` admission or EDF ordering:
+
+- `RunAnyway` (default): 0.6.x behavior (runs, records `DeadlineMissed`).
+- `DropIfLate`: user code never runs; the future settles with `TaskCancelled(DeadlineMissed)` (counted in `deadline_dropped_count`, not in failure stats - cancellation convention); graph dependents receive `DependencyCancelled`. Only meaningful when the result is worthless once stale.
+- `CancelIfLate`: a cooperative stop request is issued before the user code starts (no preemption); poll `kairo::get_stop_token()` (empty token outside task context) and exit promptly.
+- Only applies when a `deadline` is declared; `CpuGpuTask` ignores it at this stage. Tracked submissions: `submit_after / submit_after_with_handle` accept a TaskBuilder (deadline/policy/QoS/priority), so a dropped upstream propagates `DependencyCancelled` downstream.
+
 ## Integration Pitfalls
 
 - Priority chooses waiting work first; it cannot preempt a task already running. Sustained critical work can starve lower priorities.

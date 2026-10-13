@@ -39,10 +39,19 @@ migration required:
   `RoutingDecision::capability_from_cache` mark the provenance of the
   consumed snapshot; `SchedulingMetrics` gains
   `capability_cache_hit_count` / `capability_cache_miss_count`.
-- Full semantics: `docs/design/scheduling_runtime.md` §10 and the
+- **Deadline policy (§3.2)**: `TaskOptions::deadline_policy`
+  (`RunAnyway` default / `DropIfLate` / `CancelIfLate`) is decided at
+  execution start and never affects `DeadlineExpired` admission or EDF
+  ordering. `DropIfLate` skips the user code when late (future settles
+  with `TaskCancelled(DeadlineMissed)`, counted in
+  `deadline_dropped_count`; dependents see `DependencyCancelled`);
+  `CancelIfLate` issues a cooperative stop request (no preemption) and
+  user code polls `kairo::get_stop_token()`. Tracked submissions gain
+  TaskBuilder overloads of `submit_after(_with_handle)`.
+- Full semantics: `docs/design/scheduling_runtime.md` §10/§11 and the
   "upgrading from 0.7.0 to 0.7.1" section of
   [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md).
-  ResourceLease / deadline policy (§3.1/§3.2) are not landed yet.
+  ResourceLease (§3.1) is not landed yet.
 
 ## 0.7.0: Runtime-aware Scheduling
 

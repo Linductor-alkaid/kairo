@@ -6,8 +6,8 @@
 
 ## 从 0.7.0 升级到 0.7.1（开发快照：无必需迁移）
 
-0.7.1 当前为开发快照（roadmap §3.0.1 submit_auto 路由智能化已落地；
-ResourceLease / deadline policy 见路线图 §3.1/§3.2，尚未落地）。
+0.7.1 当前为开发快照（roadmap §3.0.1 submit_auto 路由智能化与 §3.2
+deadline policy 已落地；ResourceLease 见路线图 §3.1，尚未落地）。
 已落地部分全部为 additive，**不迁移任何代码即可升级**。
 
 ### 行为差异（默认开启，语义 additive）
@@ -24,9 +24,9 @@ ResourceLease / deadline policy 见路线图 §3.1/§3.2，尚未落地）。
   `RoutingDecision::capability_from_cache == true`。以掩码过滤诊断位
   或对 `RoutingDecision` 做穷举处理的代码需知悉新位；以
   `status` 为权威判据的代码不受影响。
-- **`SchedulingMetrics` 新增两个字段**：
-  `capability_cache_hit_count` / `capability_cache_miss_count`
-  （字段追加，按字段名读取的代码不受影响）。
+- **`SchedulingMetrics` 新增三个字段**：
+  `capability_cache_hit_count` / `capability_cache_miss_count` /
+  `deadline_dropped_count`（字段追加，按字段名读取的代码不受影响）。
 
 ### 新增公开 API（均为 additive）
 
@@ -36,6 +36,20 @@ ResourceLease / deadline policy 见路线图 §3.1/§3.2，尚未落地）。
 | `Executor::set_capability_cache_ttl()` / `capability_cache_ttl()` | 能力缓存 TTL 控制（默认 100ms，0 关闭），任意时刻可调 |
 | `Executor::invalidate_capability_cache()` | 立即失效能力快照缓存 |
 | `ExecutorManager::notify_backend_state_changed()` | 绕过注册表直接变更后端 running 状态的集成方须调用它，使能力缓存立即失效 |
+| `TaskOptions::deadline_policy` + builder 方法 | 0.7.1 §3.2：开始执行时已错过 deadline 的处置策略（`RunAnyway` 默认 / `DropIfLate` / `CancelIfLate`）；仅与 `deadline` 同时声明时生效，`CpuGpuTask` 本阶段忽略 |
+| `submit_after / submit_after_with_handle` 的 TaskBuilder 重载 | 依赖任务携带完整 TaskOptions（deadline/策略/QoS/优先级）；上游 DropIfLate 丢弃时下游收 `DependencyCancelled` |
+| `kairo::get_stop_token()`（`<kairo/stop_token.hpp>`） | 当前任务执行线程的协作停止令牌：CancelIfLate 错过时已请求；非任务上下文返回空令牌 |
+| `DeadlinePolicy` / `TaskCancellationReason::DeadlineMissed` | 新枚举值；对 `TaskCancellationReason` 穷举 switch 的代码需补新分支 |
+
+### deadline policy 语义要点（0.6.x 行为不变的部分）
+
+- `RunAnyway`（默认）= 0.6.x：错过仍执行、记 `DeadlineMissed` failure。
+- 提交时点的 `DeadlineExpired` 准入拒绝与策略无关；EDF 排序不变。
+- `DropIfLate` 遵循取消类约定：future 以
+  `TaskCancelled(DeadlineMissed)` 就绪，不计入 failure 统计
+  （可观测性 = future 终态 + `deadline_dropped_count`）。
+- `CancelIfLate` 是协作请求非抢占：用户代码不观测令牌时等同
+  RunAnyway。
 
 ### 自定义调度器实现者
 

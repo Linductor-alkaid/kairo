@@ -42,6 +42,27 @@ struct AffinityHint {
 };
 
 /**
+ * @brief 开始执行时已错过声明的 deadline 的处置策略（0.7.1 §3.2）。
+ *
+ * 裁决点与 0.6.1 的 miss-observe 一致（开始执行时；边界同为"严格已过
+ * 才算错过，恰好相等接受"）。只影响执行期处置，不改变提交时点的
+ * deadline 准入拒绝（DeadlineExpired）。
+ */
+enum class DeadlinePolicy : uint8_t {
+    RunAnyway = 0,  // 默认。错过仍执行并记录 DeadlineMissed（0.6.x 行为）
+    DropIfLate,     // 错过则不执行用户代码：future 以
+                    // TaskCancelled(DeadlineMissed) 终态就绪，计入
+                    // deadline_dropped_count；依赖方按既有规则收到
+                    // DependencyCancelled。遵循取消类约定，不进 failure 统计
+    CancelIfLate    // 错过则向任务的停止令牌发协作式取消请求（非抢占），
+                    // 任务仍启动；用户代码经 kairo::get_stop_token()
+                    // 观测请求并自行退出。错过本身仍记 DeadlineMissed
+};
+
+/** @brief DeadlinePolicy 的稳定名称（诊断与测试输出）。 */
+const char* deadline_policy_to_string(DeadlinePolicy policy) noexcept;
+
+/**
  * @brief 任务资源需求声明。
  *
  * 声明式描述任务对设备资源的要求，供调度器在路由/准入时与后端
@@ -61,6 +82,7 @@ struct ResourceRequirements {
  */
 struct SchedulingSpec {
     std::optional<std::chrono::steady_clock::time_point> deadline;
+    DeadlinePolicy deadline_policy = DeadlinePolicy::RunAnyway;
     QosClass qos = QosClass::Standard;
     AffinityHint affinity;
     ResourceRequirements resources;

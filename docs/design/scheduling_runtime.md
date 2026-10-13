@@ -410,3 +410,62 @@ ResourceLease 落地后，声明 `ResourceRequirements` 的提交仍须走路由
   与来源标记、TTL 过期/关闭/重设、注册-启动-停止的 TTL 内主动失效、
   决策一致性矩阵、`submit_fast` 语义与 admission、并发 + epoch 扰动
   下的 hit+miss 守恒。
+
+## 11. 0.7.1 deadline policy（roadmap §3.2，开发快照）
+
+在既有的 admit → EDF → miss-observe 链之上，增加 per-task 执行期
+处置策略（`DeadlinePolicy`，`TaskOptions::deadline_policy`，默认
+`RunAnyway`）。裁决点与 0.6.1 的 miss-observe 完全一致——**开始执行
+时**（facade 包装层，即 worker 取到任务的时刻），边界亦同：**严格
+已过才算错过，恰好相等接受**。提交时点的准入拒绝（严格已过 →
+`DeadlineExpired`）不受策略影响。
+
+- **`RunAnyway`（默认）**：0.6.x 行为逐位一致——错过仍执行，记录
+  `FailureKind::DeadlineMissed` failure 事件 + `deadline_missed_count`。
+- **`DropIfLate`**：错过则不执行用户代码。future 以
+  `TaskCancelled(TaskCancellationReason::DeadlineMissed)` 终态就绪；
+  计 `deadline_missed_count` + 新增 `deadline_dropped_count`。遵循
+  取消类约定：**不进 failure 统计**（任务根本没运行，终态由 future
+  与调度指标承载）。结算分类器（`is_deadline_drop_exception`）保证
+  丢弃不落入 task-exception 统计。
+- **`CancelIfLate`**：错过则向任务的协作停止源发停止请求（**不是
+  抢占**），任务仍启动；错过本身仍记 `deadline_missed_count`。用户
+  代码经新增的 `kairo::this_task::get_stop_token()` 轮询请求并自行
+  退出——该设施以 inline thread_local + RAII 守卫（嵌套安全）在
+  CancelIfLate 任务执行期间安装令牌；非任务上下文或未声明
+  CancelIfLate 时返回空令牌（`stop_possible() == false`）。
+
+### 11.1 与依赖图的交互
+
+tracked 提交新增 `submit_after / submit_after_with_handle` 的
+TaskBuilder 重载（携带完整 TaskOptions：deadline/策略/QoS/优先级，
+QoS→默认优先级映射与 `effective_priority_for` 咨询语义与
+`submit_auto` 一致）。上游 DropIfLate 丢弃时，任务图节点落 Failed、
+异常为 `TaskCancelled(DeadlineMissed)`，下游经既有的
+`reclassify_dependency_exception` 规则统一改写为
+`TaskCancelled(DependencyCancelled)`——零新增传播机制。上游
+CancelIfLate 协作完成（不抛异常）→ 下游照常执行；协作退出若抛
+`TaskCancelled` 而取消请求并非来自 registry，则按既有规则计任务
+异常（deadline 协作请求独立于 registry 取消簿记）。
+
+### 11.2 适用面与边界
+
+- 策略消费面：`submit_auto(TaskBuilder)` 与 tracked TaskBuilder
+  重载。`CpuGpuTask` 本阶段未接入（其 options 的 policy 字段被
+  忽略；CPU/GPU 路径维持 0.7.0 的 feedback 级 miss 观测），
+  `submit_priority_scheduled` 的 meta 路径无 policy 表达（不变）。
+- 无 deadline 时策略字段无效（零观测、零处置）；策略只改变
+  **执行期处置**，不改变 EDF 排序与准入。
+- 取消是请求不是中断：`CancelIfLate` 不提供任何抢占或强制终止；
+  用户代码不观测令牌时行为等同 RunAnyway（多一次 missed 计数）。
+
+### 11.3 验收（契约矩阵，`tests/test_deadline_policy.cpp`，14 用例）
+
+- 边界不漂移：三种策略的提交时点准入拒绝一致（DeadlineExpired、
+  missed/dropped 均 0）；未来 deadline 与无 deadline 的 policy 零作用。
+- 三策略 × 强制错过：RunAnyway 执行 + failure 事件；
+  DropIfLate 不执行 + `TaskCancelled(DeadlineMissed)` + 不进
+  failure 统计；CancelIfLate 执行 + 令牌可观测请求 + 协作完成。
+- 依赖传播矩阵：丢弃上游 → 下游 `DependencyCancelled`；RunAnyway /
+  协作完成上游 → 下游正常执行；未错过 tracked 丢弃策略零作用。
+- 指标守恒：每次严格错过恰计一次 missed；dropped 只归 DropIfLate。

@@ -175,6 +175,23 @@ public:
     auto submit_after(const std::vector<TaskHandle>& dependencies, F&& f, Args&&... args)
         -> std::future<typename std::invoke_result<F, Args...>::type>;
 
+    /**
+     * @brief 提交带完整 TaskOptions（deadline / 策略 / QoS / 优先级）的
+     * 依赖任务（0.7.1 §3.2）。
+     *
+     * 与 TaskBuilder 重载的 submit_auto 一样评估 deadline policy：
+     * 上游 DropIfLate 丢弃时，下游按既有规则收到
+     * TaskCancelled(DependencyCancelled)。QoS→默认优先级映射与调度器
+     * 咨询（effective_priority_for）与 submit_auto 一致。
+     */
+    template<typename Function>
+    auto submit_after(const TaskHandle& dependency, TaskBuilder<Function> task)
+        -> std::future<typename std::invoke_result<Function&>::type>;
+
+    template<typename Function>
+    auto submit_after(const std::vector<TaskHandle>& dependencies, TaskBuilder<Function> task)
+        -> std::future<typename std::invoke_result<Function&>::type>;
+
     template<typename F, typename... Args>
     auto submit_after_with_handle(const TaskHandle& dependency, F&& f, Args&&... args)
         -> TaskSubmission<typename std::invoke_result<F, Args...>::type>;
@@ -182,6 +199,15 @@ public:
     template<typename F, typename... Args>
     auto submit_after_with_handle(const std::vector<TaskHandle>& dependencies, F&& f, Args&&... args)
         -> TaskSubmission<typename std::invoke_result<F, Args...>::type>;
+
+    /** @brief 同 submit_after(TaskBuilder)，但保留任务图句柄（0.7.1 §3.2）。 */
+    template<typename Function>
+    auto submit_after_with_handle(const TaskHandle& dependency, TaskBuilder<Function> task)
+        -> TaskSubmission<typename std::invoke_result<Function&>::type>;
+
+    template<typename Function>
+    auto submit_after_with_handle(const std::vector<TaskHandle>& dependencies, TaskBuilder<Function> task)
+        -> TaskSubmission<typename std::invoke_result<Function&>::type>;
 
     TaskHandle when_all(std::vector<TaskHandle> dependencies);
 
@@ -851,6 +877,33 @@ private:
     };
     CapabilityView acquire_route_capabilities(bool needs) const;
 
+    // ---- 0.7.1 §3.2：deadline policy（开始执行时的策略裁决）----
+    /**
+     * @brief 开始执行时对声明 deadline 的策略裁决（0.7.1 §3.2）。
+     *
+     * 裁决点与 0.6.1 miss-observe 一致（开始执行时；边界"严格已过才算
+     * 错过，恰好相等接受"）。deadline_ns <= 0 时直接返回 true 且零开销。
+     *
+     * - RunAnyway：记 DeadlineMissed failure 事件 + missed 计数（0.6.x）；
+     * - DropIfLate：记 missed + dropped 计数，返回 false——调用方以
+     *   TaskCancelled(DeadlineMissed) 终态结算，不执行用户代码；
+     * - CancelIfLate：记 missed 计数并向 *cancel_target（可空）发协作式
+     *   停止请求，返回 true（任务仍启动）。
+     */
+    bool evaluate_deadline_policy(int64_t deadline_ns,
+                                  DeadlinePolicy policy,
+                                  const std::string& executor_name,
+                                  const std::string& task_id,
+                                  StopSource* cancel_target) noexcept;
+
+    /**
+     * @brief 异常是否为 DropIfLate 的结构化终态（TaskCancelled(DeadlineMissed)）。
+     *
+     * 该终态遵循取消类约定：结算处不再计入 failure 统计。
+     */
+    static bool is_deadline_drop_exception(std::exception_ptr exception) noexcept;
+
+
     void record_result_failure(const ExecutorResult& result,
                                FailureKind kind,
                                const std::string& executor_name,
@@ -1203,6 +1256,8 @@ private:
         // 0.7.1 §3.0.1：能力快照缓存行为计数。
         std::atomic<uint64_t> capability_cache_hit{0};
         std::atomic<uint64_t> capability_cache_miss{0};
+        // 0.7.1 §3.2：DropIfLate 丢弃计数（missed 计数含 RunAnyway 观测）。
+        std::atomic<uint64_t> deadline_dropped{0};
     };
     mutable SchedulingMetricsCounters scheduling_counters_;
 
@@ -1847,6 +1902,91 @@ auto Executor::submit_after_with_handle(const std::vector<TaskHandle>& dependenc
         std::forward<Args>(args)...);
 }
 
+// 0.7.1 §3.2：TaskBuilder 重载（submit_after / submit_after_with_handle）。
+// 包装次序：deadline 策略裁决（含 CancelIfLate 的令牌安装）→ submit_tracked
+// 原有仲裁/结算协议；DropIfLate 以 TaskCancelled(DeadlineMissed) 抛出，
+// tracked 包装的结算分类器按取消类约定落终态（见 submit_tracked_with_hook
+// 的 catch 分支）。QoS→默认优先级映射与调度器咨询（effective_priority_for）
+// 与 submit_auto(TaskBuilder) 一致：显式 priority 永不被覆盖，被调整提交
+// 计 priority_promoted_count。
+
+template<typename Function>
+auto Executor::submit_after_with_handle(const TaskHandle& dependency, TaskBuilder<Function> task)
+    -> TaskSubmission<typename std::invoke_result<Function&>::type> {
+    std::vector<TaskHandle> dependencies{dependency};
+    return submit_after_with_handle(std::move(dependencies), std::move(task));
+}
+
+template<typename Function>
+auto Executor::submit_after_with_handle(const std::vector<TaskHandle>& dependencies, TaskBuilder<Function> task)
+    -> TaskSubmission<typename std::invoke_result<Function&>::type> {
+    using return_type = typename std::invoke_result<Function&>::type;
+    const TaskOptions& options = task.options();
+    const int qos_default_priority =
+        static_cast<int>(default_priority_for_qos(options.qos));
+    const int effective_priority =
+        options.priority_set
+            ? static_cast<int>(options.priority)
+            : task_scheduler_->effective_priority_for(options,
+                                                      qos_default_priority);
+    if (!options.priority_set && effective_priority != qos_default_priority) {
+        scheduling_counters_.priority_promoted.fetch_add(
+            1, std::memory_order_relaxed);
+    }
+
+    std::function<return_type()> function = std::move(task).function();
+    if (options.deadline) {
+        const int64_t deadline_ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                options.deadline->time_since_epoch()).count();
+        const auto policy = options.deadline_policy;
+        const bool install_token = policy == DeadlinePolicy::CancelIfLate;
+        // 闭包与本地 shared_ptr 共同持有停止源：闭包的副本即任务生存期，
+        // evaluate_deadline_policy 拿到的裸指针在其间恒有效。
+        const auto cancel_source =
+            install_token ? std::make_shared<StopSource>() : nullptr;
+        const std::string deadline_task_id =
+            options.name.empty() ? "submit_after" : options.name;
+        function = [this, deadline_ns, policy, deadline_task_id, cancel_source,
+                    function = std::move(function)]() mutable -> return_type {
+            if (!evaluate_deadline_policy(deadline_ns, policy, "default",
+                                          deadline_task_id,
+                                          cancel_source.get())) {
+                throw TaskCancelled(
+                    TaskCancellationReason::DeadlineMissed,
+                    "task dropped before execution: deadline already missed "
+                    "(DeadlinePolicy::DropIfLate)");
+            }
+            // CancelIfLate：令牌在用户代码执行期间可观测（嵌套安全）。
+            const detail::ScopedStopToken token_guard(
+                cancel_source ? cancel_source->get_token() : StopToken{});
+            if constexpr (std::is_void_v<return_type>) {
+                function();
+            } else {
+                return function();
+            }
+        };
+    }
+
+    auto dependencies_copy =
+        std::make_shared<const std::vector<TaskHandle>>(dependencies);
+    return submit_tracked<false>(
+        effective_priority, std::move(dependencies_copy), std::move(function));
+}
+
+template<typename Function>
+auto Executor::submit_after(const TaskHandle& dependency, TaskBuilder<Function> task)
+    -> std::future<typename std::invoke_result<Function&>::type> {
+    std::vector<TaskHandle> dependencies{dependency};
+    return submit_after(std::move(dependencies), std::move(task));
+}
+
+template<typename Function>
+auto Executor::submit_after(const std::vector<TaskHandle>& dependencies, TaskBuilder<Function> task)
+    -> std::future<typename std::invoke_result<Function&>::type> {
+    return submit_after_with_handle(dependencies, std::move(task)).future;
+}
+
 // submit_tracked：带句柄 + 共享取消状态的统一提交路径。
 //
 // 取消/超时/开始执行通过 TaskCancellationState 的单一 phase CAS 仲裁：
@@ -2177,12 +2317,41 @@ auto Executor::submit_tracked_with_hook(
             // 时 TaskCancelled 才按取消归类；无取消请求时主动抛出的
             // TaskCancelled 仍按任务异常处理，防止绕过 failure 统计。
             bool cooperative_cancel = false;
+            bool deadline_drop = false;
             try {
                 std::rethrow_exception(exception);
-            } catch (const TaskCancelled&) {
-                cooperative_cancel = state->cancel_requested();
+            } catch (const TaskCancelled& cancelled) {
+                // DropIfLate 的结构化终态（wrapper 在开始执行仲裁后、调用
+                // 用户代码前抛出）：按取消类约定落终态，不进 failure 统计；
+                // 依赖方经 mark_task_graph_failed 的既有归类规则收到
+                // DependencyCancelled。
+                deadline_drop =
+                    cancelled.reason() == TaskCancellationReason::DeadlineMissed;
+                cooperative_cancel = !deadline_drop && state->cancel_requested();
             } catch (...) {
                 cooperative_cancel = false;
+            }
+
+            if (deadline_drop) {
+                state->try_finish_running(
+                    TaskCancellationState::Phase::Cancelled);
+                release_admission();  // 计数先于 future
+                bool expected = false;
+                if (promise_ready->compare_exchange_strong(
+                        expected, true, std::memory_order_acq_rel,
+                        std::memory_order_acquire)) {
+                    promise->set_exception(exception);
+                }
+                mark_task_graph_failed(
+                    handle, exception, "Task dropped: deadline missed before "
+                    "execution (DeadlinePolicy::DropIfLate)",
+                    &drain_bag);
+                manager_->record_in_flight_task_state(
+                    handle.id(), TaskLifecycleState::Cancelled);
+                cancellation_registry_->finalize(handle.id());
+                complete_terminal();
+                drain_parked_resolutions(drain_bag.ready, drain_bag.failures);
+                return;
             }
 
             if (cooperative_cancel) {
@@ -2445,11 +2614,15 @@ auto Executor::submit_priority_scheduled(
             release_admission();
             promise->set_exception(exception);
             promise_ready->store(true, std::memory_order_release);
-            record_task_exception(
-                executor_name,
-                task_id,
-                "Priority async task threw an exception",
-                exception);
+            // DropIfLate 的结构化终态遵循取消类约定：不计 task-exception
+            // failure（可观测性由 deadline_dropped_count 与 future 终态承载）。
+            if (!is_deadline_drop_exception(exception)) {
+                record_task_exception(
+                    executor_name,
+                    task_id,
+                    "Priority async task threw an exception",
+                    exception);
+            }
             throw;
         }
     };
@@ -3062,21 +3235,31 @@ auto Executor::submit_auto(TaskBuilder<Function> task)
     if (options.deadline) {
         meta.deadline_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
             options.deadline->time_since_epoch()).count();
-        // deadline miss 观测：开始执行时已错过 → DeadlineMissed 诊断 +
-        // 调度指标计数；契约是不中断已开始执行的任务，因此原任务仍会运行。
+        // 0.7.1 §3.2 deadline policy：策略裁决在开始执行时进行（与 0.6.1
+        // miss-observe 同点、同"严格已过"边界）。
+        // - RunAnyway（默认）：观测后照常执行（0.6.x 行为）；
+        // - DropIfLate：不执行用户代码，以 TaskCancelled(DeadlineMissed)
+        //   终态结算（结算处的分类器保证不计 task-exception failure）；
+        // - CancelIfLate：向协作停止源发请求后照常启动，用户代码经
+        //   this_task::get_stop_token() 轮询。
+        const auto policy = options.deadline_policy;
+        const bool install_token = policy == DeadlinePolicy::CancelIfLate;
+        const auto cancel_source =
+            install_token ? std::make_shared<StopSource>() : nullptr;
         function = [this, deadline_ns = meta.deadline_ns, deadline_task_id,
+                    policy, cancel_source,
                     function = std::move(function)]() mutable -> return_type {
-            const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count();
-            if (now_ns > deadline_ns) {
-                scheduling_counters_.deadline_missed.fetch_add(1, std::memory_order_relaxed);
-                ExecutorFailureEvent event;
-                event.kind = FailureKind::DeadlineMissed;
-                event.executor_name = "default";
-                event.task_id = deadline_task_id;
-                event.message = "task started after declared deadline";
-                record_failure(std::move(event));
+            if (!evaluate_deadline_policy(deadline_ns, policy, "default",
+                                          deadline_task_id,
+                                          cancel_source.get())) {
+                throw TaskCancelled(
+                    TaskCancellationReason::DeadlineMissed,
+                    "task dropped before execution: deadline already missed "
+                    "(DeadlinePolicy::DropIfLate)");
             }
+            // CancelIfLate：令牌在用户代码执行期间可观测（嵌套安全）。
+            const detail::ScopedStopToken token_guard(
+                cancel_source ? cancel_source->get_token() : StopToken{});
             if constexpr (std::is_void_v<return_type>) {
                 function();
             } else {
@@ -3123,8 +3306,14 @@ auto Executor::submit_auto(TaskBuilder<Function> task)
                     return result;
                 }
             } catch (...) {
-                finish(false, FailureKind::TaskException);
-                throw;
+                // DropIfLate 的结构化终态按取消类约定归类：反馈记
+                // DeadlineMissed（不是 TaskException），failure 统计由
+                // deadline_dropped_count 承载。
+                const auto exception = std::current_exception();
+                finish(false, is_deadline_drop_exception(exception)
+                                  ? FailureKind::DeadlineMissed
+                                  : FailureKind::TaskException);
+                std::rethrow_exception(exception);
             }
         };
     }

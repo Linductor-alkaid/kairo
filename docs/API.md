@@ -401,7 +401,8 @@ auto result = ex.submit_auto(task);
 
 | 模型 | 语义 | 违约行为 |
 |------|------|----------|
-| `deadline` | 同优先级内 EDF 排序（层次 `priority → EDF → FIFO`，非全局 EDF）；开始执行时已错过记录 `FailureKind::DeadlineMissed`（`deadline_missed_count`），任务仍执行 | 提交时已过期（严格已过，恰好相等不拒） → 拒绝（`RoutingReason::DeadlineExpired`） |
+| `deadline` | 同优先级内 EDF 排序（层次 `priority → EDF → FIFO`，非全局 EDF）；开始执行时已错过按 `deadline_policy` 处置（下行）；0.7.1 起可选 `deadline_policy(RunAnyway/DropIfLate/CancelIfLate)` | 提交时已过期（严格已过，恰好相等不拒） → 拒绝（`RoutingReason::DeadlineExpired`）；策略不影响准入 |
+| `deadline_policy`（0.7.1 开发快照） | `RunAnyway`（默认，0.6.x：错过仍执行并记 `FailureKind::DeadlineMissed`）；`DropIfLate`（错过不执行用户代码，future 以 `TaskCancelled(DeadlineMissed)` 终态就绪，计 `deadline_dropped_count`，遵循取消类约定不进 failure 统计，依赖方收到 `DependencyCancelled`）；`CancelIfLate`（错过则向协作停止源发请求——非抢占——任务仍启动，用户代码经 `kairo::get_stop_token()` 轮询） | 仅与 `deadline` 同时声明时生效；裁决点为开始执行时（严格已过才算错过，恰好相等接受）；`CpuGpuTask` 本阶段忽略该字段 |
 | `qos` | `BestEffort/Standard/Interactive/Critical` 映射默认排队优先级（LOW/NORMAL/HIGH/CRITICAL）；显式 `priority()` 优先。QoS 是排队优先级 preset，不提供抢占/延迟界/带宽保证 | 严格优先级无 aging（CR-024）：BestEffort 可被饿死 |
 | `affinity` | per-task advisory；与后端 `bound_cpus` 不相交时任务仍被接受，决策标记 `status = AcceptedDegraded` + `reason = AffinityMismatch` + `diagnostics` 位 | 不重新绑定 OS 线程；不提供独占核保留 |
 | `resources` | GPU `device`/`memory_bytes` 声明与能力快照核对（feasibility hint，非资源保证；存在 TOCTOU 窗口；capability 未知时跳过检查——permissive fallback） | device 不符 → `BackendUnavailable`；内存不足 → `CapacityPressure`；两者均携带 `ResourceInfeasible` 诊断位 |
@@ -491,6 +492,24 @@ reason 细分的 `deadline_rejected_count` /
 查询保持实时采集语义，不经缓存。`ExecutorManager` 新增
 `notify_backend_state_changed()`：绕过注册表直接变更后端状态的集成方
 （如自定义生命周期管理）应调用它推进 `state_epoch`，使缓存立即失效。
+
+**0.7.1 开发快照（deadline policy，roadmap §3.2）**：
+`TaskOptions::deadline_policy`（`DeadlinePolicy::RunAnyway` 默认 /
+`DropIfLate` / `CancelIfLate`，TaskBuilder/CpuGpuTask 均有同名 builder
+方法；CpuGpuTask 本阶段忽略该字段）在开始执行时裁决（与 0.6.1
+miss-observe 同点、同"严格已过"边界，不影响 DeadlineExpired 准入）。
+`SchedulingMetrics` 新增 `deadline_dropped_count`；
+`TaskCancellationReason` 新增 `DeadlineMissed`（DropIfLate 的终态
+reason，依赖方经既有归类规则收到 `DependencyCancelled`——对
+`TaskCancellationReason` 穷举 switch 的代码需补新分支）。
+`kairo::get_stop_token()`（`<kairo/stop_token.hpp>`）返回当前任务
+执行线程上的协作停止令牌：CancelIfLate 任务错过时令牌已被请求，
+非任务上下文返回空令牌。tracked 提交新增
+`submit_after / submit_after_with_handle` 的 TaskBuilder 重载（携带
+deadline/策略/QoS/优先级；QoS→默认优先级映射与调度器咨询语义与
+`submit_auto` 一致）。设计语义与验收矩阵见
+`docs/design/scheduling_runtime.md` §11 与
+`tests/test_deadline_policy.cpp`。
 
 ### 3.9 延迟与周期任务
 

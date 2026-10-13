@@ -31,9 +31,26 @@ custom scheduler routes=1
 ## 每项声明的含义
 
 - `qos(QosClass::Interactive)` —— 排队优先级 preset（`BestEffort/Standard/Interactive/Critical` 映射 `LOW/NORMAL/HIGH/CRITICAL`），仅在未显式设置 `priority()` 时生效。它不是延迟或带宽保证；确定性周期仍需 RealtimeQueue 意图。
-- `deadline(time_point)` —— 真实调度输入，不是超时。同一优先级内按最早 deadline 先行（EDF）排序。已严格过期的 deadline 在提交时以结构化原因 `RoutingReason::DeadlineExpired` 拒绝（0.6.1）；开始执行时已错过的任务仍会运行并记录 `FailureKind::DeadlineMissed`——取消始终是请求，不是中断。
+- `deadline(time_point)` —— 真实调度输入，不是超时。同一优先级内按最早 deadline 先行（EDF）排序。已严格过期的 deadline 在提交时以结构化原因 `RoutingReason::DeadlineExpired` 拒绝（0.6.1）；开始执行时已错过的任务默认仍会运行并记录 `FailureKind::DeadlineMissed`——0.7.1 起可经 `deadline_policy()` 选择处置（见下节）。
 - `affinity(AffinityHint{{0, 1}})` —— advisory。调度器把请求与各后端的绑核集合对比；不相交时任务仍被接受，但决策被标记为降级（0.6.1）：`status = AcceptedDegraded`、`reason = AffinityMismatch`，并携带 `AffinityMismatch` 诊断位与人读 detail。不会为单个任务重新绑定 OS 线程。
 - `resources(ResourceRequirements{...})` —— 与能力快照的可行性核对：`gpu_device` 不符以 `BackendUnavailable` 拒绝，内存超过可用量以 `CapacityPressure` 拒绝（两者均携带 `ResourceInfeasible` 诊断位，0.6.1）。它不是资源预留；并发提交在执行期仍可能竞争。
+
+## 错过 deadline 的处置策略（0.7.1 开发快照）
+
+`deadline_policy()` 决定任务开始执行时已错过 deadline 怎么办。裁决点与 miss 观测一致（开始执行时；严格已过才算错过，恰好相等接受），且不影响提交时的 `DeadlineExpired` 准入与 EDF 排序：
+
+- `RunAnyway`（默认）——0.6.x 行为：错过仍执行，记 `DeadlineMissed`。
+- `DropIfLate` —— 错过则不执行你的代码：future 以 `TaskCancelled(DeadlineMissed)` 就绪，计入 `deadline_dropped_count`；任务图下游按既有规则收到 `DependencyCancelled`。适合"结果已无价值"的迭代计算、过期行情快照。
+- `CancelIfLate` —— 错过则向任务发协作停止请求（不是抢占），任务仍启动；你的代码用 `kairo::get_stop_token()` 轮询并尽快退出。适合能分步检查点的长任务。
+
+```cpp
+auto stale = executor.submit_auto(
+    kairo::task([] { return recompute_quote(); })
+        .deadline(quote_valid_until)
+        .deadline_policy(kairo::DeadlinePolicy::DropIfLate));
+```
+
+边界：策略只在声明了 `deadline` 时生效；`CpuGpuTask` 本阶段忽略该字段；`get_stop_token()` 在非任务上下文返回空令牌。
 
 ## 注入自定义调度器
 

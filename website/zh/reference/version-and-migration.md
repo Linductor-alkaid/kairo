@@ -34,10 +34,17 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
   `RoutingDecision::capability_from_cache` 标记决策消费的快照来源；
   `SchedulingMetrics` 新增 `capability_cache_hit_count` /
   `capability_cache_miss_count`。
-- 完整语义见 `docs/design/scheduling_runtime.md` §10 与
+- **deadline policy（§3.2）**：`TaskOptions::deadline_policy`
+  （`RunAnyway` 默认 / `DropIfLate` / `CancelIfLate`）在开始执行时
+  裁决，不影响 `DeadlineExpired` 准入与 EDF 排序。`DropIfLate` 错过
+  不执行用户代码（future 以 `TaskCancelled(DeadlineMissed)` 就绪，
+  计 `deadline_dropped_count`，依赖方收 `DependencyCancelled`）；
+  `CancelIfLate` 错过发协作停止请求（非抢占），用户代码经
+  `kairo::get_stop_token()` 轮询。tracked 提交新增
+  `submit_after(_with_handle)` 的 TaskBuilder 重载。
+- 完整语义见 `docs/design/scheduling_runtime.md` §10/§11 与
   [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md)
-  的"从 0.7.0 升级到 0.7.1"一节；ResourceLease / deadline policy
-  （§3.1/§3.2）尚未落地。
+  的"从 0.7.0 升级到 0.7.1"一节；ResourceLease（§3.1）尚未落地。
 
 ## 0.7.0：Runtime-aware Scheduling
 

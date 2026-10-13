@@ -6,9 +6,10 @@
 
 ## [Unreleased] — 0.7.1 开发快照
 
-v0.7.1 第一阶段：submit_auto 路由智能化（`docs/design/roadmap_v0.7.md`
-§3.0.1）。全部为 additive；默认行为与 0.7.0 决策逐项一致
-（`tests/test_capability_cache.cpp` 锁定缓存开/关的决策一致性）。
+v0.7.1 前两个阶段：submit_auto 路由智能化（roadmap §3.0.1）与
+deadline policy（roadmap §3.2）。全部为 additive；默认行为与 0.7.0
+逐项一致（`tests/test_capability_cache.cpp` 锁定缓存开/关的决策
+一致性，`tests/test_deadline_policy.cpp` 锁定默认策略 = 0.6.x）。
 
 ### 调度
 
@@ -36,6 +37,34 @@ v0.7.1 第一阶段：submit_auto 路由智能化（`docs/design/roadmap_v0.7.md
   过期/关闭/重设、TTL 内注册-启动-停止主动失效、决策一致性矩阵、
   并发 + epoch 扰动下 hit+miss 守恒。
 
+- **deadline policy（roadmap §3.2，additive，默认 = 0.6.x）**：
+  `TaskOptions::deadline_policy`（`DeadlinePolicy::RunAnyway` 默认 /
+  `DropIfLate` / `CancelIfLate`）在开始执行时裁决——与 0.6.1
+  miss-observe 同点、同"严格已过才算错过，恰好相等接受"边界，不影响
+  提交时点的 `DeadlineExpired` 准入拒绝与 EDF 排序。
+  - `RunAnyway`：0.6.x 行为逐位一致（错过仍执行 + DeadlineMissed
+    failure 事件）。
+  - `DropIfLate`：错过不执行用户代码，future 以
+    `TaskCancelled(TaskCancellationReason::DeadlineMissed)` 终态就绪；
+    计 `deadline_missed_count` + 新增 `deadline_dropped_count`；遵循
+    取消类约定不进 failure 统计（结算分类器
+    `is_deadline_drop_exception` 保证不落入 task-exception）。
+  - `CancelIfLate`：错过向协作停止源发请求（非抢占），任务仍启动，
+    用户代码经新增的 `kairo::get_stop_token()`（`<kairo/stop_token.hpp>`，
+    inline thread_local + RAII 守卫，嵌套安全）轮询并自行退出；
+    非任务上下文返回空令牌。
+  - **依赖传播**：tracked 提交新增 `submit_after /
+    submit_after_with_handle` 的 TaskBuilder 重载（携带完整
+    TaskOptions：deadline/策略/QoS/优先级，QoS→默认优先级映射与
+    `effective_priority_for` 咨询语义与 `submit_auto` 一致）。上游
+    DropIfLate 丢弃 → 任务图落 Failed（异常 `TaskCancelled(DeadlineMissed)`）
+    → 下游经既有 `reclassify_dependency_exception` 规则收到
+    `TaskCancelled(DependencyCancelled)`，零新增传播机制。
+  - 边界：`CpuGpuTask` 本阶段忽略 policy 字段（维持 feedback 级
+    miss 观测）；无 deadline 时策略字段无效。契约矩阵
+    `tests/test_deadline_policy.cpp`（14 用例：边界不漂移、三策略 ×
+    强制错过、依赖传播矩阵、指标守恒）。
+
 ### 提交路径
 
 - **`submit_fast()`（零路由快速路径，§3.0.1）**：等价
@@ -50,7 +79,8 @@ v0.7.1 第一阶段：submit_auto 路由智能化（`docs/design/roadmap_v0.7.md
 ### 文档
 
 - `docs/design/scheduling_runtime.md` 新增 §10（能力缓存与 submit_fast
-  设计语义与验收）；`docs/API.md` §3.7/§3.8、`docs/MIGRATION.md` 新增
+  设计语义与验收）与 §11（deadline policy 设计语义与验收矩阵）；
+  `docs/API.md` §3.7/§3.8、`docs/MIGRATION.md` 新增
   "从 0.7.0 升级到 0.7.1"（无必需迁移）；website 中英选型页新增
   "何时用 submit_fast（以及何时不该用）"，版本与迁移页新增 0.7.1 开发
   快照小节；`docs/skill` 调度卡（kairo-integration / kairo-maintainer）
