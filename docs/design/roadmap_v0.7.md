@@ -145,7 +145,126 @@ constraint filter → candidate generation → scoring/ranking → selection
 
 ---
 
-## 3. v0.7.1 — Resource Reservation + deadline policy
+## 3. v0.7.1 — submit_auto 智能化增强 + Resource Reservation + deadline policy
+
+### 3.0 submit_auto 路由智能化（新增，来自 2026-10-13 设计评审）
+
+**问题**：`submit_auto` 虽名为"auto"，但路由能力未充分体现：
+- 默认 `DefaultScheduler` 是确定性的意图路由，未利用执行反馈
+- 性能开销相对 `submit` 慢 65-70%（CR-106 已部分优化 CPU-only 路径）
+- 用户仍需显式指定 `LowLatency`/`RealtimeQueue` 的 `preferred_executor`
+
+**方向**：分三阶段增强 auto 路由的智能性和性能。
+
+#### 3.0.1 能力快照缓存与快速路径（短期，预计 1-2 周）
+
+- **能力快照 TTL 缓存**：当前每次 `submit_auto` 都锁定并采集执行器能力（CR-106 优化了
+  CPU-only 路径走纯策略判定）。引入 TTL-based 缓存（默认 100ms），热路径读取缓存快照：
+  ```cpp
+  std::shared_ptr<const std::vector<ExecutorCapability>> cached_capabilities_;
+  std::atomic<int64_t> capabilities_cache_timestamp_{0};
+  constexpr int64_t CACHE_TTL_NS = 100'000'000; // 100ms
+  ```
+- **按后端类型分片缓存**：不同后端类型（CPU/GPU/LockFree/Realtime）分开缓存，避免
+  全量锁竞争：
+  ```cpp
+  struct CapabilityCache {
+      std::atomic<ExecutorCapability*> default_cpu{nullptr};
+      std::atomic<ExecutorCapability*> gpu{nullptr};
+      std::atomic<ExecutorCapability*> lockfree{nullptr};
+      std::atomic<ExecutorCapability*> realtime{nullptr};
+  };
+  ```
+- **零路由开销快速路径**：为最常见的 CPU-only 无约束场景提供 `submit_fast()`：
+  ```cpp
+  template<typename F, typename... Args>
+  auto submit_fast(F&& f, Args&&... args) {
+      // 跳过路由决策，直接提交到默认池（适用于确定是 CPU-only 且无特殊约束）
+      return submit_priority_scheduled(
+          static_cast<int>(TaskPriority::NORMAL),
+          TaskSchedulingMeta{},
+          std::forward<F>(f),
+          std::forward<Args>(args)...
+      );
+  }
+  ```
+
+**验收线**：
+- 能力缓存命中时，CPU/GPU 选择路径从 ~120ns 降至 ~60ns（50% 改进）
+- `submit_fast()` 路径 ~35ns，相比当前 `submit_auto` 纯策略路径 ~50ns 有 30% 改进
+- 配对 A/B 基准，TSAN 全绿
+
+#### 3.0.2 任务特征自动推断（中期，预计 1-2 月）
+
+扩展 `TaskOptions` 的自动分析能力，减少用户显式指定意图的需求：
+
+```cpp
+struct TaskCharacteristics {
+    bool is_blocking_io = false;      // 检测阻塞 I/O 调用特征
+    bool needs_low_latency = false;   // 检测延迟敏感标记
+    bool is_periodic = false;         // 检测周期性调用模式
+    size_t estimated_duration_us = 0; // 基于历史的执行时长预估
+    
+    // 从 lambda 类型或历史统计推断
+    template<typename F>
+    static TaskCharacteristics analyze(const F& f, const std::string& task_name);
+};
+
+// 增强的 submit_auto 内部逻辑
+template<typename F>
+auto submit_auto(F&& f) {
+    TaskOptions options;
+    auto chars = TaskCharacteristics::analyze(f, options.name);
+    
+    // 自动推断意图（仅在用户未显式设置时）
+    if (!options.intent_explicitly_set) {
+        if (chars.is_blocking_io) {
+            // 建议使用 BlockingWorker，记录诊断
+            record_auto_intent_suggestion("blocking_io_detected");
+        } else if (chars.needs_low_latency && chars.estimated_duration_us < 100) {
+            // 历史显示适合 LockFree
+            options.intent = ExecutionIntent::LowLatency;
+            options.preferred_executor = select_best_lockfree_executor();
+            record_adaptive_decision("auto_selected_lockfree");
+        }
+    }
+    
+    return route_and_submit(options, std::forward<F>(f));
+}
+```
+
+**推断策略**：
+- **阻塞 I/O 检测**：通过任务名称模式（`*_io_*`, `*_read_*`, `*_write_*`）和历史执行时长
+  （如果 execution_duration > 10ms 且 CPU 占用率低）启发式判断
+- **低延迟需求**：基于任务名称（`*_realtime_*`, `*_control_*`）和历史 queue_wait 敏感度
+- **周期性检测**：同名任务的提交时间间隔稳定（标准差 < 均值的 10%）
+
+**边界与限制**：
+- 自动推断**仅在用户未显式设置 intent 时生效**（与 0.7.0 原则一致：opt-in 而非静默）
+- 推断结果记录到 `RoutingDecision::diagnostics` 新增位 `AutoInferredIntent`
+- 提供 `disable_auto_inference()` 配置选项，完全关闭推断回退到纯意图路由
+
+#### 3.0.3 AdaptiveScheduler 的进一步扩展（与 3.0.2 并行）
+
+扩展 0.7.0 M3 的 `AdaptiveScheduler`，增加以下能力：
+
+1. **执行器选择优化**：对于 `LowLatency` 意图，当有多个 lockfree executor 时，
+   基于历史负载自动选择最优的 `preferred_executor`（当前必须用户显式指定）
+2. **动态意图调整建议**：当检测到任务长期不适合当前路径时（如 CPU 任务实际
+   queue_wait p99 < 1ms，适合 lockfree），记录建议到 `RoutingDecision::detail`，
+   而不是静默切换
+3. **冷启动优化**：在 min_samples 未达到前，使用更保守的启发式（如 GPU 优先
+   仅在任务名称明确标记时才选择）
+
+**与 0.7.0 原则的一致性**：
+- 自动选择仍是 **opt-in**：`AdaptiveScheduler` 注入时开启，`DefaultScheduler` 保持 0.6.1 行为
+- 每个自动决策可解释：新增 `RoutingDiagnostics::AutoExecutorSelection` 诊断位
+- 不会静默切换语义不同的后端：建议优先于自动切换
+
+**验收线**：
+- 多 lockfree executor 场景下，负载不均时自动选择将整体 p99 queue_wait 降低 > 20%
+- 冷启动期间（< min_samples）误判率 < 5%（通过合成负载矩阵验证）
+- 热路径开销：能力缓存命中时 route 路径 < 80ns（相比 M3 的 ~120ns 进一步优化）
 
 ### 3.1 ResourceLease / ReservationToken
 
@@ -157,6 +276,7 @@ constraint filter → candidate generation → scoring/ranking → selection
   需要覆盖 0.5.3 修过的所有异常路径（CR-010/011 类泄漏不能复现）。
 - 显式 opt-in：没有声明 `ResourceRequirements` 的提交路径行为不变，也不付任何代价。
 - 与 0.7.0 联动：调度器可以把 lease 的可得性作为 candidate filter 输入。
+- **与 3.0 联动**：缓存的能力快照包含资源可用量，auto 路由可以预先过滤资源不足的候选。
 
 ### 3.2 deadline policy
 
@@ -169,7 +289,71 @@ constraint filter → candidate generation → scoring/ranking → selection
 
 ---
 
-## 4. v0.7.2 — 反馈覆盖扩展 + 生命周期可靠性收尾
+## 4. v0.7.2 — 堆分配优化（阶段一）+ 反馈覆盖扩展 + 生命周期可靠性收尾
+
+### 4.0 普通执行路径堆分配优化（新增，来自 2026-10-13 设计评审）
+
+**问题**：CR-107 M0 已将 submit 主路径从 10 → 9 allocs/task，但剩余 9 次分配仍有优化空间。
+
+**目标**：v0.7.2 实现阶段一优化（9 → 7 allocs/task），为后续阶段奠定基础。
+
+**完整设计**：见 [allocation_optimization_proposal.md](allocation_optimization_proposal.md)
+
+#### 4.0.1 Task 对象池（优先级最高）
+
+- **问题**：每个任务都分配 Task 对象，只有 LockFreeTaskExecutor 有 wrapper 池。
+- **方案**：扩展 ThreadPool 的 per-worker Task 对象池（lock-free LIFO 栈，容量 256）：
+  ```cpp
+  Task* acquire_task(size_t worker_id) {
+      if (Task* task = task_pools_[worker_id].acquire()) {
+          return task;  // 从池获取，零堆分配
+      }
+      return new Task{};  // 回退
+  }
+  ```
+- **预期**：稳态 **-1 alloc/task**，命中率 > 95%。
+
+#### 4.0.2 小对象 std::function 内联存储（SBO）
+
+- **问题**：`std::function` 对小闭包（<= 16 bytes）也会堆分配。
+- **方案**：实现 `InlineFunction<R(Args...), 32>` 用于 Task（32 字节内联存储）：
+  - 限制：trivially-destructible 闭包，大小 <= 32 bytes
+  - 超限回退到 `std::function`（保持兼容）
+- **预期**：简单 lambda **-1 alloc/task**，覆盖率 70-80%。
+
+#### 4.0.3 DrainBag 侵入式引用计数
+
+- **问题**：DrainBag × 2 次堆分配（引用计数块）。
+- **方案**：使用侵入式引用计数（intrusive_ptr），将计数嵌入对象：
+  ```cpp
+  class DrainBag {
+      std::atomic<size_t> ref_count_;  // 内联计数，无额外分配
+      // ...
+  };
+  ```
+- **预期**：**-1 alloc/task**（引用计数块从 2 次降到 1 次）。
+
+**验收线（阶段一）**：
+- [ ] `benchmark_submit_allocations`：9 → **7 allocs/task** (-22%)
+- [ ] 字节数：768 → ~600 bytes/task (-22%)
+- [ ] 配对 A/B 吞吐基准：不弱于 0.7.0 ±5%
+- [ ] Task 池命中率 > 95%（稳态，通过 `get_allocation_metrics()` 监控）
+- [ ] ASAN/TSAN 全绿
+
+**可观测性**：新增诊断 API
+```cpp
+struct AllocationMetrics {
+    std::atomic<uint64_t> task_pool_hit_count{0};
+    std::atomic<uint64_t> task_pool_miss_count{0};
+    std::atomic<uint64_t> inline_function_count{0};
+    std::atomic<uint64_t> std_function_fallback{0};
+};
+
+class Executor {
+    AllocationMetrics get_allocation_metrics() const;
+    double get_task_pool_hit_rate() const;
+};
+```
 
 ### 4.1 反馈接入其他后端
 
@@ -199,18 +383,94 @@ constraint filter → candidate generation → scoring/ranking → selection
 
 ---
 
-## 5. v0.7.3 — 返回值语义补齐与系列稳定化
+## 5. v0.7.3 — 堆分配优化（阶段二）+ 返回值语义补齐
+
+### 5.0 Promise/Future 优化（堆分配优化阶段二）
+
+**目标**：在 v0.7.2（7 allocs/task）基础上进一步优化到 5-6 allocs/task。
+
+#### 5.0.1 自定义轻量 Future 实现
+
+- **问题**：`std::promise/future` 实现通常有 3-4 次堆分配（共享状态 + 控制块）。
+- **方案**：实现 `kairo::TaskResult<T>` 作为新返回值类型（单次分配）：
+  ```cpp
+  // 新 API（opt-in）
+  TaskResult<T> submit_v2(F&& f);
+  
+  // 旧 API（保持兼容，内部适配）
+  std::future<T> submit(F&& f);
+  ```
+- **预期**：**-2 allocs/task**（共享状态从 3-4 次降到 1 次）。
+
+#### 5.0.2 无等待快速路径
+
+- **方案**：`TaskResult::get()` 添加快速路径（spin-wait + atomic）：
+  - 快速路径：任务已完成，无需加锁（~10-20ns）
+  - 短暂 spin：100 次 yield（几微秒）
+  - 慢速路径：mutex + cv（与 std::future 相当）
+- **预期**：快速路径命中率 > 60%（取决于任务粒度）。
+
+**验收线（阶段二）**：
+- [ ] `benchmark_submit_allocations`：7 → **5-6 allocs/task** (-17-29%)
+- [ ] 字节数：~600 → ~400-500 bytes/task
+- [ ] `TaskResult::get()` 快速路径命中率 > 60%
+- [ ] 配对 A/B 吞吐基准：不弱于 v0.7.2 ±5%
+- [ ] 全量测试 + 向后兼容性验证
+
+**迁移策略**：
+- 新 API 作为 opt-in，旧 API 保持兼容
+- 0.8.0 前标记 `submit()` 为 deprecated
+- 0.9.0 完全移除旧 API
+
+### 5.1 返回值语义补齐
 
 - `CpuGpuTask<T>` 带返回值 + 显式 `ResultAdapter<T>`（`unified_facade_and_auto_routing.md`
   第一阶段延后项），`ExecutionReport<T>` 报告实际选择的路径。以新 overload 形式加入，
   不改变 `void` 版本。
+
+### 5.2 系列稳定化
+
 - 0.7 系列整体回归：长时间 soak（自适应开启，混合负载 ≥ 24h）、ASAN/TSAN/UBSAN 全矩阵、
   Android NDK smoke、Windows MinGW/MSVC。
 - 冻结 0.7 调度接口，为 0.8 预留的方向写进设计文档（NUMA topology、跨 pool locality、transfer cost）。
 
 ---
 
-## 6. 风险与待决事项
+## 6. v0.8.0 — 堆分配优化（阶段三，实验性）+ 0.7 系列收尾
+
+### 6.0 协程版本零分配模式（可选特性）
+
+**前提**：C++20 协程支持，作为实验性特性。
+
+- **方案**：利用协程栈上状态，避免多次堆分配：
+  ```cpp
+  // 协程版本 submit（零额外堆分配）
+  template<typename F>
+  auto submit_coro(F&& f) -> CoroTask<typename std::invoke_result<F>::type> {
+      co_return f();  // 单次分配：协程帧本身
+  }
+  ```
+- **预期**：**3-4 allocs/task**（协程帧替代 promise/future/task 结构）。
+- **限制**：
+  - 需要 C++20 编译器
+  - 协程帧本身仍有一次堆分配
+  - 仅适用于 CPU 任务（不支持跨线程调度）
+
+**验收线（阶段三）**：
+- [ ] `benchmark_submit_allocations`：**3-4 allocs/task** (-56-67% vs v0.7.0)
+- [ ] 协程版本作为 opt-in 特性（`KAIRO_ENABLE_CORO_TASK`）
+- [ ] 性能不弱于 `submit_fast()`
+- [ ] 文档说明使用场景和限制
+
+### 6.1 0.7 系列总结
+
+- 最终性能报告与基准记录
+- 完整的迁移指南（0.6 → 0.7 → 0.8）
+- 用户反馈收集与下一版本规划
+
+---
+
+## 7. 风险与待决事项
 
 | 风险 / 决策点 | 建议 |
 |---|---|
@@ -219,3 +479,63 @@ constraint filter → candidate generation → scoring/ranking → selection
 | 反馈在 worker 线程同步执行，用户自定义调度器可能阻塞 worker | 保留 0.6.1 契约；文档和 debug 构建中加入耗时断言 |
 | 0.7.0 是否允许破坏性变更 | 建议**不破坏**：0.6.0 刚完成清理窗口，所有新能力都可以 additive 落地 |
 | executor.cpp 拆分与新特性并行开发会冲突 | 拆分作为 0.7.0 的第一个 PR 单独合入，之后再开特性分支 |
+| submit_auto 自动推断可能导致意外行为变化 | **仅在未显式设置 intent 时生效**；提供 `disable_auto_inference()` 完全关闭；推断结果记录到诊断位可复原 |
+| 能力快照缓存可能导致过时信息 | TTL 设置保守（100ms）；后端状态变化（stop/start）主动失效缓存；TOCTOU 窗口仍由 3.1 ResourceLease 彻底闭合 |
+| 任务特征推断的准确率依赖历史数据 | 冷启动期使用保守启发式；提供 min_history_samples 阈值（默认 32）；误判记录到 SchedulingMetrics 可观测 |
+| submit_fast() 绕过路由可能被滥用 | 仅推荐给确定的 CPU-only 无约束场景；文档明确说明使用边界；不作为默认推荐 API |
+| Task 对象池未正确重置状态导致泄漏 | 严格的重置协议；ASAN 持续验证；单元测试覆盖池行为 |
+| InlineFunction 与 std::function 行为差异 | 限制在 trivial-destructor 闭包；回退机制；充分测试 |
+| 自定义 TaskResult 破坏 std::future 语义 | 新 API（submit_v2）；旧 API 保持兼容；逐步迁移策略 |
+| 堆分配优化引入性能回归 | 每阶段配对 A/B 基准；验收线：不弱于前一阶段 ±5% |
+
+## 7. 性能与可观测性目标（0.7.1 新增）
+
+### 7.1 submit_auto 性能改进目标
+
+| 路径 | 当前（0.7.0） | 目标（0.7.1） | 改进 |
+|------|--------------|--------------|------|
+| CPU-only 纯策略 | ~50ns | ~35ns (submit_fast) | 30% |
+| CPU/GPU 选择（冷启动） | ~120ns | ~120ns（首次无改进） | - |
+| CPU/GPU 选择（缓存命中） | ~120ns | ~60ns（缓存读取） | 50% |
+| 自适应路由（AdaptiveScheduler） | ~150ns | ~80ns（缓存优化） | 47% |
+| 多 lockfree executor 选择 | N/A（手动指定） | ~100ns（自动选择） | 新能力 |
+
+### 7.2 可观测性增强
+
+**新增诊断位**（`RoutingDiagnostics` 扩展）：
+- `AutoInferredIntent` (0x20)：意图由自动推断产生
+- `AutoExecutorSelection` (0x40)：执行器由历史负载自动选择
+- `CapabilityCacheHit` (0x80)：使用了缓存的能力快照
+
+**新增指标**（`SchedulingMetrics` 扩展）：
+- `auto_inferred_count`：自动推断意图的次数
+- `capability_cache_hit_count`：能力缓存命中次数
+- `capability_cache_miss_count`：能力缓存未命中次数
+- `auto_inference_rejected_count`：推断结果被用户显式设置覆盖的次数
+
+**RoutingDecision 增强**：
+```cpp
+struct RoutingDecision {
+    // ... 现有字段
+    
+    // 0.7.1 新增
+    bool capability_from_cache = false;      // 能力来自缓存而非实时采集
+    std::string inferred_reason;             // 自动推断的原因（如 "blocking_io_pattern"）
+    std::optional<ExecutionIntent> original_intent;  // 推断前的原始意图
+};
+```
+
+### 7.3 文档与迁移准备
+
+**文档更新清单**（随 3.0.x 各阶段落地）：
+- [ ] `docs/API.md` §3.7：新增 `submit_fast()` 使用说明与边界
+- [ ] `website/{zh,en}/guides/choosing-submit-api.md`：更新决策树，增加"何时用 submit_fast"
+- [ ] `website/{zh,en}/guides/adaptive-scheduling.md`：补充自动推断章节，说明 opt-in 机制
+- [ ] `docs/design/scheduling_runtime.md` §9：追加能力缓存设计语义
+- [ ] `docs/skill/kairo-integration/references/scheduling.md`：同步新 API 和诊断位
+- [ ] `MIGRATION.md` 0.7.1 节：确认无破坏性变更，记录新增 opt-in 行为
+
+**基准与验证**：
+- 配对 A/B 基准矩阵：submit_fast vs submit vs submit_auto（纯策略/缓存/自适应）
+- 合成负载矩阵：CPU-only / CPU+GPU / 多 lockfree / 阻塞 I/O 检测准确率
+- 长时间 soak：自动推断开启，混合负载 ≥ 24h，监控误判率和震荡
