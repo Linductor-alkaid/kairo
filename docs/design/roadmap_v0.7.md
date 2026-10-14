@@ -51,7 +51,7 @@
 |---|---|---|
 | 0.7.0 | 调度基础整备 + 反馈闭环 MVP（opt-in AdaptiveScheduler） | additive 为主；如需破坏性变更，只放在本版 |
 | 0.7.1 | Resource Reservation（ResourceLease / ReservationToken）+ deadline policy | additive |
-| 0.7.2 | 反馈覆盖扩展到 GPU / lockfree / realtime + 生命周期可靠性收尾 | additive + 修复 |
+| 0.7.2 | **优先级语义转移到调度器（破坏性）** + 堆分配优化 + 反馈覆盖扩展 + 生命周期可靠性收尾 | **breaking（仅 submit_priority 移除）** + additive + 修复 |
 | 0.7.3 | `CpuGpuTask<T>` 返回值 / `ExecutionReport<T>` + 0.7 系列稳定化 | additive |
 
 0.7.3 可以视进度并入 0.7.2，或推迟到 0.8。
@@ -349,9 +349,92 @@ auto submit_auto(F&& f) {
 
 ---
 
-## 4. v0.7.2 — 堆分配优化（阶段一）+ 反馈覆盖扩展 + 生命周期可靠性收尾
+## 4. v0.7.2 — 调度语义清理 + 堆分配优化（阶段一）+ 反馈覆盖扩展 + 生命周期可靠性收尾
 
-### 4.0 普通执行路径堆分配优化（新增，来自 2026-10-13 设计评审）
+### 4.0 优先级语义从执行器转移到调度器（新增，来自 2026-10-14 架构评审）
+
+**问题分析**：当前 `submit_priority` 存在语义不一致：
+
+- **隐式优先级依赖**：submit_priority 与 submit_auto 共享 PriorityScheduler 队列系统，
+  因此隐式携带了优先级调度属性。这与 submit 系列的定位（§10.2："从不产出路由决策"
+  的快速提交路径）相矛盾。
+- **调度器抽象不完整**：优先级本质上是调度策略维度（与 deadline/QoS/affinity/resource
+  正交），但当前作为独立提交 API 暴露，绕过了 IScheduler 抽象。
+- **与演进方向不一致**：0.7.0 M3 已建立 `effective_priority_for()` 机制，实现了
+  调度器对优先级的动态咨询；0.7.1 的 deadline/QoS 都通过 TaskBuilder/TaskOptions
+  表达，而优先级仍保留独立 API 路径。
+
+**重构方向**：将优先级语义完全转移到调度器层，删除 `submit_priority` API。
+
+#### 4.0.1 语义重定向（第一阶段）
+
+优先级调度通过 TaskBuilder 表达：
+
+```cpp
+// 旧 API（0.7.1 及之前）
+executor.submit_priority(TaskPriority::HIGH, []{ work(); });
+
+// 新 API（0.7.2+）
+executor.submit_auto(TaskBuilder([]{ work(); }).priority(TaskPriority::HIGH));
+```
+
+**实现要点**：
+- TaskBuilder 已有 `priority()` 方法，TaskOptions 已有 `priority_set` 标记
+- `effective_priority_for()` 咨询机制保持不变（显式 priority 永不被调度器覆盖）
+- submit_auto 的优先级路径与 QoS/deadline 共享同一调度协议
+  （`submit_priority_scheduled` 内部实现复用）
+
+#### 4.0.2 API 弃用与移除（破坏性变更，仅此一项）
+
+```cpp
+// include/kairo/executor.hpp
+template<typename F, typename... Args>
+[[deprecated("Use submit_auto(TaskBuilder(f).priority(p)) instead. "
+             "Priority is a scheduling dimension, not a submission protocol. "
+             "See MIGRATION.md v0.7.2 for details.")]]
+auto submit_priority(int priority, F&& f, Args&&... args);
+```
+
+**时间线**（0.7.2 是 0.7.x 唯一破坏性变更窗口）：
+- 0.7.2-rc1：标记 deprecated，文档与示例全部迁移
+- 0.7.2-rc2：编译期警告验证（所有示例/测试零警告）
+- 0.7.2 正式版：移除 API（保留内部 `submit_priority_scheduled` 实现供 facade 复用）
+
+#### 4.0.3 迁移支持
+
+**自动化脚本**（`scripts/migrate_submit_priority.sh`）：
+```bash
+# 简单替换模式（无捕获）
+submit_priority(p, fn)  →  submit_auto(TaskBuilder(fn).priority(p))
+
+# 带参数捕获的 lambda
+submit_priority(p, [&]{ ... })  →  submit_auto(TaskBuilder([&]{ ... }).priority(p))
+```
+
+**迁移指南**（`docs/MIGRATION.md` 0.7.2 节）：
+- 语义等价性证明（优先级 + EDF + FIFO 逻辑完全相同）
+- 性能对比（submit_auto 裸 builder 已在 §10.3 验收线内，无回归）
+- 特殊场景处理（tracked 依赖图中的优先级已在 0.7.1 §3.2 通过 TaskBuilder 重载解决）
+
+#### 4.0.4 验收
+
+- [ ] 256 处测试代码迁移完成，零 deprecated 警告
+- [ ] 4 处示例代码更新，文档同步
+- [ ] 配对 A/B 基准：迁移前后端到端吞吐 ±2% 内
+- [ ] 契约测试：优先级 + EDF 排序、aging、effective_priority_for 咨询逻辑不变
+- [ ] `docs/API.md` §3.2 移除 submit_priority，§3.7 TaskBuilder 补充优先级示例
+- [ ] website 教程页（priority.md）全面改写
+- [ ] `scripts/check_docs_drift.sh` 通过
+
+**风险与边界**：
+- 这是 0.7.x **唯一的破坏性变更**（与 roadmap §1 "0.7.2 additive + 修复"
+  冲突，需明确标注为例外）
+- 不影响内部实现：PriorityScheduler 保持不变，四队列结构与 EDF 逻辑复用
+- 不改变调度行为：迁移后的任务执行顺序与 0.7.1 逐位一致
+
+---
+
+### 4.1 普通执行路径堆分配优化（新增，来自 2026-10-13 设计评审）
 
 **问题**：CR-107 M0 已将 submit 主路径从 10 → 9 allocs/task，但剩余 9 次分配仍有优化空间。
 
@@ -415,7 +498,7 @@ class Executor {
 };
 ```
 
-### 4.1 反馈接入其他后端
+### 4.2 反馈接入其他后端
 
 0.6.1 的反馈只覆盖默认异步池。本版把 measurement contract 扩展到：
 
@@ -423,7 +506,7 @@ class Executor {
 - **lockfree / realtime**：只提供聚合级反馈（周期内执行数、超预算次数），**不提供逐任务回调**，
   不破坏 RT 路径的无分配约束（随 NN-03 一起，把 realtime allocation guard 纳入 CI 构建矩阵）。
 
-### 4.2 未结的可靠性项（来自 2026-09-30 评审）
+### 4.3 未结的可靠性项（来自 2026-09-30 评审）
 
 | 项 | 问题 | 方向 |
 |---|---|---|
@@ -547,6 +630,7 @@ class Executor {
 | InlineFunction 与 std::function 行为差异 | 限制在 trivial-destructor 闭包；回退机制；充分测试 |
 | 自定义 TaskResult 破坏 std::future 语义 | 新 API（submit_v2）；旧 API 保持兼容；逐步迁移策略 |
 | 堆分配优化引入性能回归 | 每阶段配对 A/B 基准；验收线：不弱于前一阶段 ±5% |
+| **submit_priority 移除是 0.7.x 唯一破坏性变更** | **0.7.2 明确标注为例外**；完整迁移指南 + 自动化脚本；deprecated 警告周期（rc1→rc2）；0.7.0 承诺的"破坏性只放在本版"被 0.7.2 打破——但该重构正交于调度模型演进，延后至 0.8.0 会让 0.7.x 的调度语义内部不一致，造成更大的迁移负担 |
 
 ## 7. 性能与可观测性目标（0.7.1 新增）
 

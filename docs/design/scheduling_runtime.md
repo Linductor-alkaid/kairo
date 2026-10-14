@@ -1,8 +1,8 @@
-# Scheduling Runtime（0.6.0 / 0.6.1）
+# Scheduling Runtime（0.6.0 / 0.6.1 / 0.7.x）
 
 ## 1. 目标与边界
 
-0.6.0 把“何时执行、在哪里执行、以何种准入执行”的调度决策从 `Executor`
+0.6.0 把”何时执行、在哪里执行、以何种准入执行”的调度决策从 `Executor`
 facade 的内联代码中解耦为可注入的调度器组件，并建立统一的任务调度模型：
 **deadline / QoS / affinity / resource**。
 
@@ -11,6 +11,10 @@ facade 的内联代码中解耦为可注入的调度器组件，并建立统一�
 反馈通道（§6.3）、capability snapshot 弱一致语义（§6.4）与调度路径
 基准（tests/benchmark_scheduling_paths.cpp）。所有新增均为 additive
 extension，不改变 0.6.0 已发布的提交协议与调度模型语义。
+
+0.7.x 系列将反馈闭环引入调度决策（0.7.0 AdaptiveScheduler），补全资源
+预留（0.7.1 ResourceLease）与 deadline policy（0.7.1），并在 0.7.2 完成
+**优先级语义从提交 API 转移到调度器**的架构清理。
 
 解耦边界（沿用 `unified_facade_and_auto_routing.md` 的原则）：
 
@@ -588,3 +592,88 @@ EWMA/periodic/键空间上界单元；自动选择单元矩阵（最小负载、
 名字序、未运行/已满过滤、RealtimeQueue/空候选）；dispatch_auto
 集成（AdaptiveScheduler 注入后自动选择 + 指标；DefaultScheduler
 回归守卫）。
+
+## 14. 0.7.2 优先级语义转移到调度器（roadmap §4.0，架构清理）
+
+### 14.1 语义不一致问题
+
+0.7.1 及之前，优先级调度存在两条路径：
+
+1. **submit_priority API 路径**：直接提交到优先级队列，绕过调度器抽象
+   ```cpp
+   executor.submit_priority(TaskPriority::HIGH, []{ work(); });
+   ```
+2. **submit_auto + TaskBuilder 路径**：经调度器 `effective_priority_for()` 咨询
+   ```cpp
+   executor.submit_auto(TaskBuilder([]{ work(); }).priority(TaskPriority::HIGH));
+   ```
+
+问题：
+
+- **隐式依赖**：submit_priority 与 submit_auto 共享 PriorityScheduler，
+  因此隐式携带了优先级调度属性。这与 submit 系列的定位（§10.2：
+  "从不产出路由决策"的快速提交路径）相矛盾。
+- **抽象不完整**：优先级本质上是调度策略维度（与 deadline/QoS/affinity/
+  resource 正交），但作为独立提交 API 暴露，绕过了 IScheduler 抽象。
+- **演进不一致**：0.7.0 M3 建立了 `effective_priority_for()` 机制，
+  0.7.1 的 deadline/QoS 通过 TaskBuilder 表达，而优先级仍保留独立 API。
+
+### 14.2 重构方案（0.7.2 唯一破坏性变更）
+
+优先级完全通过 TaskBuilder 表达，移除 `submit_priority` API：
+
+```cpp
+// 0.7.2+ 统一路径
+executor.submit_auto(TaskBuilder([]{ work(); }).priority(TaskPriority::HIGH));
+```
+
+**语义等价性**：
+- TaskBuilder 已有 `priority()` 方法，TaskOptions 已有 `priority_set` 标记
+- `effective_priority_for()` 咨询机制保持不变（显式 priority 永不被调度器覆盖）
+- 优先级 + EDF + FIFO 的调度逻辑完全相同（PriorityScheduler 内部实现不变）
+- submit_auto 的优先级路径复用 `submit_priority_scheduled` 内部实现
+
+**破坏性变更时间线**：
+- 0.7.2-rc1：标记 `[[deprecated]]`，文档与示例迁移
+- 0.7.2-rc2：验证零警告
+- 0.7.2 正式版：移除 API（保留 `submit_priority_scheduled` 内部实现）
+
+**迁移模式**（自动化脚本 `scripts/migrate_submit_priority.sh`）：
+```cpp
+// 简单替换
+submit_priority(p, fn) → submit_auto(TaskBuilder(fn).priority(p))
+
+// 带捕获 lambda
+submit_priority(p, [&]{ ... }) → submit_auto(TaskBuilder([&]{ ... }).priority(p))
+
+// tracked 依赖图（0.7.1 已支持）
+submit_after(dep, TaskBuilder(fn).priority(p))
+```
+
+### 14.3 实现要点
+
+- **内部实现不变**：PriorityScheduler 四队列结构、EDF 排序、aging
+  机制全部保持不变，只是访问路径统一为 TaskBuilder → TaskOptions →
+  `submit_priority_scheduled`。
+- **性能无回归**：submit_auto 裸 builder 已在 §10.3 验收线内
+  （配对 A/B ±2%）；优先级路径复用既有实现，无额外开销。
+- **调度语义不变**：迁移前后的任务执行顺序（priority → EDF → FIFO）
+  逐位一致；aging / effective_priority_for 咨询逻辑不变。
+
+### 14.4 边界与风险
+
+- **这是 0.7.x 唯一破坏性变更**：roadmap §1 原计划"0.7.2 additive +
+  修复"被此项打破，但延后至 0.8.0 会让 0.7.x 内部调度语义不一致，
+  造成更大的迁移负担。
+- **影响面可控**：256 处测试代码 + 4 处示例，迁移模式清晰，
+  自动化脚本覆盖主要场景。
+- **文档同步**：`docs/API.md` §3.2 移除 submit_priority，
+  website 教程页（priority.md）全面改写为 TaskBuilder 示例。
+
+### 14.5 验收
+
+- 256 处测试代码迁移完成，零 deprecated 警告
+- 配对 A/B 基准：迁移前后端到端吞吐 ±2% 内
+- 契约测试：优先级 + EDF 排序、aging、effective_priority_for 咨询逻辑不变
+- `scripts/check_docs_drift.sh` 通过
+- MIGRATION.md 0.7.2 节补充语义等价性证明与迁移指南
