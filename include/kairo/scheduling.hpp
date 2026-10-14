@@ -42,14 +42,44 @@ struct AffinityHint {
 };
 
 /**
+ * @brief 开始执行时已错过声明的 deadline 的处置策略（0.7.1 §3.2）。
+ *
+ * 裁决点与 0.6.1 的 miss-observe 一致（开始执行时；边界同为"严格已过
+ * 才算错过，恰好相等接受"）。只影响执行期处置，不改变提交时点的
+ * deadline 准入拒绝（DeadlineExpired）。
+ */
+enum class DeadlinePolicy : uint8_t {
+    RunAnyway = 0,  // 默认。错过仍执行并记录 DeadlineMissed（0.6.x 行为）
+    DropIfLate,     // 错过则不执行用户代码：future 以
+                    // TaskCancelled(DeadlineMissed) 终态就绪，计入
+                    // deadline_dropped_count；依赖方按既有规则收到
+                    // DependencyCancelled。遵循取消类约定，不进 failure 统计
+    CancelIfLate    // 错过则向任务的停止令牌发协作式取消请求（非抢占），
+                    // 任务仍启动；用户代码经 kairo::get_stop_token()
+                    // 观测请求并自行退出。错过本身仍记 DeadlineMissed
+};
+
+/** @brief DeadlinePolicy 的稳定名称（诊断与测试输出）。 */
+const char* deadline_policy_to_string(DeadlinePolicy policy) noexcept;
+
+/**
  * @brief 任务资源需求声明。
  *
  * 声明式描述任务对设备资源的要求，供调度器在路由/准入时与后端
  * 能力快照核对。不满足时任务被拒绝并携带原因，不会隐式降级。
+ *
+ * 0.7.1 §3.1 起另可表达预留需求（`gpu_concurrent_slots` /
+ * `cpu_exclusive_cores`）：facade 启用资源预留（`ExecutorConfig::
+ * enable_resource_reservation` + `resource_quota`）时，声明的量在
+ * admission 时从配额中真正扣留，任务终态（成功/异常/取消/shutdown
+ * 排空）释放；未启用预留时这些字段只参与既有路由可行性核对。
  */
 struct ResourceRequirements {
     size_t memory_bytes = 0;   // 0 = 不声明；用于 GPU 内存可行性检查
     int gpu_device = -1;       // -1 = 不指定；>=0 时要求 GPU 执行器使用该设备
+    // ---- 0.7.1 §3.1：预留维度（声明 >0 且启用预留时参与预留）----
+    size_t gpu_concurrent_slots = 0;  // GPU 并发槽需求；需 gpu_device >= 0
+    size_t cpu_exclusive_cores = 0;   // CPU 独占核需求
 };
 
 /**
@@ -61,6 +91,7 @@ struct ResourceRequirements {
  */
 struct SchedulingSpec {
     std::optional<std::chrono::steady_clock::time_point> deadline;
+    DeadlinePolicy deadline_policy = DeadlinePolicy::RunAnyway;
     QosClass qos = QosClass::Standard;
     AffinityHint affinity;
     ResourceRequirements resources;

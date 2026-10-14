@@ -27,7 +27,10 @@ namespace kairo {
 enum class TaskCancellationReason {
     Explicit,            // 显式 request_task_cancel() / TimerHandle::cancel()
     Shutdown,            // facade 定时器停止时清理未到期的 delayed 任务
-    DependencyCancelled  // 依赖被取消，依赖方不再执行
+    DependencyCancelled, // 依赖被取消，依赖方不再执行
+    DeadlineMissed       // 0.7.1 §3.2 DropIfLate：开始执行时已错过声明的
+                         // deadline，未执行即终态；依赖方经既有归类规则
+                         // 收到 DependencyCancelled
 };
 
 inline const char* to_string(TaskCancellationReason reason) noexcept {
@@ -38,6 +41,8 @@ inline const char* to_string(TaskCancellationReason reason) noexcept {
         return "Shutdown";
     case TaskCancellationReason::DependencyCancelled:
         return "DependencyCancelled";
+    case TaskCancellationReason::DeadlineMissed:
+        return "DeadlineMissed";
     default:
         return "Unknown";
     }

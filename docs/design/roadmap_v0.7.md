@@ -11,6 +11,14 @@
 > **M3 AdaptiveScheduler MVP 已落地**（§2.4，分支 feat/adaptive-scheduler）。
 > **0.7.0 文档与发布已落地**（§2.5，分支 docs/v070-website-migration-sync）；
 > 0.7.0 里程碑全部完成，下一版本为 0.7.1（§3）。
+> **0.7.1 §3.0.1 已落地**（能力快照 TTL 缓存；曾规划的 submit_fast 经
+> 2026-10-14 评审实测与 submit 语义重复且慢 31.4%，移除保留 submit，
+> 见 `scheduling_runtime.md` §10.2；分支 feat/v071-capability-cache）。
+> **§3.2 已落地**（deadline policy +
+> 依赖传播，`scheduling_runtime.md` §11）。**§3.1 已落地**（资源预留
+> ResourceLease，`scheduling_runtime.md` §12）。**§3.0.2/§3.0.3 已
+> 落地**（自动推断建议 + 执行器自动选择，`scheduling_runtime.md`
+> §13）——**§3 全部落地**；0.7.1 剩发布收尾（定版 + §5.2 稳定化）。
 > 输入：`docs/design/scheduling_runtime.md` §5/§6、`docs/CODE_REVIEW_2026-09-30.md`
 > 未结项、`CHANGELOG.md` 0.6.x 边界声明。
 
@@ -147,7 +155,7 @@ constraint filter → candidate generation → scoring/ranking → selection
 
 ## 3. v0.7.1 — submit_auto 智能化增强 + Resource Reservation + deadline policy
 
-### 3.0 submit_auto 路由智能化（新增，来自 2026-10-13 设计评审）
+### 3.0 submit_auto 路由智能化（新增，来自 2026-10-13 设计评审）✅ 全部落地（§3.0.1/§3.0.1 缓存 + §3.0.2/§3.0.3，feat/v071-capability-cache）
 
 **问题**：`submit_auto` 虽名为"auto"，但路由能力未充分体现：
 - 默认 `DefaultScheduler` 是确定性的意图路由，未利用执行反馈
@@ -156,7 +164,21 @@ constraint filter → candidate generation → scoring/ranking → selection
 
 **方向**：分三阶段增强 auto 路由的智能性和性能。
 
-#### 3.0.1 能力快照缓存与快速路径（短期，预计 1-2 周）
+#### 3.0.1 能力快照缓存与快速路径（短期，预计 1-2 周）✅ 已落地（2026-10-14）
+
+> 落地形态说明：缓存载体为 Executor 内整表不可变快照（`manager_epoch` +
+> `collected_ns` + capabilities vector）经 M2 同款 RCU 槽发布，未按下方
+> 草图采用 per-backend 类型原子分片——route 消费的是整张能力表，分片
+> 命中路径需每次重组 vector（热路径堆分配），与快速路径目标冲突。
+> 主动失效由 manager `state_epoch` 承担（注册/启停/shutdown 全覆盖，
+> facade 直接启停 realtime / blocking-IO 的两处转换补
+> `notify_backend_state_changed()`）。设计语义与验收数据见
+> `docs/design/scheduling_runtime.md` §10。
+>
+> **2026-10-14 评审后记**：submit_fast 移除——实测与 submit 语义重复
+> （submit 系列本就不产出路由决策）且普通通道快 31.4%（1881 vs 2473
+> ns/op，优先级通道的 promise/atomic_bool/bind 间接层更重）。基准 §6
+> 改为 submit vs submit_auto 守卫。
 
 - **能力快照 TTL 缓存**：当前每次 `submit_auto` 都锁定并采集执行器能力（CR-106 优化了
   CPU-only 路径走纯策略判定）。引入 TTL-based 缓存（默认 100ms），热路径读取缓存快照：
@@ -194,7 +216,16 @@ constraint filter → candidate generation → scoring/ranking → selection
 - `submit_fast()` 路径 ~35ns，相比当前 `submit_auto` 纯策略路径 ~50ns 有 30% 改进
 - 配对 A/B 基准，TSAN 全绿
 
-#### 3.0.2 任务特征自动推断（中期，预计 1-2 月）
+#### 3.0.2 任务特征自动推断（中期，预计 1-2 月）✅ 已落地（2026-10-14，建议优先于切换）
+
+> 落地形态说明：推断为**建议性**注解（`AutoInferredIntent` 位 +
+> `inferred_reason` + detail 建议），不改写 intent/路由——submit_auto
+> 的 `std::future` 契约只有默认池能履行，lockfree/realtime 是有界
+> dispatch 语义（草图中的 `intent = LowLatency` 直接改写不可实现，
+> 该形态留给 dispatch_auto 的显式意图表达）。历史为按任务名的有界
+> 64 键表（`<kairo/task_inference.hpp>`）；opt-in
+> `enable_auto_inference` 默认关闭。设计语义与偏差清单见
+> `docs/design/scheduling_runtime.md` §13。
 
 扩展 `TaskOptions` 的自动分析能力，减少用户显式指定意图的需求：
 
@@ -244,7 +275,17 @@ auto submit_auto(F&& f) {
 - 推断结果记录到 `RoutingDecision::diagnostics` 新增位 `AutoInferredIntent`
 - 提供 `disable_auto_inference()` 配置选项，完全关闭推断回退到纯意图路由
 
-#### 3.0.3 AdaptiveScheduler 的进一步扩展（与 3.0.2 并行）
+#### 3.0.3 AdaptiveScheduler 的进一步扩展（与 3.0.2 并行）✅ 已落地（2026-10-14）
+
+> 落地形态说明：①执行器选择优化经新虚方法
+> `IScheduler::select_bounded_executor` 生效（AdaptiveScheduler 按能力
+> 快照瞬时队列负载选 lockfree，并列取名字序；lockfree 反馈在 v0.7.2
+> 接入前不做历史负载——冷启动即安全）；②动态意图调整建议并入 §3.0.2
+> 的建议注解形态；③冷启动保守启发式由 M3 既有行为覆盖（min_samples
+> 不足回退 0.6.1 启发式）。验收线偏差："多 lockfree p99 >20%"依赖
+> lockfree queue_wait 测量（v0.7.2 §4.1），本阶段以最小负载当选的
+> 确定性断言替代；"热路径 <80ns"由 §3.0.1 缓存命中路径覆盖。见
+> `docs/design/scheduling_runtime.md` §13。
 
 扩展 0.7.0 M3 的 `AdaptiveScheduler`，增加以下能力：
 
@@ -266,9 +307,18 @@ auto submit_auto(F&& f) {
 - 冷启动期间（< min_samples）误判率 < 5%（通过合成负载矩阵验证）
 - 热路径开销：能力缓存命中时 route 路径 < 80ns（相比 M3 的 ~120ns 进一步优化）
 
-### 3.1 ResourceLease / ReservationToken
+### 3.1 ResourceLease / ReservationToken ✅ 已落地（2026-10-14）
 
 闭合 §6.4 记录的 TOCTOU 窗口：admission 时就真正保留资源，而不是只做可行性判断。
+
+> 落地形态说明：配额为**显式静态声明**（`ExecutorConfig::resource_quota`，
+> opt-in 默认关闭），而非能力快照读数——预留是 facade 级确定性簿记，
+> 闭合的是多提交对同一资源声明维度的超卖窗口；硬件层弱一致契约不变。
+> 终态释放复用 admission 释放链（CAS 恰好一次 + 析构兜底，CR-010/011
+> 级异常路径覆盖原样复用）。首批维度：GPU 显存额度、GPU 并发槽、
+> CPU 独占核（静态配额式，非 §5 的"按绑核独占"形态——后者需池
+> 内核亲和调度支持，留待后续）。设计语义与验收见
+> `docs/design/scheduling_runtime.md` §12。
 
 - 资源类型（首批）：GPU 显存额度、GPU 并发槽、CPU 独占核（§5 "独占核 reservation"）。
 - 语义：`try_reserve(ResourceRequirements) -> expected<ResourceLease, ReserveError>`；lease 采用
@@ -278,9 +328,19 @@ auto submit_auto(F&& f) {
 - 与 0.7.0 联动：调度器可以把 lease 的可得性作为 candidate filter 输入。
 - **与 3.0 联动**：缓存的能力快照包含资源可用量，auto 路由可以预先过滤资源不足的候选。
 
-### 3.2 deadline policy
+### 3.2 deadline policy ✅ 已落地（2026-10-14）
 
 在已有的 admit → EDF → miss-observe 之上，增加 per-task 策略：
+
+> 落地形态说明：裁决点为开始执行时（facade 包装层，与 0.6.1
+> miss-observe 同点同边界），而非池出队点——策略经由 facade 的
+> deadline 包装表达，覆盖 submit_auto(TaskBuilder) 与新增的
+> submit_after/submit_after_with_handle TaskBuilder 重载（依赖传播
+> 由此成为真实可测路径）；`DropIfLate` 终态复用取消类约定
+> （`TaskCancelled(DeadlineMissed)`，依赖方经既有归类规则收到
+> `DependencyCancelled`）；`CancelIfLate` 的令牌经新增
+> `kairo::get_stop_token()`（thread_local + RAII）暴露。设计语义与
+> 验收矩阵见 `docs/design/scheduling_runtime.md` §11。
 
 - `RunAnyway`（默认，等于 0.6.x 行为）/ `DropIfLate`（出队时已过期则不执行，以
   `DeadlineMissed` 终态结算）/ `CancelIfLate`（向任务的 StopToken 发协作式取消请求，**不是抢占**）。
@@ -459,7 +519,7 @@ class Executor {
 **验收线（阶段三）**：
 - [ ] `benchmark_submit_allocations`：**3-4 allocs/task** (-56-67% vs v0.7.0)
 - [ ] 协程版本作为 opt-in 特性（`KAIRO_ENABLE_CORO_TASK`）
-- [ ] 性能不弱于 `submit_fast()`
+- [ ] 性能不弱于 `submit()`
 - [ ] 文档说明使用场景和限制
 
 ### 6.1 0.7 系列总结
@@ -494,7 +554,7 @@ class Executor {
 
 | 路径 | 当前（0.7.0） | 目标（0.7.1） | 改进 |
 |------|--------------|--------------|------|
-| CPU-only 纯策略 | ~50ns | ~35ns (submit_fast) | 30% |
+| CPU-only 纯策略 | ~50ns | 保留 `submit`（评审后 submit_fast 移除） | - |
 | CPU/GPU 选择（冷启动） | ~120ns | ~120ns（首次无改进） | - |
 | CPU/GPU 选择（缓存命中） | ~120ns | ~60ns（缓存读取） | 50% |
 | 自适应路由（AdaptiveScheduler） | ~150ns | ~80ns（缓存优化） | 47% |
@@ -528,14 +588,14 @@ struct RoutingDecision {
 ### 7.3 文档与迁移准备
 
 **文档更新清单**（随 3.0.x 各阶段落地）：
-- [ ] `docs/API.md` §3.7：新增 `submit_fast()` 使用说明与边界
-- [ ] `website/{zh,en}/guides/choosing-submit-api.md`：更新决策树，增加"何时用 submit_fast"
+- [x] `docs/API.md` §3.7：submit_fast 经评审移除，未新增（submit 承载）
+- [x] `website/{zh,en}/guides/choosing-submit-api.md`：评审结论（submit_fast 移除）已同步
 - [ ] `website/{zh,en}/guides/adaptive-scheduling.md`：补充自动推断章节，说明 opt-in 机制
 - [ ] `docs/design/scheduling_runtime.md` §9：追加能力缓存设计语义
 - [ ] `docs/skill/kairo-integration/references/scheduling.md`：同步新 API 和诊断位
 - [ ] `MIGRATION.md` 0.7.1 节：确认无破坏性变更，记录新增 opt-in 行为
 
 **基准与验证**：
-- 配对 A/B 基准矩阵：submit_fast vs submit vs submit_auto（纯策略/缓存/自适应）
+- 配对 A/B 基准矩阵：submit vs submit_auto（纯策略/缓存/自适应）
 - 合成负载矩阵：CPU-only / CPU+GPU / 多 lockfree / 阻塞 I/O 检测准确率
 - 长时间 soak：自动推断开启，混合负载 ≥ 24h，监控误判率和震荡

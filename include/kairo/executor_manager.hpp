@@ -272,6 +272,17 @@ public:
      */
     std::vector<ExecutorCapability> get_executor_capabilities() const;
 
+    /**
+     * @brief 后端可观测状态变更通知（推进 state_epoch）。
+     *
+     * 供绕过注册表直接变更后端 running 状态的路径使用（如 facade 的
+     * realtime / blocking-IO start：在执行器对象上启停，不经 Manager
+     * 注册表）。0.7.1 §3.0.1 起能力快照缓存以 state_epoch 做主动失效：
+     * 任何影响能力快照内容（running / 注册集合）的转换都必须推进
+     * epoch，否则 TTL 内的路由会看到陈旧状态。
+     */
+    void notify_backend_state_changed() noexcept;
+
     bool try_push_realtime_task(const std::string& name, std::function<void()> task);
 
     /**

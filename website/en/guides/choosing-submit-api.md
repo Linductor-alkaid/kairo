@@ -19,7 +19,7 @@ Do not start with an executor class name. First ask what the caller must confirm
 | Soft periodic maintenance | `submit_periodic()` | Task ID and periodic status | Strict period or low jitter |
 | Dependencies, delays, priorities, batches | Matching explicit Facade API | Future, handle, or task ID | Composite scheduling semantics |
 
-`submit_auto(lambda)` is the ordinary developer's default entry. It safely uses the default asynchronous pool; it does not infer that pressure, a deadline, or priority should select GPU, lock-free, or real-time work.
+`submit_auto(lambda)` is the ordinary developer's default entry. It safely uses the default asynchronous pool; it does not infer that pressure, a deadline, or priority should select GPU, lock-free, or real-time work. Since 0.7.1 the capability snapshots consumed by CpuOrGpu / affinity routing are read through a TTL cache (default 100 ms; backend registration/start/stop invalidates immediately), so hits no longer take the registry locks on every submit.
 
 Before choosing by scenario, read [how automatic routing matches a target](/en/guides/execution-models-and-routing) if names, intents, fallback, and capability snapshots are still unclear.
 
@@ -51,6 +51,8 @@ auto decoded = future.get();
 ```
 
 Value capture gives the task stable input. `future.get()` is the completion and exception boundary; `get_last_routing_decision()` explains why the default Facade selected its path. `submit()` remains a valid explicit entry when existing thread-pool semantics or compatibility require it. A reference, raw pointer, or `this` must be proven to outlive the task.
+
+Value capture gives the task stable input. `future.get()` is the completion and exception boundary; `get_last_routing_decision()` explains why the default Facade selected its path. For bare submissions without routing semantics use `submit()` (a 0.7.1 review evaluated a separate `submit_fast` fast path; the plain submission channel measured ~31% faster than the priority channel, so the idea converged back into `submit` and no new API was added). When intent routing, QoS mapping, or structured diagnostics matter, use `submit_auto`.
 
 ## Bounded admission: `dispatch_auto()` only for known constraints
 

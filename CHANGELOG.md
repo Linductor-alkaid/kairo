@@ -4,6 +4,144 @@
 
 ---
 
+## [Unreleased] — 0.7.1 开发快照
+
+v0.7.1 全部四个阶段：submit_auto 路由智能化（roadmap §3.0.1 含
+§3.0.2/§3.0.3）、deadline policy（§3.2）与资源预留 ResourceLease
+（§3.1）。全部为 additive（资源预留与自动推断默认关闭）；默认行为
+与 0.7.0 逐项一致（`tests/test_capability_cache.cpp` 锁定缓存开/关
+的决策一致性，`tests/test_deadline_policy.cpp` 锁定默认策略 =
+0.6.x，`tests/test_resource_lease.cpp` 锁定未启用预留 = 0.7.0，
+`tests/test_auto_inference.cpp` 锁定默认无推断/DefaultScheduler
+不做执行器自动选择）。
+
+### 调度
+
+- **能力快照 TTL 缓存（submit_auto 路由智能化 §3.0.1）**：`submit_auto`
+  的 CpuOrGpu / affinity 路由与 `dispatch_auto` 的能力消费默认经 TTL
+  缓存（100ms）读取，命中路径不再逐次锁 Manager 注册表采集。不可变
+  快照经 M2 同款可移植 RCU 槽发布（`scheduling::detail::SnapshotSlot`
+  泛化为 `SnapshotSlotT<T>`，既有别名不变）；命中判据为 manager
+  `state_epoch` 未变且未过 TTL——注册/启停/shutdown 主动失效，TTL 只
+  兜底 pending_work / GPU 可用内存等运行期数值漂移。facade 的
+  `start_realtime_task` / `start_blocking_io_worker` 此前绕过注册表
+  启停后端，现于成功后调用新增的
+  `ExecutorManager::notify_backend_state_changed()` 推进 epoch。
+  命中决策带 `RoutingDiagnostics::CapabilityCacheHit`（`1u<<7`）位与
+  `RoutingDecision::capability_from_cache` 字段；`SchedulingMetrics`
+  新增 `capability_cache_hit_count` / `capability_cache_miss_count`
+  （访问点统计，与决策记录解耦）。控制 API：
+  `Executor::set_capability_cache_ttl()`（0 关闭）/
+  `capability_cache_ttl()` / `invalidate_capability_cache()`；公开的
+  `get_executor_capabilities()` 保持实时采集语义不经缓存。
+  验收（配对 A/B，验收线内置 `benchmark_scheduling_paths` §5）：缓存
+  命中移除端到端 36.6% 采集成本（1415 → 898 ns/op，Windows MSVC
+  Release；线 warm ≤ 0.9 × fresh）。契约测试
+  `tests/test_capability_cache.cpp`（14 用例）：计数与来源标记、TTL
+  过期/关闭/重设、TTL 内注册-启动-停止主动失效、决策一致性矩阵、
+  并发 + epoch 扰动下 hit+miss 守恒。
+
+- **deadline policy（roadmap §3.2，additive，默认 = 0.6.x）**：
+  `TaskOptions::deadline_policy`（`DeadlinePolicy::RunAnyway` 默认 /
+  `DropIfLate` / `CancelIfLate`）在开始执行时裁决——与 0.6.1
+  miss-observe 同点、同"严格已过才算错过，恰好相等接受"边界，不影响
+  提交时点的 `DeadlineExpired` 准入拒绝与 EDF 排序。
+  - `RunAnyway`：0.6.x 行为逐位一致（错过仍执行 + DeadlineMissed
+    failure 事件）。
+  - `DropIfLate`：错过不执行用户代码，future 以
+    `TaskCancelled(TaskCancellationReason::DeadlineMissed)` 终态就绪；
+    计 `deadline_missed_count` + 新增 `deadline_dropped_count`；遵循
+    取消类约定不进 failure 统计（结算分类器
+    `is_deadline_drop_exception` 保证不落入 task-exception）。
+  - `CancelIfLate`：错过向协作停止源发请求（非抢占），任务仍启动，
+    用户代码经新增的 `kairo::get_stop_token()`（`<kairo/stop_token.hpp>`，
+    inline thread_local + RAII 守卫，嵌套安全）轮询并自行退出；
+    非任务上下文返回空令牌。
+  - **依赖传播**：tracked 提交新增 `submit_after /
+    submit_after_with_handle` 的 TaskBuilder 重载（携带完整
+    TaskOptions：deadline/策略/QoS/优先级，QoS→默认优先级映射与
+    `effective_priority_for` 咨询语义与 `submit_auto` 一致）。上游
+    DropIfLate 丢弃 → 任务图落 Failed（异常 `TaskCancelled(DeadlineMissed)`）
+    → 下游经既有 `reclassify_dependency_exception` 规则收到
+    `TaskCancelled(DependencyCancelled)`，零新增传播机制。
+  - 边界：`CpuGpuTask` 本阶段忽略 policy 字段（维持 feedback 级
+    miss 观测）；无 deadline 时策略字段无效。契约矩阵
+    `tests/test_deadline_policy.cpp`（14 用例：边界不漂移、三策略 ×
+    强制错过、依赖传播矩阵、指标守恒）。
+
+- **资源预留 ResourceLease（roadmap §3.1，additive，默认关闭）**：
+  `ExecutorConfig::enable_resource_reservation` + `resource_quota`
+  （新增公开头 `<kairo/resource_lease.hpp>`：GPU 显存/并发槽按
+  device 分桶、CPU 独占核总量的显式配额）启用后，声明了
+  `resources()` 的 `submit_auto(TaskBuilder)` 与 tracked TaskBuilder
+  提交在 admission 时从配额真正扣留，闭合多提交在 admission 与执行
+  之间超卖同一资源的 TOCTOU 窗口；任务终态归还。
+  - 授予全或无：联合需求任一维度不足整体拒绝、零部分授予；GPU 维度
+    缺 device → `InvalidRequirement`，device 未配额 → `NotConfigured`。
+  - 决策一致性：submit_auto 在记录决策前预留，失败改写为
+    `CapacityPressure` + `ResourceInfeasible`（计入既有
+    `resource_rejected_count`）；tracked 路径以结构化拒绝结算。
+  - 终态释放：`detail::TerminalReleaser`（CAS 恰好一次 + 析构兜底）
+    经 `submit_priority_scheduled` / `submit_tracked_with_hook` 新增
+    的 `terminal_release` 参数接入既有 admission 释放链——成功/异常/
+    协作取消/丢弃/软超时/提交拒绝/shutdown 排空全部路径归还。
+  - 手动入口：`Executor::try_reserve(req) -> ReservationResult`
+    （RAII `ResourceLease`，move-only、release 幂等）+ 诊断快照
+    `get_resource_reservation_status()`；`ResourceRequirements` 新增
+    `gpu_concurrent_slots` / `cpu_exclusive_cores` 维度。
+  - 契约测试 `tests/test_resource_lease.cpp`（12 用例：opt-in 边界、
+    手动授予/拒绝/RAII、GPU 各维度、任务绑定终态归还、并发超卖、
+    终态释放矩阵、tracked 预留、多维全或无）。
+
+- **任务特征自动推断与执行器自动选择（roadmap §3.0.2/§3.0.3）**：
+  - **自动推断（opt-in，`enable_auto_inference` 默认关闭；运行期
+    `set_auto_inference_enabled()` 可调）**：submit_auto 按任务名
+    模式与同名任务完成间隔规律（有界 64 键历史表
+    `<kairo/task_inference.hpp>`，采样经反馈通道，启用时自动附加
+    测量包装）产出**建议性**推断——决策带 `AutoInferredIntent`
+    （`1u<<5`）位 + `RoutingDecision::inferred_reason` + detail 建议
+    （blocking → start_worker / 低延迟 → dispatch_auto /
+    periodic → submit_periodic），路由**不被改变**（submit_auto 的
+    future 契约只有默认池能履行——"建议优先于切换"的强制形态）；
+    显式 intent 优先并计 `auto_inference_rejected_count`，建议计
+    `auto_inferred_count`。
+  - **执行器自动选择（随 AdaptiveScheduler 注入 opt-in）**：
+    `IScheduler` 新增 `select_bounded_executor()` 虚方法（默认返回
+    空，DefaultScheduler 与既有自定义调度器行为不变）；未指定
+    preferred_executor 的 `dispatch_auto(LowLatency)` 由
+    AdaptiveScheduler 按瞬时队列负载（pending_work/capacity_hint）
+    选择 lockfree 执行器，并列取名字序，决策带 `AutoExecutorSelection`
+    （`1u<<6`）位 + `auto_executor_selected_count`。选择只用能力
+    快照（经 TTL 缓存）——lockfree 反馈通道在 v0.7.2 接入前不做
+    历史负载（冷启动即安全）。
+  - 契约测试 `tests/test_auto_inference.cpp`（11 用例：opt-in 边界、
+    模式注解与路由不变、显式覆盖、运行期开关、推断表 EWMA/periodic/
+    键空间上界、自动选择单元矩阵与 dispatch 集成、DefaultScheduler
+    回归守卫）。
+
+### 提交路径
+
+- **`submit_fast()` 评审移除（§3.0.1 收敛）**：路线图曾规划零路由
+  快速提交路径；实现后与 `submit` 语义重复（等价
+  `submit_priority(NORMAL, ...)`），配对实测普通提交通道反而快
+  31.4%（1881 vs 2473 ns/op，Windows MSVC Release），按 2026-10-14
+  评审决定移除该 API、保留 `submit`。零路由语义本就由 `submit`
+  承载（submit 系列从不产出路由决策）；§3.0.1 的实际性能收益由
+  能力快照缓存承载。基准 `benchmark_scheduling_paths` §6 改为
+  submit vs submit_auto 裸 builder 守卫（submit ≤ 1.05 × bare）。
+
+### 文档
+
+- `docs/design/scheduling_runtime.md` 新增 §10（能力缓存设计语义与验收、
+  submit_fast 评审移除记录）与 §11（deadline policy 设计语义与验收矩阵）；
+  `docs/API.md` §3.7/§3.8、`docs/MIGRATION.md` 新增
+  "从 0.7.0 升级到 0.7.1"（无必需迁移）；版本与迁移页新增 0.7.1 开发
+  快照小节（含 submit_fast 评审移除结论），中英选型页同步纯提交路径
+  评审结论；`docs/skill` 调度卡（kairo-integration / kairo-maintainer）
+  同步新 API 与诊断通道。
+
+---
+
 ## [0.7.0] - 2026-10-10
 
 v0.7.0 前置清债（M0，`docs/design/roadmap_v0.7.md` §2.1）：在引入任何

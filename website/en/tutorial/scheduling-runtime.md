@@ -31,9 +31,26 @@ custom scheduler routes=1
 ## What each declaration means
 
 - `qos(QosClass::Interactive)` - a queue-priority preset (`BestEffort/Standard/Interactive/Critical` -> `LOW/NORMAL/HIGH/CRITICAL`) applied when no explicit `priority()` is set. It is not a latency or bandwidth guarantee; deterministic cycles still require the RealtimeQueue intent.
-- `deadline(time_point)` - real scheduling input, not a timeout. Within the same priority class, tasks order by earliest deadline first (EDF). A deadline already strictly in the past is rejected at submission with the structured reason `RoutingReason::DeadlineExpired` (0.6.1). A task that starts after its deadline still runs and records `FailureKind::DeadlineMissed` - cancellation remains a request, never an interrupt.
+- `deadline(time_point)` - real scheduling input, not a timeout. Within the same priority class, tasks order by earliest deadline first (EDF). A deadline already strictly in the past is rejected at submission with the structured reason `RoutingReason::DeadlineExpired` (0.6.1). A task that starts after its deadline runs by default and records `FailureKind::DeadlineMissed` - 0.7.1 adds `deadline_policy()` to choose the disposition (below).
 - `affinity(AffinityHint{{0, 1}})` - advisory. The scheduler compares the request against each backend's bound CPU set; on mismatch the task is still accepted, but the decision is marked degraded (0.6.1): `status = AcceptedDegraded`, `reason = AffinityMismatch`, plus the `AffinityMismatch` diagnostics bit and a human-readable detail. OS threads are never rebound per task.
 - `resources(ResourceRequirements{...})` - a feasibility check against capability snapshots: a wrong `gpu_device` rejects with `BackendUnavailable`, memory above availability rejects with `CapacityPressure` (both carry the `ResourceInfeasible` diagnostics bit, 0.6.1). It is not a reservation; concurrent submissions can still compete at execution time.
+
+## Deadline miss disposition (0.7.1 development snapshot)
+
+`deadline_policy()` chooses what happens when a task starts after its deadline. The decision point matches the miss observation (execution start; strictly past counts as late, equality is accepted) and never affects `DeadlineExpired` admission or EDF ordering:
+
+- `RunAnyway` (default) - the 0.6.x behavior: the task runs and records `DeadlineMissed`.
+- `DropIfLate` - the user code never runs: the future settles with `TaskCancelled(DeadlineMissed)`, counted in `deadline_dropped_count`; downstream graph tasks receive `DependencyCancelled`. Fits iterative computations whose result is worthless once stale.
+- `CancelIfLate` - a cooperative stop request is issued (no preemption) and the task still starts; your code polls `kairo::get_stop_token()` and exits promptly. Fits long tasks with checkpoints.
+
+```cpp
+auto stale = executor.submit_auto(
+    kairo::task([] { return recompute_quote(); })
+        .deadline(quote_valid_until)
+        .deadline_policy(kairo::DeadlinePolicy::DropIfLate));
+```
+
+Boundaries: the policy only applies when a `deadline` is declared; `CpuGpuTask` ignores it at this stage; `get_stop_token()` returns an empty token outside task context.
 
 ## Injecting a custom scheduler
 

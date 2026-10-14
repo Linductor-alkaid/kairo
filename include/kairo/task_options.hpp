@@ -110,6 +110,16 @@ constexpr uint32_t ResourceInfeasible = 1u << 1;
 constexpr uint32_t AdaptiveHistory = 1u << 2;
 /** 0.7.0 M3：拒绝由 QoS 降载状态机触发（reason == LoadShedding）。 */
 constexpr uint32_t LoadShedding = 1u << 3;
+/** 0.7.1 §3.0.1：本次路由消费的能力快照来自 TTL 缓存而非实时采集
+ *  （配对的 RoutingDecision::capability_from_cache 布尔字段；位与字段
+ *  同置，诊断位便于掩码过滤）。 */
+constexpr uint32_t CapabilityCacheHit = 1u << 7;
+/** 0.7.1 §3.0.2：决策携带任务特征自动推断的建议（建议优先于切换，
+ *  路由不被推断改变；inferred_reason 说明推断依据）。 */
+constexpr uint32_t AutoInferredIntent = 1u << 5;
+/** 0.7.1 §3.0.3：有界 dispatch 的执行器由调度器按负载自动选择
+ *  （用户未显式指定 preferred_executor 时；detail 携带各候选负载）。 */
+constexpr uint32_t AutoExecutorSelection = 1u << 6;
 }  // namespace RoutingDiagnostics
 
 /** @brief RoutingStatus 的稳定名称（诊断与测试输出）。 */
@@ -175,6 +185,9 @@ struct TaskOptions {
     std::optional<std::string> preferred_executor;
     FallbackPolicy fallback = FallbackPolicy::NoFallback;
     std::optional<std::chrono::steady_clock::time_point> deadline;
+    // 0.7.1 §3.2：开始执行时已错过 deadline 的处置策略；仅与 deadline
+    // 同时声明时生效（无 deadline 时忽略）。见 DeadlinePolicy。
+    DeadlinePolicy deadline_policy = DeadlinePolicy::RunAnyway;
     QosClass qos = QosClass::Standard;
     AffinityHint affinity;
     ResourceRequirements resources;
@@ -212,6 +225,15 @@ struct RoutingDecision {
     // 0.6.1：结构化次要诊断（RoutingDiagnostics 位组合）。
     uint32_t diagnostics = RoutingDiagnostics::None;
     bool fell_back = false;
+    // 0.7.1 §3.0.1：路由消费的能力快照来自 TTL 缓存（与
+    // RoutingDiagnostics::CapabilityCacheHit 同置）。快照内容弱一致：
+    // 相对实时采集至多滞后 capability_cache_ttl（默认 100ms），后端
+    // 注册/启停由 manager state_epoch 主动失效。
+    bool capability_from_cache = false;
+    // 0.7.1 §3.0.2：自动推断依据（与 RoutingDiagnostics::AutoInferredIntent
+    // 同置；如 "blocking_io_pattern" / "low_latency_pattern" /
+    // "periodic_pattern"）。空 = 无推断。
+    std::string inferred_reason;
     std::string detail;
     std::chrono::steady_clock::time_point timestamp =
         std::chrono::steady_clock::now();
@@ -265,6 +287,11 @@ public:
 
     TaskBuilder& deadline(std::chrono::steady_clock::time_point value) noexcept {
         options_.deadline = value;
+        return *this;
+    }
+
+    TaskBuilder& deadline_policy(DeadlinePolicy value) noexcept {
+        options_.deadline_policy = value;
         return *this;
     }
 

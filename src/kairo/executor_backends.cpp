@@ -82,6 +82,9 @@ ExecutorResult Executor::start_realtime_task(const std::string& name) {
         return result;
     }
 
+    // running 状态是能力快照的一部分；此路径不经 Manager 注册表，
+    // 必须显式推进 state_epoch（0.7.1 §3.0.1 能力缓存主动失效）。
+    manager_->notify_backend_state_changed();
     return ExecutorResult::success("Realtime executor started");
 }
 
@@ -148,6 +151,9 @@ ExecutorResult Executor::start_blocking_io_worker(const std::string& name) {
             result, FailureKind::SubmitRejected, name, "facade_start_blocking_io_worker");
         return result;
     }
+    // running 状态是能力快照的一部分；此路径不经 Manager 注册表，
+    // 必须显式推进 state_epoch（0.7.1 §3.0.1 能力缓存主动失效）。
+    manager_->notify_backend_state_changed();
     return ExecutorResult::success("Blocking I/O executor started");
 }
 

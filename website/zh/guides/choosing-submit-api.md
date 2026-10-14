@@ -19,7 +19,7 @@ description: 先区分完成、接收和生命周期结果，再按业务约束�
 | 软周期维护 | `submit_periodic()` | task ID 与周期状态 | 需要严格周期或低 jitter |
 | 依赖、延迟、优先级或批量 | 对应显式 Facade API | future、handle 或 task ID | 需要组合调度语义 |
 
-`submit_auto(lambda)` 是普通开发者的默认入口。它当前安全地选择默认异步线程池，不会因为 priority、deadline 或压力自动转投 GPU、无锁或实时后端。
+`submit_auto(lambda)` 是普通开发者的默认入口。它当前安全地选择默认异步线程池，不会因为 priority、deadline 或压力自动转投 GPU、无锁或实时后端。0.7.0 起 CpuOrGpu / affinity 路由消费的能力快照经 TTL 缓存（默认 100ms；后端注册/启停立即失效），命中路径不再逐次锁注册表采集。
 
 不确定名称、intent、fallback 与 capability snapshot 如何共同决定目标时，先读[自动路由如何匹配目标](/zh/guides/execution-models-and-routing)，再继续按场景选型。
 
@@ -51,6 +51,8 @@ auto decoded = future.get();
 ```
 
 按值捕获 `frame` 让任务拥有稳定输入。`future.get()` 是完成和异常传播边界；`get_last_routing_decision()` 则解释默认 Facade 为什么选择该路径。需要直接控制已有线程池语义或维护兼容代码时，`submit()` 仍是有效的显式入口。
+
+按值捕获 `frame` 让任务拥有稳定输入。`future.get()` 是完成和异常传播边界；`get_last_routing_decision()` 则解释默认 Facade 为什么选择该路径。完全不需要路由语义的裸提交用 `submit()`（0.7.1 评审曾评估过独立的 `submit_fast` 快速路径，实测普通提交通道本身快于优先级通道约 31%，故收敛回 `submit`，未引入新 API）。需要意图路由、QoS 映射或结构化诊断时用 `submit_auto`。
 
 ## 何时使用显式 future API
 

@@ -16,6 +16,57 @@ The latest release record is `v0.7.0`. This site uses that stable version as its
 | Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | Complete current signatures | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
+## 0.7.1 development snapshot: smarter submit_auto routing (in progress)
+
+0.7.1 advances `docs/design/roadmap_v0.7.md` §3; this is an unreleased
+development snapshot. The landed part (§3.0.1) is fully additive, no
+migration required:
+
+- **Capability snapshot TTL cache (default on)**: the capability reads
+  behind `submit_auto` CpuOrGpu/affinity routing and `dispatch_auto` go
+  through a 100 ms TTL cache; hits no longer take the registry locks per
+  submit (paired benchmarks remove ~37% end-to-end collection cost).
+  Backend registration/start/stop invalidates immediately via the manager
+  `state_epoch`; decisions are identical with the cache on or off.
+  Controls: `set_capability_cache_ttl()` (0 disables) /
+  `invalidate_capability_cache()`.
+- **Plain submission review outcome**: the `submit_fast()` sketched by
+  §3.0.1 proved semantically redundant with `submit` and the plain
+  channel measured ~31% faster; it was removed per review and `submit`
+  retained (see [Choose a Submission API](/en/guides/choosing-submit-api)).
+- **New diagnostics channel**: the `CapabilityCacheHit` bit (`1u<<7`) and
+  `RoutingDecision::capability_from_cache` mark the provenance of the
+  consumed snapshot; `SchedulingMetrics` gains
+  `capability_cache_hit_count` / `capability_cache_miss_count`.
+- **Deadline policy (§3.2)**: `TaskOptions::deadline_policy`
+  (`RunAnyway` default / `DropIfLate` / `CancelIfLate`) is decided at
+  execution start and never affects `DeadlineExpired` admission or EDF
+  ordering. `DropIfLate` skips the user code when late (future settles
+  with `TaskCancelled(DeadlineMissed)`, counted in
+  `deadline_dropped_count`; dependents see `DependencyCancelled`);
+  `CancelIfLate` issues a cooperative stop request (no preemption) and
+  user code polls `kairo::get_stop_token()`. Tracked submissions gain
+  TaskBuilder overloads of `submit_after(_with_handle)`.
+- **Resource reservation / ResourceLease (§3.1, default off)**:
+  `ExecutorConfig::enable_resource_reservation` + `resource_quota`
+  make submissions that declare `resources()` actually hold quota at
+  admission (GPU memory / slots, CPU exclusive cores) and release it at
+  task terminal state; shortfalls reject structurally with
+  `CapacityPressure` + `ResourceInfeasible`. Manual entry point
+  `try_reserve()` (RAII `ResourceLease`); with the switch off, behavior
+  and cost match 0.7.0 exactly.
+- **Auto inference and executor auto-selection (§3.0.2/§3.0.3, default
+  off)**: `enable_auto_inference` makes submit_auto produce
+  **suggestive** inferences from task-name patterns and completion
+  interval regularity (`AutoInferredIntent` bit + `inferred_reason` +
+  detail suggestion; routing is never changed); with AdaptiveScheduler
+  injected, `dispatch_auto(LowLatency)` without a preferred executor
+  picks the least-loaded lockfree executor (`AutoExecutorSelection`).
+- Full semantics: `docs/design/scheduling_runtime.md`
+  §10/§11/§12/§13 and the
+  "upgrading from 0.7.0 to 0.7.1" section of
+  [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md).
+
 ## 0.7.0: Runtime-aware Scheduling
 
 0.7.0 (released 2026-10-10) lands per `docs/design/roadmap_v0.7.md`; everything below is additive:

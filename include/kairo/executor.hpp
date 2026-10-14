@@ -7,6 +7,7 @@
 #include "scheduler.hpp"
 #include "feedback_aggregator.hpp"
 #include "task_cancellation.hpp"
+#include "task_inference.hpp"
 #include "timer.hpp"
 #include "serial_execution_context.hpp"
 #include "interfaces.hpp"
@@ -62,6 +63,59 @@ public:
 
     /** @brief 当前调度器（用于只读检查；不转移所有权）。 */
     IScheduler* get_scheduler() const noexcept { return task_scheduler_.get(); }
+
+    /**
+     * @brief 设置能力快照缓存的 TTL（0.7.1 §3.0.1）。
+     *
+     * submit_auto 的 CpuOrGpu / affinity 路由消费的能力快照默认经 TTL
+     * 缓存读取（默认 100ms），避免每次提交都锁 5 把注册表采集。TTL 为 0
+     * 表示完全关闭缓存（每次路由实时采集，回到 CR-106 惰性采集行为）。
+     * 可在任意时刻调用；下一次路由生效。后端注册/启停由 manager 的
+     * state_epoch 主动失效缓存，TTL 只兜底 pending_work / GPU 可用内存
+     * 等运行期数值漂移。
+     */
+    void set_capability_cache_ttl(std::chrono::nanoseconds ttl) noexcept;
+
+    /** @brief 当前能力快照缓存 TTL（0 表示缓存关闭）。 */
+    std::chrono::nanoseconds capability_cache_ttl() const noexcept;
+
+    /**
+     * @brief 立即失效能力快照缓存（下次路由重新采集）。
+     *
+     * 供绕过 manager 注册表 API 直接变更后端状态的调用方使用；常规
+     * 注册/启停路径已由 state_epoch 自动失效。
+     */
+    void invalidate_capability_cache() noexcept;
+
+    /**
+     * @brief 手动资源预留（0.7.1 §3.1，opt-in）。
+     *
+     * 仅当 Executor 以 `enable_resource_reservation = true` +
+     * `resource_quota` 初始化时可用（否则返回 NotConfigured）。返回的
+     * ResourceLease 析构即归还配额。任务绑定的预留不经此入口——声明
+     * ResourceRequirements 的提交在启用预留时自动于 admission 扣留、
+     * 任务终态归还。
+     */
+    ReservationResult try_reserve(const ResourceRequirements& requirements);
+
+    /** @brief 资源预留注册表状态快照（诊断用，0.7.1 §3.1）。 */
+    ResourceReservationStatus get_resource_reservation_status() const;
+
+    /**
+     * @brief 运行期开关任务特征自动推断（0.7.1 §3.0.2）。
+     *
+     * 默认值来自 ExecutorConfig::enable_auto_inference（false）。启用
+     * 时 submit_auto 为历史采样附加测量包装（与 wants_feedback 同级
+     * 开销）并产出建议性推断（AutoInferredIntent 位 + inferred_reason +
+     * detail 建议；建议优先于切换）；关闭即回到纯意图路由。任意时刻
+     * 可调。
+     */
+    void set_auto_inference_enabled(bool enabled) noexcept;
+
+    /** @brief 当前自动推断开关状态。 */
+    bool auto_inference_enabled() const noexcept {
+        return auto_inference_enabled_.load(std::memory_order_acquire);
+    }
 
     /**
      * @brief 获取单例实例
@@ -152,6 +206,23 @@ public:
     auto submit_after(const std::vector<TaskHandle>& dependencies, F&& f, Args&&... args)
         -> std::future<typename std::invoke_result<F, Args...>::type>;
 
+    /**
+     * @brief 提交带完整 TaskOptions（deadline / 策略 / QoS / 优先级）的
+     * 依赖任务（0.7.1 §3.2）。
+     *
+     * 与 TaskBuilder 重载的 submit_auto 一样评估 deadline policy：
+     * 上游 DropIfLate 丢弃时，下游按既有规则收到
+     * TaskCancelled(DependencyCancelled)。QoS→默认优先级映射与调度器
+     * 咨询（effective_priority_for）与 submit_auto 一致。
+     */
+    template<typename Function>
+    auto submit_after(const TaskHandle& dependency, TaskBuilder<Function> task)
+        -> std::future<typename std::invoke_result<Function&>::type>;
+
+    template<typename Function>
+    auto submit_after(const std::vector<TaskHandle>& dependencies, TaskBuilder<Function> task)
+        -> std::future<typename std::invoke_result<Function&>::type>;
+
     template<typename F, typename... Args>
     auto submit_after_with_handle(const TaskHandle& dependency, F&& f, Args&&... args)
         -> TaskSubmission<typename std::invoke_result<F, Args...>::type>;
@@ -159,6 +230,15 @@ public:
     template<typename F, typename... Args>
     auto submit_after_with_handle(const std::vector<TaskHandle>& dependencies, F&& f, Args&&... args)
         -> TaskSubmission<typename std::invoke_result<F, Args...>::type>;
+
+    /** @brief 同 submit_after(TaskBuilder)，但保留任务图句柄（0.7.1 §3.2）。 */
+    template<typename Function>
+    auto submit_after_with_handle(const TaskHandle& dependency, TaskBuilder<Function> task)
+        -> TaskSubmission<typename std::invoke_result<Function&>::type>;
+
+    template<typename Function>
+    auto submit_after_with_handle(const std::vector<TaskHandle>& dependencies, TaskBuilder<Function> task)
+        -> TaskSubmission<typename std::invoke_result<Function&>::type>;
 
     TaskHandle when_all(std::vector<TaskHandle> dependencies);
 
@@ -197,10 +277,13 @@ public:
     auto submit_priority(int priority, F&& f, Args&&... args)
         -> std::future<typename std::invoke_result<F, Args...>::type>;
 
-    // submit_priority 的共享实现（meta 非空时经协议传递调度元数据）
+    // submit_priority 的共享实现（meta 非空时经协议传递调度元数据；
+    // terminal_release 非空时随终态释放链归还资源租约，0.7.1 §3.1）
     template<typename F, typename... Args>
     auto submit_priority_scheduled(
-        int priority, std::optional<TaskSchedulingMeta> meta, F&& f, Args&&... args)
+        int priority, std::optional<TaskSchedulingMeta> meta,
+        std::shared_ptr<detail::TerminalReleaser> terminal_release,
+        F&& f, Args&&... args)
         -> std::future<typename std::invoke_result<F, Args...>::type>;
 
     /**
@@ -778,6 +861,65 @@ private:
                                std::optional<bool> gpu_selected = std::nullopt) const;
     RoutingDecision route_dispatch(const TaskOptions& options) const;
 
+    // ---- 0.7.1 §3.0.1：能力快照 TTL 缓存（submit_auto 路由智能化）----
+    /**
+     * @brief 一次路由消费的不可变能力快照（RCU 发布，读者持有保活）。
+     *
+     * epoch 为发布时的 manager state_epoch；collected_ns 为采集时点
+     * （steady 纳秒）。两者共同决定命中：epoch 相同且未过 TTL。
+     */
+    struct CapabilitySnapshot {
+        uint64_t manager_epoch = 0;
+        int64_t collected_ns = 0;
+        std::vector<ExecutorCapability> capabilities;
+    };
+
+    /**
+     * @brief 路由用能力快照获取（命中返回缓存视图，未命中采集并发布）。
+     *
+     * held 的 shared_ptr 保证快照在本次路由期间有效（并发覆盖发布时
+     * 旧快照由引用计数兜底回收）。from_cache 为 false 表示本次为实时
+     * 采集（TTL 过期 / epoch 变化 / 缓存关闭）。needs == false 时 held
+     * 为空且不计 hit/miss 计数（纯策略路径不消费能力表）。
+     */
+    struct CapabilityView {
+        std::shared_ptr<const CapabilitySnapshot> held;
+        bool from_cache = false;
+
+        const std::vector<ExecutorCapability>& get() const noexcept {
+            static const std::vector<ExecutorCapability> kEmpty;
+            return held ? held->capabilities : kEmpty;
+        }
+    };
+    CapabilityView acquire_route_capabilities(bool needs) const;
+
+    // ---- 0.7.1 §3.2：deadline policy（开始执行时的策略裁决）----
+    /**
+     * @brief 开始执行时对声明 deadline 的策略裁决（0.7.1 §3.2）。
+     *
+     * 裁决点与 0.6.1 miss-observe 一致（开始执行时；边界"严格已过才算
+     * 错过，恰好相等接受"）。deadline_ns <= 0 时直接返回 true 且零开销。
+     *
+     * - RunAnyway：记 DeadlineMissed failure 事件 + missed 计数（0.6.x）；
+     * - DropIfLate：记 missed + dropped 计数，返回 false——调用方以
+     *   TaskCancelled(DeadlineMissed) 终态结算，不执行用户代码；
+     * - CancelIfLate：记 missed 计数并向 *cancel_target（可空）发协作式
+     *   停止请求，返回 true（任务仍启动）。
+     */
+    bool evaluate_deadline_policy(int64_t deadline_ns,
+                                  DeadlinePolicy policy,
+                                  const std::string& executor_name,
+                                  const std::string& task_id,
+                                  StopSource* cancel_target) noexcept;
+
+    /**
+     * @brief 异常是否为 DropIfLate 的结构化终态（TaskCancelled(DeadlineMissed)）。
+     *
+     * 该终态遵循取消类约定：结算处不再计入 failure 统计。
+     */
+    static bool is_deadline_drop_exception(std::exception_ptr exception) noexcept;
+
+
     void record_result_failure(const ExecutorResult& result,
                                FailureKind kind,
                                const std::string& executor_name,
@@ -866,6 +1008,7 @@ private:
         std::optional<int> priority,
         std::shared_ptr<const std::vector<TaskHandle>> dependencies,
         std::function<void()> terminal_hook,
+        std::shared_ptr<detail::TerminalReleaser> terminal_release,
         F&& f,
         Args&&... args)
         -> TaskSubmission<typename tracked_invoke_result<kInjectToken, F, Args...>::type>;
@@ -1110,7 +1253,8 @@ private:
     // 0.6.1 Scheduling Runtime 指标：无锁单调计数。与 record_routing_decision
     // 的 CR-106 观测开关无关（调度健康度必须无需预先配置即可观察），提交
     // 路径上每条决策只付若干次 relaxed 原子累加。独占缓存行避免与相邻
-    // 热点字段伪共享。
+    // 热点字段伪共享。mutable：const 的 route_task 也计数（能力缓存
+    // hit/miss 在访问点统计，0.7.1 §3.0.1）。
     struct alignas(64) SchedulingMetricsCounters {
         std::atomic<uint64_t> accepted{0};
         std::atomic<uint64_t> accepted_degraded{0};
@@ -1126,8 +1270,52 @@ private:
         std::atomic<uint64_t> adaptive_history{0};
         std::atomic<uint64_t> load_shedding_rejected{0};
         std::atomic<uint64_t> priority_promoted{0};
+        // 0.7.1 §3.0.1：能力快照缓存行为计数。
+        std::atomic<uint64_t> capability_cache_hit{0};
+        std::atomic<uint64_t> capability_cache_miss{0};
+        // 0.7.1 §3.2：DropIfLate 丢弃计数（missed 计数含 RunAnyway 观测）。
+        std::atomic<uint64_t> deadline_dropped{0};
+        // 0.7.1 §3.0.2/§3.0.3：自动推断建议 / 显式覆盖 / 执行器自动选择。
+        std::atomic<uint64_t> auto_inferred{0};
+        std::atomic<uint64_t> auto_inference_rejected{0};
+        std::atomic<uint64_t> auto_executor_selected{0};
     };
-    SchedulingMetricsCounters scheduling_counters_;
+    mutable SchedulingMetricsCounters scheduling_counters_;
+
+    // 0.7.1 §3.0.1 能力快照缓存：immutable 快照经 RCU 槽发布（与 M2
+    // FeedbackAggregator 同款可移植原子 shared_ptr 模式），route_task /
+    // route_dispatch 命中路径一次 acquire load + 两个整数比较，未命中
+    // （TTL 过期或 manager state_epoch 变化）才锁注册表采集并重发布。
+    // 并发未命中各自采集、最后发布者胜出——采集稀有（每 TTL 至多一轮），
+    // 不引入热路径互斥。TTL 为 0 表示缓存关闭（每次实时采集）。
+    mutable scheduling::detail::SnapshotSlotT<CapabilitySnapshot> capability_cache_;
+    std::atomic<int64_t> capability_cache_ttl_ns_{100'000'000};  // 100ms
+
+    // 0.7.1 §3.1 资源预留：仅 enable_resource_reservation 时创建
+    // （initialize()），未启用时所有提交路径零开销、行为同 0.7.0。
+    std::unique_ptr<detail::ResourceReservationRegistry> resource_reservations_;
+
+    // 0.7.1 §3.0.2 任务特征自动推断：有界同名历史表（总是存在，开销
+    // 仅在开关开启时发生）+ 运行期开关。启用时 submit_auto 附加测量
+    // 包装（feedback 通道供表采样）并注解建议性推断。
+    std::unique_ptr<detail::TaskInferenceTable> task_inference_ =
+        std::make_unique<detail::TaskInferenceTable>();
+    std::atomic<bool> auto_inference_enabled_{false};
+
+    /**
+     * @brief 推断注解（0.7.1 §3.0.2，建议优先于切换）。
+     *
+     * 推断关闭或无信号时不做任何事。用户显式 intent（!= Auto）时若
+     * 推断有话可说，计 auto_inference_rejected_count；否则注解决策
+     * （AutoInferredIntent 位 + inferred_reason + detail 建议）并计
+     * auto_inferred_count。
+     */
+    void annotate_auto_inference(const TaskOptions& options,
+                                 RoutingDecision& decision) const noexcept;
+
+    /** @brief 重缓存反馈门（wants_feedback() 或自动推断开启时附加测量包装）。 */
+    void refresh_feedback_gate() noexcept;
+
 
     // 0.6.1 feedback 热路径开关：仅当注入的 IScheduler 声明
     // wants_feedback() 时，submit_auto 才为任务附加测量包装（时间戳采样
@@ -1761,6 +1949,115 @@ auto Executor::submit_after_with_handle(const std::vector<TaskHandle>& dependenc
         std::forward<Args>(args)...);
 }
 
+// 0.7.1 §3.2：TaskBuilder 重载（submit_after / submit_after_with_handle）。
+// 包装次序：deadline 策略裁决（含 CancelIfLate 的令牌安装）→ submit_tracked
+// 原有仲裁/结算协议；DropIfLate 以 TaskCancelled(DeadlineMissed) 抛出，
+// tracked 包装的结算分类器按取消类约定落终态（见 submit_tracked_with_hook
+// 的 catch 分支）。QoS→默认优先级映射与调度器咨询（effective_priority_for）
+// 与 submit_auto(TaskBuilder) 一致：显式 priority 永不被覆盖，被调整提交
+// 计 priority_promoted_count。
+
+template<typename Function>
+auto Executor::submit_after_with_handle(const TaskHandle& dependency, TaskBuilder<Function> task)
+    -> TaskSubmission<typename std::invoke_result<Function&>::type> {
+    std::vector<TaskHandle> dependencies{dependency};
+    return submit_after_with_handle(std::move(dependencies), std::move(task));
+}
+
+template<typename Function>
+auto Executor::submit_after_with_handle(const std::vector<TaskHandle>& dependencies, TaskBuilder<Function> task)
+    -> TaskSubmission<typename std::invoke_result<Function&>::type> {
+    using return_type = typename std::invoke_result<Function&>::type;
+    const TaskOptions& options = task.options();
+    const int qos_default_priority =
+        static_cast<int>(default_priority_for_qos(options.qos));
+    const int effective_priority =
+        options.priority_set
+            ? static_cast<int>(options.priority)
+            : task_scheduler_->effective_priority_for(options,
+                                                      qos_default_priority);
+    if (!options.priority_set && effective_priority != qos_default_priority) {
+        scheduling_counters_.priority_promoted.fetch_add(
+            1, std::memory_order_relaxed);
+    }
+
+    std::function<return_type()> function = std::move(task).function();
+    if (options.deadline) {
+        const int64_t deadline_ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                options.deadline->time_since_epoch()).count();
+        const auto policy = options.deadline_policy;
+        const bool install_token = policy == DeadlinePolicy::CancelIfLate;
+        // 闭包与本地 shared_ptr 共同持有停止源：闭包的副本即任务生存期，
+        // evaluate_deadline_policy 拿到的裸指针在其间恒有效。
+        const auto cancel_source =
+            install_token ? std::make_shared<StopSource>() : nullptr;
+        const std::string deadline_task_id =
+            options.name.empty() ? "submit_after" : options.name;
+        function = [this, deadline_ns, policy, deadline_task_id, cancel_source,
+                    function = std::move(function)]() mutable -> return_type {
+            if (!evaluate_deadline_policy(deadline_ns, policy, "default",
+                                          deadline_task_id,
+                                          cancel_source.get())) {
+                throw TaskCancelled(
+                    TaskCancellationReason::DeadlineMissed,
+                    "task dropped before execution: deadline already missed "
+                    "(DeadlinePolicy::DropIfLate)");
+            }
+            // CancelIfLate：令牌在用户代码执行期间可观测（嵌套安全）。
+            const detail::ScopedStopToken token_guard(
+                cancel_source ? cancel_source->get_token() : StopToken{});
+            if constexpr (std::is_void_v<return_type>) {
+                function();
+            } else {
+                return function();
+            }
+        };
+    }
+
+    // 0.7.1 §3.1 资源预留：失败以结构化拒绝结算（未创建任务图节点，
+    // 与"依赖句柄无效"路径同形）；成功则租约经 tracked 终态释放链归还。
+    std::shared_ptr<detail::TerminalReleaser> terminal_release;
+    if (resource_reservations_ &&
+        detail::ResourceReservationRegistry::requires_reservation(
+            options.resources)) {
+        const ReserveError acquired =
+            resource_reservations_->try_acquire(options.resources,
+                                                terminal_release);
+        if (acquired != ReserveError::None) {
+            TaskSubmission<return_type> failed;
+            const std::string message =
+                std::string("submit_after: resource reservation failed: ") +
+                reserve_error_to_string(acquired);
+            std::promise<return_type> promise;
+            failed.future = promise.get_future();
+            promise.set_exception(std::make_exception_ptr(
+                std::runtime_error(message)));
+            record_submit_rejected("default", options.name, message);
+            return failed;
+        }
+    }
+
+    auto dependencies_copy =
+        std::make_shared<const std::vector<TaskHandle>>(dependencies);
+    return submit_tracked_with_hook<false>(
+        effective_priority, std::move(dependencies_copy), nullptr,
+        std::move(terminal_release), std::move(function));
+}
+
+template<typename Function>
+auto Executor::submit_after(const TaskHandle& dependency, TaskBuilder<Function> task)
+    -> std::future<typename std::invoke_result<Function&>::type> {
+    std::vector<TaskHandle> dependencies{dependency};
+    return submit_after(std::move(dependencies), std::move(task));
+}
+
+template<typename Function>
+auto Executor::submit_after(const std::vector<TaskHandle>& dependencies, TaskBuilder<Function> task)
+    -> std::future<typename std::invoke_result<Function&>::type> {
+    return submit_after_with_handle(dependencies, std::move(task)).future;
+}
+
 // submit_tracked：带句柄 + 共享取消状态的统一提交路径。
 //
 // 取消/超时/开始执行通过 TaskCancellationState 的单一 phase CAS 仲裁：
@@ -1778,7 +2075,7 @@ auto Executor::submit_tracked(
     Args&&... args)
     -> TaskSubmission<typename tracked_invoke_result<kInjectToken, F, Args...>::type> {
     return submit_tracked_with_hook<kInjectToken>(
-        priority, std::move(dependencies), nullptr,
+        priority, std::move(dependencies), nullptr, nullptr,
         std::forward<F>(f), std::forward<Args>(args)...);
 }
 
@@ -1787,6 +2084,7 @@ auto Executor::submit_tracked_with_hook(
     std::optional<int> priority,
     std::shared_ptr<const std::vector<TaskHandle>> dependencies,
     std::function<void()> terminal_hook,
+    std::shared_ptr<detail::TerminalReleaser> terminal_release,
     F&& f,
     Args&&... args)
     -> TaskSubmission<typename tracked_invoke_result<kInjectToken, F, Args...>::type> {
@@ -1833,7 +2131,9 @@ auto Executor::submit_tracked_with_hook(
 
     // 总量有界 admission（先于 registry，见 docs/design/bounded_admission.md
     // D-2）：拒绝的提交不占用 registry 槽位；releaser 被所有可能结算 future
-    // 的闭包共享，显式路径先于结算释放，析构兜底池丢弃路径。
+    // 的闭包共享，显式路径先于结算释放，析构兜底池丢弃路径。0.7.1 §3.1：
+    // 资源租约（如有）经同一终态释放链归还——CAS 恰好一次 + 析构兜底，
+    // 覆盖成功/异常/协作取消/丢弃/软超时/提交拒绝/排空全部路径。
     auto admission = try_admit_submission("default", handle.id(), "tracked submit");
     if (!admission.accepted) {
         auto exception = std::make_exception_ptr(CapacityExhaustedException(
@@ -1848,8 +2148,10 @@ auto Executor::submit_tracked_with_hook(
         complete_terminal();
         return submission;
     }
-    auto release_admission = [releaser = std::move(admission.releaser)]() {
+    auto release_admission = [releaser = std::move(admission.releaser),
+                              lease = std::move(terminal_release)]() noexcept {
         if (releaser) releaser->release();
+        if (lease) lease->release();
     };
 
     auto state = std::make_shared<TaskCancellationState>();
@@ -2091,12 +2393,41 @@ auto Executor::submit_tracked_with_hook(
             // 时 TaskCancelled 才按取消归类；无取消请求时主动抛出的
             // TaskCancelled 仍按任务异常处理，防止绕过 failure 统计。
             bool cooperative_cancel = false;
+            bool deadline_drop = false;
             try {
                 std::rethrow_exception(exception);
-            } catch (const TaskCancelled&) {
-                cooperative_cancel = state->cancel_requested();
+            } catch (const TaskCancelled& cancelled) {
+                // DropIfLate 的结构化终态（wrapper 在开始执行仲裁后、调用
+                // 用户代码前抛出）：按取消类约定落终态，不进 failure 统计；
+                // 依赖方经 mark_task_graph_failed 的既有归类规则收到
+                // DependencyCancelled。
+                deadline_drop =
+                    cancelled.reason() == TaskCancellationReason::DeadlineMissed;
+                cooperative_cancel = !deadline_drop && state->cancel_requested();
             } catch (...) {
                 cooperative_cancel = false;
+            }
+
+            if (deadline_drop) {
+                state->try_finish_running(
+                    TaskCancellationState::Phase::Cancelled);
+                release_admission();  // 计数先于 future
+                bool expected = false;
+                if (promise_ready->compare_exchange_strong(
+                        expected, true, std::memory_order_acq_rel,
+                        std::memory_order_acquire)) {
+                    promise->set_exception(exception);
+                }
+                mark_task_graph_failed(
+                    handle, exception, "Task dropped: deadline missed before "
+                    "execution (DeadlinePolicy::DropIfLate)",
+                    &drain_bag);
+                manager_->record_in_flight_task_state(
+                    handle.id(), TaskLifecycleState::Cancelled);
+                cancellation_registry_->finalize(handle.id());
+                complete_terminal();
+                drain_parked_resolutions(drain_bag.ready, drain_bag.failures);
+                return;
             }
 
             if (cooperative_cancel) {
@@ -2283,15 +2614,19 @@ auto Executor::submit_tracked_with_hook(
 template<typename F, typename... Args>
 auto Executor::submit_priority(int priority, F&& f, Args&&... args)
     -> std::future<typename std::invoke_result<F, Args...>::type> {
-    return submit_priority_scheduled(priority, std::nullopt,
+    return submit_priority_scheduled(priority, std::nullopt, nullptr,
                                      std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 // submit_priority 的共享实现；meta 存在时经调度协议写入 Task
-//（EDF 排序 + QoS 观测，0.6.0 Scheduling Runtime）。
+//（EDF 排序 + QoS 观测，0.6.0 Scheduling Runtime）。terminal_release
+// 非空时（0.7.1 §3.1 资源预留）在所有终态路径与 admission 同步释放
+//（成功/异常/软超时/提交拒绝；析构兜底 shutdown 排空丢弃路径）。
 template<typename F, typename... Args>
 auto Executor::submit_priority_scheduled(
-    int priority, std::optional<TaskSchedulingMeta> meta, F&& f, Args&&... args)
+    int priority, std::optional<TaskSchedulingMeta> meta,
+    std::shared_ptr<detail::TerminalReleaser> terminal_release,
+    F&& f, Args&&... args)
     -> std::future<typename std::invoke_result<F, Args...>::type> {
     using return_type = typename std::invoke_result<F, Args...>::type;
 
@@ -2337,42 +2672,51 @@ auto Executor::submit_priority_scheduled(
         promise->set_exception(exception);
         return future;
     }
-    auto release_admission = [releaser = std::move(admission.releaser)]() {
+    // 终态释放链：admission 计数 + 资源租约（如有）。被任务包装与
+    // 软超时结算闭包共享（各自持 shared_ptr 副本），TerminalReleaser
+    // 的 CAS 保证恰好一次、析构兜底池丢弃路径。
+    auto release_terminal = [releaser = std::move(admission.releaser),
+                             lease = std::move(terminal_release)]() noexcept {
         if (releaser) releaser->release();
+        if (lease) lease->release();
     };
 
     auto task_wrapper = [this, executor_name, task_id, promise, promise_ready, bound_task,
-                         release_admission]() mutable {
+                         release_terminal]() mutable {
         try {
             if constexpr (std::is_void_v<return_type>) {
                 std::invoke(*bound_task);
-                release_admission();
+                release_terminal();
                 promise->set_value();
             } else {
                 auto result = std::invoke(*bound_task);
-                release_admission();
+                release_terminal();
                 promise->set_value(std::move(result));
             }
             promise_ready->store(true, std::memory_order_release);
         } catch (...) {
             auto exception = std::current_exception();
-            release_admission();
+            release_terminal();
             promise->set_exception(exception);
             promise_ready->store(true, std::memory_order_release);
-            record_task_exception(
-                executor_name,
-                task_id,
-                "Priority async task threw an exception",
-                exception);
+            // DropIfLate 的结构化终态遵循取消类约定：不计 task-exception
+            // failure（可观测性由 deadline_dropped_count 与 future 终态承载）。
+            if (!is_deadline_drop_exception(exception)) {
+                record_task_exception(
+                    executor_name,
+                    task_id,
+                    "Priority async task threw an exception",
+                    exception);
+            }
             throw;
         }
     };
 
     auto on_timeout = [this, executor_name, task_id, promise, promise_ready,
-                       release_admission](std::exception_ptr exception) {
+                       release_terminal](std::exception_ptr exception) {
         bool expected = false;
         if (promise_ready->compare_exchange_strong(expected, true)) {
-            release_admission();
+            release_terminal();
             promise->set_exception(exception);
             record_task_timeout(
                 executor_name,
@@ -2397,7 +2741,7 @@ auto Executor::submit_priority_scheduled(
             std::runtime_error("Async executor rejected priority task submission"));
         bool expected = false;
         if (promise_ready->compare_exchange_strong(expected, true)) {
-            release_admission();
+            release_terminal();
             promise->set_exception(exception);
             record_submit_rejected(
                 executor_name,
@@ -2918,7 +3262,11 @@ template<typename F, typename... Args>
 auto Executor::submit_auto(F&& f, Args&&... args)
     -> std::future<typename std::invoke_result<F, Args...>::type> {
     TaskOptions options;
-    record_routing_decision(route_task(options, false));
+    RoutingDecision decision = route_task(options, false);
+    // 0.7.1 §3.0.2：裸 callable 路径同样产出推断建议（共享池化键
+    // "submit_auto"，名称模式不适用于匿名 lambda）。
+    annotate_auto_inference(options, decision);
+    record_routing_decision(std::move(decision));
     return submit(std::forward<F>(f), std::forward<Args>(args)...);
 }
 
@@ -2940,7 +3288,32 @@ auto Executor::submit_auto(TaskBuilder<Function> task)
         scheduling_counters_.priority_promoted.fetch_add(
             1, std::memory_order_relaxed);
     }
-    const auto decision = route_task(options, false);
+    // 0.7.1 §3.1 资源预留（opt-in，默认关闭零开销）：声明了可预留需求
+    // 且启用预留时，在记录决策前于 admission 扣留配额——失败则改写为
+    // 结构化拒绝（CapacityPressure + ResourceInfeasible），保持
+    // "决策与实际投递结果一致" 的 0.6.1 不变式；成功则租约经
+    // terminal_release 于任务终态（成功/异常/软超时/提交拒绝；析构兜底
+    // shutdown 排空）归还。
+    std::shared_ptr<detail::TerminalReleaser> terminal_release;
+    RoutingDecision decision = route_task(options, false);
+    // 0.7.1 §3.0.2：自动推断注解（建议优先于切换；在预留改写前注解，
+    // 预留拒绝的决策不携带推断噪音——annotate 内部跳过 Rejected）。
+    annotate_auto_inference(options, decision);
+    if (decision.status != RoutingStatus::Rejected && resource_reservations_ &&
+        detail::ResourceReservationRegistry::requires_reservation(
+            options.resources)) {
+        const ReserveError acquired =
+            resource_reservations_->try_acquire(options.resources,
+                                                terminal_release);
+        if (acquired != ReserveError::None) {
+            terminal_release.reset();
+            decision.status = RoutingStatus::Rejected;
+            decision.reason = RoutingReason::CapacityPressure;
+            decision.diagnostics |= RoutingDiagnostics::ResourceInfeasible;
+            decision.detail = std::string("resource reservation failed: ") +
+                              reserve_error_to_string(acquired);
+        }
+    }
     record_routing_decision(decision);
     // 0.6.1：status 是接受/拒绝的权威判据（DeadlineExpired 等拒绝原因
     // 不再共用 RoutingReason::Rejected）。
@@ -2963,21 +3336,31 @@ auto Executor::submit_auto(TaskBuilder<Function> task)
     if (options.deadline) {
         meta.deadline_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
             options.deadline->time_since_epoch()).count();
-        // deadline miss 观测：开始执行时已错过 → DeadlineMissed 诊断 +
-        // 调度指标计数；契约是不中断已开始执行的任务，因此原任务仍会运行。
+        // 0.7.1 §3.2 deadline policy：策略裁决在开始执行时进行（与 0.6.1
+        // miss-observe 同点、同"严格已过"边界）。
+        // - RunAnyway（默认）：观测后照常执行（0.6.x 行为）；
+        // - DropIfLate：不执行用户代码，以 TaskCancelled(DeadlineMissed)
+        //   终态结算（结算处的分类器保证不计 task-exception failure）；
+        // - CancelIfLate：向协作停止源发请求后照常启动，用户代码经
+        //   this_task::get_stop_token() 轮询。
+        const auto policy = options.deadline_policy;
+        const bool install_token = policy == DeadlinePolicy::CancelIfLate;
+        const auto cancel_source =
+            install_token ? std::make_shared<StopSource>() : nullptr;
         function = [this, deadline_ns = meta.deadline_ns, deadline_task_id,
+                    policy, cancel_source,
                     function = std::move(function)]() mutable -> return_type {
-            const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count();
-            if (now_ns > deadline_ns) {
-                scheduling_counters_.deadline_missed.fetch_add(1, std::memory_order_relaxed);
-                ExecutorFailureEvent event;
-                event.kind = FailureKind::DeadlineMissed;
-                event.executor_name = "default";
-                event.task_id = deadline_task_id;
-                event.message = "task started after declared deadline";
-                record_failure(std::move(event));
+            if (!evaluate_deadline_policy(deadline_ns, policy, "default",
+                                          deadline_task_id,
+                                          cancel_source.get())) {
+                throw TaskCancelled(
+                    TaskCancellationReason::DeadlineMissed,
+                    "task dropped before execution: deadline already missed "
+                    "(DeadlinePolicy::DropIfLate)");
             }
+            // CancelIfLate：令牌在用户代码执行期间可观测（嵌套安全）。
+            const detail::ScopedStopToken token_guard(
+                cancel_source ? cancel_source->get_token() : StopToken{});
             if constexpr (std::is_void_v<return_type>) {
                 function();
             } else {
@@ -3024,12 +3407,19 @@ auto Executor::submit_auto(TaskBuilder<Function> task)
                     return result;
                 }
             } catch (...) {
-                finish(false, FailureKind::TaskException);
-                throw;
+                // DropIfLate 的结构化终态按取消类约定归类：反馈记
+                // DeadlineMissed（不是 TaskException），failure 统计由
+                // deadline_dropped_count 承载。
+                const auto exception = std::current_exception();
+                finish(false, is_deadline_drop_exception(exception)
+                                  ? FailureKind::DeadlineMissed
+                                  : FailureKind::TaskException);
+                std::rethrow_exception(exception);
             }
         };
     }
     return submit_priority_scheduled(effective_priority, std::move(meta),
+                                     std::move(terminal_release),
                                      std::move(function));
 }
 

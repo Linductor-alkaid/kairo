@@ -441,4 +441,41 @@ std::string AdaptiveScheduler::format_state_text() const {
     return text;
 }
 
+std::optional<std::string> AdaptiveScheduler::select_bounded_executor(
+    ExecutionIntent intent,
+    const std::vector<ExecutorCapability>& candidates) const {
+    // 本阶段只覆盖 LowLatency（lockfree）；RealtimeQueue 的周期语义
+    // 不做负载选择（结构化拒绝由 facade 保持）。
+    if (intent != ExecutionIntent::LowLatency) {
+        return std::nullopt;
+    }
+    const std::string* best = nullptr;
+    double best_score = 0.0;
+    for (const auto& capability : candidates) {
+        if (capability.backend != ExecutionBackend::LockFree ||
+            !capability.registered || !capability.running) {
+            continue;
+        }
+        // 已满或接近满的候选不参与（bounded dispatch 的容量约束）。
+        if (capability.capacity_hint != 0 &&
+            capability.pending_work >= capability.capacity_hint) {
+            continue;
+        }
+        const double score =
+            capability.capacity_hint == 0
+                ? static_cast<double>(capability.pending_work)
+                : static_cast<double>(capability.pending_work) /
+                      static_cast<double>(capability.capacity_hint);
+        if (best == nullptr || score < best_score ||
+            (score == best_score && capability.name < *best)) {
+            best = &capability.name;
+            best_score = score;
+        }
+    }
+    if (best == nullptr) {
+        return std::nullopt;
+    }
+    return *best;
+}
+
 }  // namespace kairo

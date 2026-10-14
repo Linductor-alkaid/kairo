@@ -331,6 +331,7 @@ if (backpressure_drops > 0) {
 | 需求 | API | 返回值语义 |
 |------|-----|------------|
 | 普通短 CPU 任务 | `submit_auto([] { return value; })` | `std::future<T>`：任务完成或异常 |
+| 普通提交（无路由语义） | `submit([] { return value; })` | `std::future<T>`：任务完成或异常；不产出路由决策 |
 | 独立 CPU/GPU 实现 | `submit_auto(cpu_gpu_task(cpu, gpu)...)` | `std::future<void>`：已接受路径的完成或异常 |
 | 指定无锁低延迟队列 | `dispatch_auto(TaskOptions{LowLatency, ...}, task)` | `DispatchResult::accepted`：仅表示有界队列已接收 |
 | 指定实时队列 | `dispatch_auto(TaskOptions{RealtimeQueue, ...}, task)` | `DispatchResult::accepted`：仅表示后续周期已接收 |
@@ -353,6 +354,17 @@ if (!admission.accepted) {
 - `dispatch_auto()` 的接收结果不是完成通知。实时任务的 drop/backpressure 继续由 `RealtimeExecutorStatus` 计数和 failure event 观察。
 - `get_last_routing_decision()`、`get_recent_routing_decisions()` 与 `set_routing_callback()` 提供独立的路由解释；`ExecutorFailureEvent` 仍用于实际拒绝和执行失败。
 - `get_executor_capabilities()` 返回所有已注册后端的建议性状态快照，只用于显示/预检；实际投递仍可能因并发 stop 或满队列被拒绝。
+- **能力快照 TTL 缓存（0.7.1 开发快照）**：`submit_auto` 的
+  CpuOrGpu / affinity 路由与 `dispatch_auto` 的能力消费默认经 TTL 缓存
+  读取（默认 100ms），命中路径不再逐次锁注册表采集（配对 A/B 实测移除
+  端到端 ~37% 路由采集成本）。命中时决策带
+  `RoutingDiagnostics::CapabilityCacheHit` 位与
+  `RoutingDecision::capability_from_cache == true`；
+  `set_capability_cache_ttl(0ns)` 完全关闭缓存，`invalidate_capability_cache()`
+  立即失效。后端注册/启停（含 facade 的 realtime / blocking-IO start、
+  lockfree 启停、shutdown）通过 manager `state_epoch` 主动失效缓存——
+  TTL 只兜底 `pending_work` / GPU 可用内存等运行期数值漂移，语义仍遵守
+  0.6.1 的弱一致契约（未知即宽容；feasibility hint 非 reservation）。
 
 ### 3.8 Scheduling Runtime（deadline / QoS / affinity / resource）
 
@@ -379,7 +391,8 @@ auto result = ex.submit_auto(task);
 
 | 模型 | 语义 | 违约行为 |
 |------|------|----------|
-| `deadline` | 同优先级内 EDF 排序（层次 `priority → EDF → FIFO`，非全局 EDF）；开始执行时已错过记录 `FailureKind::DeadlineMissed`（`deadline_missed_count`），任务仍执行 | 提交时已过期（严格已过，恰好相等不拒） → 拒绝（`RoutingReason::DeadlineExpired`） |
+| `deadline` | 同优先级内 EDF 排序（层次 `priority → EDF → FIFO`，非全局 EDF）；开始执行时已错过按 `deadline_policy` 处置（下行）；0.7.1 起可选 `deadline_policy(RunAnyway/DropIfLate/CancelIfLate)` | 提交时已过期（严格已过，恰好相等不拒） → 拒绝（`RoutingReason::DeadlineExpired`）；策略不影响准入 |
+| `deadline_policy`（0.7.1 开发快照） | `RunAnyway`（默认，0.6.x：错过仍执行并记 `FailureKind::DeadlineMissed`）；`DropIfLate`（错过不执行用户代码，future 以 `TaskCancelled(DeadlineMissed)` 终态就绪，计 `deadline_dropped_count`，遵循取消类约定不进 failure 统计，依赖方收到 `DependencyCancelled`）；`CancelIfLate`（错过则向协作停止源发请求——非抢占——任务仍启动，用户代码经 `kairo::get_stop_token()` 轮询） | 仅与 `deadline` 同时声明时生效；裁决点为开始执行时（严格已过才算错过，恰好相等接受）；`CpuGpuTask` 本阶段忽略该字段 |
 | `qos` | `BestEffort/Standard/Interactive/Critical` 映射默认排队优先级（LOW/NORMAL/HIGH/CRITICAL）；显式 `priority()` 优先。QoS 是排队优先级 preset，不提供抢占/延迟界/带宽保证 | 严格优先级无 aging（CR-024）：BestEffort 可被饿死 |
 | `affinity` | per-task advisory；与后端 `bound_cpus` 不相交时任务仍被接受，决策标记 `status = AcceptedDegraded` + `reason = AffinityMismatch` + `diagnostics` 位 | 不重新绑定 OS 线程；不提供独占核保留 |
 | `resources` | GPU `device`/`memory_bytes` 声明与能力快照核对（feasibility hint，非资源保证；存在 TOCTOU 窗口；capability 未知时跳过检查——permissive fallback） | device 不符 → `BackendUnavailable`；内存不足 → `CapacityPressure`；两者均携带 `ResourceInfeasible` 诊断位 |
@@ -455,6 +468,73 @@ reason 细分的 `deadline_rejected_count` /
   需补新分支；以 `RoutingDecision::status` 为权威判据的代码不受影响。
   选型与风险边界见网站"何时使用 AdaptiveScheduler"页
   （`website/zh/guides/adaptive-scheduling.md`）。
+
+**0.7.1 开发快照（submit_auto 路由智能化，roadmap §3.0.1）**：
+`SchedulingMetrics` 新增 `capability_cache_hit_count` /
+`capability_cache_miss_count`（能力缓存访问点统计，与决策记录解耦、
+不受 CR-106 观测开关影响）；`RoutingDiagnostics` 新增
+`CapabilityCacheHit`（`1u<<7`），与 `RoutingDecision` 新增的
+`capability_from_cache` 字段同置——仅标记决策消费的能力快照来源，
+不改变决策语义（缓存开/关的决策逐项一致，契约测试
+`test_capability_cache.cpp` 锁定）。缓存控制 API：`set_capability_cache_ttl()`
+（默认 100ms，0 关闭）/ `capability_cache_ttl()` /
+`invalidate_capability_cache()`；`get_executor_capabilities()` 公开
+查询保持实时采集语义，不经缓存。`ExecutorManager` 新增
+`notify_backend_state_changed()`：绕过注册表直接变更后端状态的集成方
+（如自定义生命周期管理）应调用它推进 `state_epoch`，使缓存立即失效。
+
+**0.7.1 开发快照（deadline policy，roadmap §3.2）**：
+`TaskOptions::deadline_policy`（`DeadlinePolicy::RunAnyway` 默认 /
+`DropIfLate` / `CancelIfLate`，TaskBuilder/CpuGpuTask 均有同名 builder
+方法；CpuGpuTask 本阶段忽略该字段）在开始执行时裁决（与 0.6.1
+miss-observe 同点、同"严格已过"边界，不影响 DeadlineExpired 准入）。
+`SchedulingMetrics` 新增 `deadline_dropped_count`；
+`TaskCancellationReason` 新增 `DeadlineMissed`（DropIfLate 的终态
+reason，依赖方经既有归类规则收到 `DependencyCancelled`——对
+`TaskCancellationReason` 穷举 switch 的代码需补新分支）。
+`kairo::get_stop_token()`（`<kairo/stop_token.hpp>`）返回当前任务
+执行线程上的协作停止令牌：CancelIfLate 任务错过时令牌已被请求，
+非任务上下文返回空令牌。tracked 提交新增
+`submit_after / submit_after_with_handle` 的 TaskBuilder 重载（携带
+deadline/策略/QoS/优先级；QoS→默认优先级映射与调度器咨询语义与
+`submit_auto` 一致）。设计语义与验收矩阵见
+`docs/design/scheduling_runtime.md` §11 与
+`tests/test_deadline_policy.cpp`。
+
+**0.7.1 开发快照（资源预留 ResourceLease，roadmap §3.1）**：
+opt-in——`ExecutorConfig::enable_resource_reservation` +
+`resource_quota`（`<kairo/resource_lease.hpp>` 的 `ResourceQuota`：
+GPU 显存/并发槽按 device 分桶、CPU 独占核总量）启用后，声明了
+`resources()` 的 `submit_auto(TaskBuilder)` 与 tracked TaskBuilder
+提交在 admission 时从配额真正扣留，任务终态（成功/异常/取消/丢弃/
+软超时/提交拒绝/shutdown 排空）归还；配额不足以
+`CapacityPressure` + `ResourceInfeasible` 结构化拒绝（决策记录前
+改写，保持决策/投递一致性）。未启用时行为与开销与 0.7.0 完全一致。
+`ResourceRequirements` 新增 `gpu_concurrent_slots` / `cpu_exclusive_cores`
+维度；联合需求全或无授予。手动入口 `try_reserve(req) ->
+ReservationResult`（RAII `ResourceLease`，move-only、`release()`
+幂等）与诊断快照 `get_resource_reservation_status()`。设计语义见
+`docs/design/scheduling_runtime.md` §12，终态释放矩阵见
+`tests/test_resource_lease.cpp`。
+
+**0.7.1 开发快照（自动推断与执行器自动选择，roadmap §3.0.2/§3.0.3）**：
+opt-in——`ExecutorConfig::enable_auto_inference`（运行期
+`set_auto_inference_enabled()` 可调）启用后，submit_auto 按任务名
+模式（`*_io_*` / `*_read_*` / `*_write_*` → 阻塞 I/O；
+`*_realtime_*` / `*_control_*` → 低延迟）与同名任务完成间隔规律
+（σ/μ<10% → periodic，≥4 个间隔）产出**建议性**推断：决策带
+`RoutingDiagnostics::AutoInferredIntent`（`1u<<5`）位 + 新增
+`RoutingDecision::inferred_reason` 字段 + detail 建议（建议优先于
+切换，路由不被改变）；显式 intent 优先，被覆盖的推断计
+`auto_inference_rejected_count`，产出的建议计 `auto_inferred_count`。
+历史为按任务名的有界表（64 键）。注入 AdaptiveScheduler 后，
+未指定 preferred_executor 的 `dispatch_auto(LowLatency)` 提交由
+调度器按瞬时队列负载自动选择 lockfree 执行器
+（`RoutingDiagnostics::AutoExecutorSelection` `1u<<6` +
+`auto_executor_selected_count`；`IScheduler::select_bounded_executor`
+默认返回空，DefaultScheduler 行为不变）。设计语义见
+`docs/design/scheduling_runtime.md` §13，契约见
+`tests/test_auto_inference.cpp`。
 
 ### 3.9 延迟与周期任务
 

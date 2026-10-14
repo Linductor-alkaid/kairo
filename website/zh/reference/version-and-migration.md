@@ -16,6 +16,51 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
 | 选项、编译器与后端前置 | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | 当前完整签名 | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
+## 0.7.1 开发快照：submit_auto 路由智能化（进行中）
+
+0.7.1 按 `docs/design/roadmap_v0.7.md` §3 推进，当前为开发快照、未发布；
+已落地部分（§3.0.1）全部为 additive，无必需迁移：
+
+- **能力快照 TTL 缓存（默认开启）**：`submit_auto` 的 CpuOrGpu / affinity
+  路由与 `dispatch_auto` 的能力消费经 100ms TTL 缓存读取，命中路径不再
+  逐次锁注册表采集（配对基准移除端到端 ~37% 采集成本）。后端注册/启停
+  经 manager `state_epoch` 立即失效缓存；决策结果与关闭缓存逐项一致。
+  控制入口：`set_capability_cache_ttl()`（0 关闭）/
+  `invalidate_capability_cache()`。
+- **纯提交路径评审结论**：§3.0.1 曾规划的 `submit_fast()` 经实测与
+  `submit` 语义重复且普通通道快约 31%，按评审决定移除、保留
+  `submit`（见[如何选择提交接口](/zh/guides/choosing-submit-api)）。
+- **新诊断通道**：诊断位 `CapabilityCacheHit`（`1u<<7`）与
+  `RoutingDecision::capability_from_cache` 标记决策消费的快照来源；
+  `SchedulingMetrics` 新增 `capability_cache_hit_count` /
+  `capability_cache_miss_count`。
+- **deadline policy（§3.2）**：`TaskOptions::deadline_policy`
+  （`RunAnyway` 默认 / `DropIfLate` / `CancelIfLate`）在开始执行时
+  裁决，不影响 `DeadlineExpired` 准入与 EDF 排序。`DropIfLate` 错过
+  不执行用户代码（future 以 `TaskCancelled(DeadlineMissed)` 就绪，
+  计 `deadline_dropped_count`，依赖方收 `DependencyCancelled`）；
+  `CancelIfLate` 错过发协作停止请求（非抢占），用户代码经
+  `kairo::get_stop_token()` 轮询。tracked 提交新增
+  `submit_after(_with_handle)` 的 TaskBuilder 重载。
+- **资源预留 ResourceLease（§3.1，默认关闭）**：
+  `ExecutorConfig::enable_resource_reservation` + `resource_quota`
+  启用后，声明 `resources()` 的提交在 admission 时从显式配额真正
+  扣留（GPU 显存/并发槽、CPU 独占核），任务终态归还；配额不足以
+  `CapacityPressure` + `ResourceInfeasible` 结构化拒绝。手动入口
+  `try_reserve()`（RAII `ResourceLease`）；未启用时行为与开销与
+  0.7.0 完全一致。
+- **自动推断与执行器自动选择（§3.0.2/§3.0.3，默认关闭）**：
+  `enable_auto_inference` 启用后 submit_auto 按任务名模式与完成
+  间隔规律产出**建议性**推断（`AutoInferredIntent` 位 +
+  `inferred_reason` + detail 建议；路由不被改变）；注入
+  AdaptiveScheduler 后，未指定 preferred_executor 的
+  `dispatch_auto(LowLatency)` 按瞬时队列负载自动选择 lockfree
+  执行器（`AutoExecutorSelection` 位）。
+- 完整语义见 `docs/design/scheduling_runtime.md`
+  §10/§11/§12/§13 与
+  [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md)
+  的"从 0.7.0 升级到 0.7.1"一节。
+
 ## 0.7.0：Runtime-aware Scheduling
 
 0.7.0（2026-10-10 发布）按 `docs/design/roadmap_v0.7.md` 落地；以下能力均为 additive：
