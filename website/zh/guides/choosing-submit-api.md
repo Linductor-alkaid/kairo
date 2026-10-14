@@ -19,7 +19,7 @@ description: 先区分完成、接收和生命周期结果，再按业务约束�
 | 软周期维护 | `submit_periodic()` | task ID 与周期状态 | 需要严格周期或低 jitter |
 | 依赖、延迟、优先级或批量 | 对应显式 Facade API | future、handle 或 task ID | 需要组合调度语义 |
 
-`submit_auto(lambda)` 是普通开发者的默认入口。它当前安全地选择默认异步线程池，不会因为 priority、deadline 或压力自动转投 GPU、无锁或实时后端。0.7.0 起 CpuOrGpu / affinity 路由消费的能力快照经 TTL 缓存（默认 100ms；后端注册/启停立即失效），命中路径不再逐次锁注册表采集。
+`submit_auto(lambda)` 是普通开发者的默认入口。它当前安全地选择默认异步线程池，不会因为 priority、deadline 或压力自动转投 GPU、无锁或实时后端。0.7.1 起 CpuOrGpu / affinity 路由消费的能力快照经 TTL 缓存（默认 100ms；后端注册/启停立即失效），命中路径不再逐次锁注册表采集。
 
 不确定名称、intent、fallback 与 capability snapshot 如何共同决定目标时，先读[自动路由如何匹配目标](/zh/guides/execution-models-and-routing)，再继续按场景选型。
 

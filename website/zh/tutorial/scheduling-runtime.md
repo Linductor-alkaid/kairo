@@ -35,7 +35,7 @@ custom scheduler routes=1
 - `affinity(AffinityHint{{0, 1}})` —— advisory。调度器把请求与各后端的绑核集合对比；不相交时任务仍被接受，但决策被标记为降级（0.6.1）：`status = AcceptedDegraded`、`reason = AffinityMismatch`，并携带 `AffinityMismatch` 诊断位与人读 detail。不会为单个任务重新绑定 OS 线程。
 - `resources(ResourceRequirements{...})` —— 与能力快照的可行性核对：`gpu_device` 不符以 `BackendUnavailable` 拒绝，内存超过可用量以 `CapacityPressure` 拒绝（两者均携带 `ResourceInfeasible` 诊断位，0.6.1）。它不是资源预留；并发提交在执行期仍可能竞争。
 
-## 错过 deadline 的处置策略（0.7.1 开发快照）
+## 错过 deadline 的处置策略（0.7.1 新增）
 
 `deadline_policy()` 决定任务开始执行时已错过 deadline 怎么办。裁决点与 miss 观测一致（开始执行时；严格已过才算错过，恰好相等接受），且不影响提交时的 `DeadlineExpired` 准入与 EDF 排序：
 

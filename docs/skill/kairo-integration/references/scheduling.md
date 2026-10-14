@@ -53,12 +53,12 @@ Semantic boundaries:
 
 Use it only for long-lived, shape-stable workloads whose callers can respond to rejection; expect no benefit during the learning period (cold start), and treat decision sequences as non-reproducible (troubleshoot via `RoutingDecision`, the three new `SchedulingMetrics` counters, and `load_shed_active()` / `priority_promoted()` / `feedback_snapshot()` / `format_state_text()`). Selection guide: `website/en/guides/adaptive-scheduling.md`. The default path (no injection) is byte-for-byte 0.6.1 behavior.
 
-## Routing Fast Path (0.7.1; dev snapshot)
+## Routing Fast Path (0.7.1)
 
 - **Capability snapshot TTL cache (default on)**: the capability reads behind `submit_auto` CpuOrGpu/affinity routing and `dispatch_auto` go through a 100 ms TTL cache instead of taking the registry locks per submit. Backend registration/start/stop (including facade realtime / blocking-IO start and shutdown) invalidates the cache immediately via the manager `state_epoch`; the TTL only bounds drift of runtime numbers (queue depth, GPU free memory). Decisions are identical with the cache on or off; cache hits are marked with `RoutingDiagnostics::CapabilityCacheHit` (`1u<<7`) and `RoutingDecision::capability_from_cache`. Control: `set_capability_cache_ttl()` (0 disables), `invalidate_capability_cache()`; new `SchedulingMetrics` counters `capability_cache_hit_count` / `capability_cache_miss_count`. The public `get_executor_capabilities()` stays uncached (always fresh).
 - **`submit_fast` removed per 2026-10-14 review**: it duplicated `submit` semantically and the plain submission channel measured ~31% faster than the priority channel (1881 vs 2473 ns/op paired). Bare submissions without routing semantics use `submit` (which never produces routing decisions); `submit_auto` remains the default entry for intent routing and structured diagnostics.
 
-## Deadline Policy (0.7.1; dev snapshot)
+## Deadline Policy (0.7.1)
 
 `deadline_policy()` (TaskBuilder / `TaskOptions::deadline_policy`) decides what happens when a task starts after its declared deadline - same decision point and strictly-past boundary as the 0.6.1 miss observation, never affecting `DeadlineExpired` admission or EDF ordering:
 
@@ -67,11 +67,11 @@ Use it only for long-lived, shape-stable workloads whose callers can respond to 
 - `CancelIfLate`: a cooperative stop request is issued before the user code starts (no preemption); poll `kairo::get_stop_token()` (empty token outside task context) and exit promptly.
 - Only applies when a `deadline` is declared; `CpuGpuTask` ignores it at this stage. Tracked submissions: `submit_after / submit_after_with_handle` accept a TaskBuilder (deadline/policy/QoS/priority), so a dropped upstream propagates `DependencyCancelled` downstream.
 
-## Resource Reservation (0.7.1; dev snapshot, opt-in)
+## Resource Reservation (0.7.1, opt-in)
 
 Enable via `ExecutorConfig::enable_resource_reservation` + `resource_quota` (`<kairo/resource_lease.hpp>`: GPU memory / concurrent slots per device, CPU exclusive cores). Submissions declaring `resources(...)` then hold quota from admission and release it at the task's terminal state (success, exception, cancellation, drop, soft timeout, submission rejection, shutdown drain). Shortfalls reject structurally (`CapacityPressure` + `ResourceInfeasible`); joint requirements grant all-or-nothing; the quota is a static declaration, not a capability-snapshot read, and the hardware-level weak-consistency contract is unchanged. Manual entry: `executor.try_reserve(req)` returns a RAII `ReservationResult`/`ResourceLease` (move-only, idempotent `release()`); `get_resource_reservation_status()` exposes granted/rejected/active counts. With the switch off, behavior and cost match 0.7.0 exactly.
 
-## Auto Inference and Executor Auto-Selection (0.7.1; dev snapshot, opt-in)
+## Auto Inference and Executor Auto-Selection (0.7.1, opt-in)
 
 - **Task auto-inference** (`enable_auto_inference` / `set_auto_inference_enabled()`): submit_auto produces *suggestive* inferences only — name patterns (`*_io_*`/`*_read_*`/`*_write_*` → blocking I/O; `*_realtime_*`/`*_control_*` → low latency) and regular completion intervals (σ/μ<10% → periodic). Annotated as `AutoInferredIntent` (`1u<<5`) + `RoutingDecision::inferred_reason` + a detail suggestion (start_worker / dispatch_auto / submit_periodic); **routing is never changed** (submit_auto's future contract only the default pool can fulfill). Explicit intents take precedence (`auto_inference_rejected_count`); suggestions count in `auto_inferred_count`. Enabling attaches measurement wrappers (same cost class as `wants_feedback()`).
 - **Executor auto-selection** (AdaptiveScheduler injected): `dispatch_auto(LowLatency)` without a preferred executor picks the least-loaded lockfree executor by instantaneous queue load (`AutoExecutorSelection` `1u<<6` + `auto_executor_selected_count`); ties break by name; unstarted/full candidates are filtered. `IScheduler::select_bounded_executor` defaults to empty — DefaultScheduler keeps the structured policy rejection.

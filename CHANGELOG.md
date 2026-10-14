@@ -4,7 +4,7 @@
 
 ---
 
-## [Unreleased] — 0.7.1 开发快照
+## [0.7.1] - 2026-10-14
 
 v0.7.1 全部四个阶段：submit_auto 路由智能化（roadmap §3.0.1 含
 §3.0.2/§3.0.3）、deadline policy（§3.2）与资源预留 ResourceLease

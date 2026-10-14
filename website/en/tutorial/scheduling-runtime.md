@@ -35,7 +35,7 @@ custom scheduler routes=1
 - `affinity(AffinityHint{{0, 1}})` - advisory. The scheduler compares the request against each backend's bound CPU set; on mismatch the task is still accepted, but the decision is marked degraded (0.6.1): `status = AcceptedDegraded`, `reason = AffinityMismatch`, plus the `AffinityMismatch` diagnostics bit and a human-readable detail. OS threads are never rebound per task.
 - `resources(ResourceRequirements{...})` - a feasibility check against capability snapshots: a wrong `gpu_device` rejects with `BackendUnavailable`, memory above availability rejects with `CapacityPressure` (both carry the `ResourceInfeasible` diagnostics bit, 0.6.1). It is not a reservation; concurrent submissions can still compete at execution time.
 
-## Deadline miss disposition (0.7.1 development snapshot)
+## Deadline miss disposition (new in 0.7.1)
 
 `deadline_policy()` chooses what happens when a task starts after its deadline. The decision point matches the miss observation (execution start; strictly past counts as late, equality is accepted) and never affects `DeadlineExpired` admission or EDF ordering:
 

@@ -1,4 +1,4 @@
-# Kairo API 使用说明（v0.7.0）
+# Kairo API 使用说明（v0.7.1）
 
 本文档说明 `kairo` 库的主要 API、配置与类型，便于集成与扩展。完整接口定义见头文件 `include/kairo/`。
 
@@ -354,7 +354,7 @@ if (!admission.accepted) {
 - `dispatch_auto()` 的接收结果不是完成通知。实时任务的 drop/backpressure 继续由 `RealtimeExecutorStatus` 计数和 failure event 观察。
 - `get_last_routing_decision()`、`get_recent_routing_decisions()` 与 `set_routing_callback()` 提供独立的路由解释；`ExecutorFailureEvent` 仍用于实际拒绝和执行失败。
 - `get_executor_capabilities()` 返回所有已注册后端的建议性状态快照，只用于显示/预检；实际投递仍可能因并发 stop 或满队列被拒绝。
-- **能力快照 TTL 缓存（0.7.1 开发快照）**：`submit_auto` 的
+- **能力快照 TTL 缓存（0.7.1 新增）**：`submit_auto` 的
   CpuOrGpu / affinity 路由与 `dispatch_auto` 的能力消费默认经 TTL 缓存
   读取（默认 100ms），命中路径不再逐次锁注册表采集（配对 A/B 实测移除
   端到端 ~37% 路由采集成本）。命中时决策带
@@ -392,7 +392,7 @@ auto result = ex.submit_auto(task);
 | 模型 | 语义 | 违约行为 |
 |------|------|----------|
 | `deadline` | 同优先级内 EDF 排序（层次 `priority → EDF → FIFO`，非全局 EDF）；开始执行时已错过按 `deadline_policy` 处置（下行）；0.7.1 起可选 `deadline_policy(RunAnyway/DropIfLate/CancelIfLate)` | 提交时已过期（严格已过，恰好相等不拒） → 拒绝（`RoutingReason::DeadlineExpired`）；策略不影响准入 |
-| `deadline_policy`（0.7.1 开发快照） | `RunAnyway`（默认，0.6.x：错过仍执行并记 `FailureKind::DeadlineMissed`）；`DropIfLate`（错过不执行用户代码，future 以 `TaskCancelled(DeadlineMissed)` 终态就绪，计 `deadline_dropped_count`，遵循取消类约定不进 failure 统计，依赖方收到 `DependencyCancelled`）；`CancelIfLate`（错过则向协作停止源发请求——非抢占——任务仍启动，用户代码经 `kairo::get_stop_token()` 轮询） | 仅与 `deadline` 同时声明时生效；裁决点为开始执行时（严格已过才算错过，恰好相等接受）；`CpuGpuTask` 本阶段忽略该字段 |
+| `deadline_policy`（0.7.1 新增） | `RunAnyway`（默认，0.6.x：错过仍执行并记 `FailureKind::DeadlineMissed`）；`DropIfLate`（错过不执行用户代码，future 以 `TaskCancelled(DeadlineMissed)` 终态就绪，计 `deadline_dropped_count`，遵循取消类约定不进 failure 统计，依赖方收到 `DependencyCancelled`）；`CancelIfLate`（错过则向协作停止源发请求——非抢占——任务仍启动，用户代码经 `kairo::get_stop_token()` 轮询） | 仅与 `deadline` 同时声明时生效；裁决点为开始执行时（严格已过才算错过，恰好相等接受）；`CpuGpuTask` 本阶段忽略该字段 |
 | `qos` | `BestEffort/Standard/Interactive/Critical` 映射默认排队优先级（LOW/NORMAL/HIGH/CRITICAL）；显式 `priority()` 优先。QoS 是排队优先级 preset，不提供抢占/延迟界/带宽保证 | 严格优先级无 aging（CR-024）：BestEffort 可被饿死 |
 | `affinity` | per-task advisory；与后端 `bound_cpus` 不相交时任务仍被接受，决策标记 `status = AcceptedDegraded` + `reason = AffinityMismatch` + `diagnostics` 位 | 不重新绑定 OS 线程；不提供独占核保留 |
 | `resources` | GPU `device`/`memory_bytes` 声明与能力快照核对（feasibility hint，非资源保证；存在 TOCTOU 窗口；capability 未知时跳过检查——permissive fallback） | device 不符 → `BackendUnavailable`；内存不足 → `CapacityPressure`；两者均携带 `ResourceInfeasible` 诊断位 |
@@ -469,7 +469,7 @@ reason 细分的 `deadline_rejected_count` /
   选型与风险边界见网站"何时使用 AdaptiveScheduler"页
   （`website/zh/guides/adaptive-scheduling.md`）。
 
-**0.7.1 开发快照（submit_auto 路由智能化，roadmap §3.0.1）**：
+**0.7.1 新增（submit_auto 路由智能化，roadmap §3.0.1）**：
 `SchedulingMetrics` 新增 `capability_cache_hit_count` /
 `capability_cache_miss_count`（能力缓存访问点统计，与决策记录解耦、
 不受 CR-106 观测开关影响）；`RoutingDiagnostics` 新增
@@ -483,7 +483,7 @@ reason 细分的 `deadline_rejected_count` /
 `notify_backend_state_changed()`：绕过注册表直接变更后端状态的集成方
 （如自定义生命周期管理）应调用它推进 `state_epoch`，使缓存立即失效。
 
-**0.7.1 开发快照（deadline policy，roadmap §3.2）**：
+**0.7.1 新增（deadline policy，roadmap §3.2）**：
 `TaskOptions::deadline_policy`（`DeadlinePolicy::RunAnyway` 默认 /
 `DropIfLate` / `CancelIfLate`，TaskBuilder/CpuGpuTask 均有同名 builder
 方法；CpuGpuTask 本阶段忽略该字段）在开始执行时裁决（与 0.6.1
@@ -501,7 +501,7 @@ deadline/策略/QoS/优先级；QoS→默认优先级映射与调度器咨询语
 `docs/design/scheduling_runtime.md` §11 与
 `tests/test_deadline_policy.cpp`。
 
-**0.7.1 开发快照（资源预留 ResourceLease，roadmap §3.1）**：
+**0.7.1 新增（资源预留 ResourceLease，roadmap §3.1）**：
 opt-in——`ExecutorConfig::enable_resource_reservation` +
 `resource_quota`（`<kairo/resource_lease.hpp>` 的 `ResourceQuota`：
 GPU 显存/并发槽按 device 分桶、CPU 独占核总量）启用后，声明了
@@ -517,7 +517,7 @@ ReservationResult`（RAII `ResourceLease`，move-only、`release()`
 `docs/design/scheduling_runtime.md` §12，终态释放矩阵见
 `tests/test_resource_lease.cpp`。
 
-**0.7.1 开发快照（自动推断与执行器自动选择，roadmap §3.0.2/§3.0.3）**：
+**0.7.1 新增（自动推断与执行器自动选择，roadmap §3.0.2/§3.0.3）**：
 opt-in——`ExecutorConfig::enable_auto_inference`（运行期
 `set_auto_inference_enabled()` 可调）启用后，submit_auto 按任务名
 模式（`*_io_*` / `*_read_*` / `*_write_*` → 阻塞 I/O；

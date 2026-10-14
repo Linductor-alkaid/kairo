@@ -1,13 +1,13 @@
 ---
 title: Versions and Migration
-description: Entry points for the development snapshot, releases, and API migration.
+description: Entry points for releases and API migration.
 ---
 
 # Versions and Migration
 
 ## Current scope
 
-The latest release record is `v0.7.0`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
+The latest release record is `v0.7.1`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
 
 | What to check | Source of truth |
 | --- | --- |
@@ -16,11 +16,9 @@ The latest release record is `v0.7.0`. This site uses that stable version as its
 | Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | Complete current signatures | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
-## 0.7.1 development snapshot: smarter submit_auto routing (in progress)
+## 0.7.1: smarter submit_auto routing + deadline policy + resource reservation
 
-0.7.1 advances `docs/design/roadmap_v0.7.md` §3; this is an unreleased
-development snapshot. The landed part (§3.0.1) is fully additive, no
-migration required:
+0.7.1 (released 2026-10-14) fully lands `docs/design/roadmap_v0.7.md` §3. Everything is additive, no migration required:
 
 - **Capability snapshot TTL cache (default on)**: the capability reads
   behind `submit_auto` CpuOrGpu/affinity routing and `dispatch_auto` go

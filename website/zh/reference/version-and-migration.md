@@ -1,13 +1,13 @@
 ---
 title: 版本与迁移
-description: 当前开发快照、发布版本和 API 迁移的入口。
+description: 发布版本和 API 迁移的入口。
 ---
 
 # 版本与迁移
 
 ## 当前版本说明
 
-项目 CMake 与最新发布记录的版本均为 `v0.7.0`。本站以该稳定版为基线，同时跟随 `master` 的后续开发；未在稳定 tag 中发布的能力不构成版本承诺。首发不维护历史版本站点；发布时应以 tag 重新核对页面。
+项目 CMake 与最新发布记录的版本均为 `v0.7.1`。本站以该稳定版为基线，同时跟随 `master` 的后续开发；未在稳定 tag 中发布的能力不构成版本承诺。首发不维护历史版本站点；发布时应以 tag 重新核对页面。
 
 | 需要确认什么 | 入口 |
 | --- | --- |
@@ -16,10 +16,9 @@ description: 当前开发快照、发布版本和 API 迁移的入口。
 | 选项、编译器与后端前置 | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | 当前完整签名 | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
-## 0.7.1 开发快照：submit_auto 路由智能化（进行中）
+## 0.7.1：submit_auto 路由智能化 + deadline policy + 资源预留
 
-0.7.1 按 `docs/design/roadmap_v0.7.md` §3 推进，当前为开发快照、未发布；
-已落地部分（§3.0.1）全部为 additive，无必需迁移：
+0.7.1（2026-10-14 发布）按 `docs/design/roadmap_v0.7.md` §3 全部落地；全部为 additive，无必需迁移：
 
 - **能力快照 TTL 缓存（默认开启）**：`submit_auto` 的 CpuOrGpu / affinity
   路由与 `dispatch_auto` 的能力消费经 100ms TTL 缓存读取，命中路径不再
