@@ -38,6 +38,19 @@ using namespace kairo;
 
 namespace {
 
+// 平台时钟粒度鲁棒的 µs 级工作负载（volatile 防优化剔除）。MSVC/QPC
+// 的 steady_clock 粒度 ~100ns，空任务的两次采样可能实测 0ns——"1ns
+// 预算必计超"的断言在粗粒度时钟上不成立（Linux CI 首轮未暴露）。
+// ~µs 级自旋保证任何平台的实测时长都远大于 1ns 且远小于 1s。
+void burn_microseconds() {
+    volatile int sink = 0;
+    for (int i = 0; i < 2000; ++i) {
+        sink = sink + i;
+    }
+    static_cast<void>(sink);
+}
+
+
 constexpr auto kPollTimeout = std::chrono::milliseconds(2000);
 
 template <typename Predicate>
@@ -206,7 +219,10 @@ TEST(LockfreeAggregateStats, BudgetTwoSidedLimit) {
         ASSERT_TRUE(executor.start());
         std::atomic<int> ran{0};
         for (int i = 0; i < 50; ++i) {
-            ASSERT_TRUE(executor.push_task([&ran] { ran.fetch_add(1); }));
+            ASSERT_TRUE(executor.push_task([&ran] {
+                burn_microseconds();
+                ran.fetch_add(1);
+            }));
         }
         ASSERT_TRUE(wait_until([&ran] { return ran.load() >= 50; }));
         EXPECT_TRUE(executor.stop_and_join());
@@ -215,8 +231,9 @@ TEST(LockfreeAggregateStats, BudgetTwoSidedLimit) {
         EXPECT_EQ(stats.over_budget_count, 0u);
     }
 
-    // 下侧：1ns 预算，任何任务执行（两次时钟采样）必然严格大于 1ns →
-    // 全部计超。同时验证"恰等于预算不算超"所依赖的严格比较口径：所有
+    // 下侧：1ns 预算，任务携带 µs 级真实工作——任何平台的实测时长都
+    // 严格大于 1ns（空任务在 ~100ns 时钟粒度下可能实测 0ns）→ 全部
+    // 计超。同时验证"恰等于预算不算超"所依赖的严格比较口径：所有
     // 观测时长都 > 1ns，因此计数必须精确等于任务数。
     {
         LockFreeTaskExecutor executor(1024, 2, false);
@@ -224,7 +241,10 @@ TEST(LockfreeAggregateStats, BudgetTwoSidedLimit) {
         ASSERT_TRUE(executor.start());
         std::atomic<int> ran{0};
         for (int i = 0; i < 50; ++i) {
-            ASSERT_TRUE(executor.push_task([&ran] { ran.fetch_add(1); }));
+            ASSERT_TRUE(executor.push_task([&ran] {
+                burn_microseconds();
+                ran.fetch_add(1);
+            }));
         }
         ASSERT_TRUE(wait_until([&ran] { return ran.load() >= 50; }));
         EXPECT_TRUE(executor.stop_and_join());
@@ -247,7 +267,10 @@ TEST(LockfreeAggregateStats, RuntimeBudgetChangeTakesEffect) {
     auto push_batch = [&](int n) {
         expected_total += n;
         for (int i = 0; i < n; ++i) {
-            ASSERT_TRUE(executor.push_task([&ran] { ran.fetch_add(1); }));
+            ASSERT_TRUE(executor.push_task([&ran] {
+                burn_microseconds();
+                ran.fetch_add(1);
+            }));
         }
         ASSERT_TRUE(wait_until([&ran, &expected_total] {
             return ran.load() >= expected_total;
@@ -257,7 +280,7 @@ TEST(LockfreeAggregateStats, RuntimeBudgetChangeTakesEffect) {
     push_batch(20);
     EXPECT_EQ(executor.get_aggregate_execution_stats().over_budget_count, 0u);
 
-    // 运行期收紧到 1ns：后续任务全部计超。
+    // 运行期收紧到 1ns：后续任务（µs 级工作，实测 > 1ns）全部计超。
     executor.set_execution_budget_ns(1);
     push_batch(20);
     {
