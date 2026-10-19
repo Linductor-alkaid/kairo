@@ -953,6 +953,10 @@ public:
     uint64_t exception_count() const;
     uint64_t rejected_empty_count() const;            // 空任务提交拒绝次数
     void set_exception_handler(std::function<void(std::exception_ptr)> handler);
+
+    // 0.7.2 §4.2 聚合级执行反馈
+    void set_execution_budget_ns(int64_t budget_ns) noexcept;  // opt-in 单任务执行预算；0=关闭（默认），负值按 0
+    AggregateExecutionStats get_aggregate_execution_stats() const; // {executed, over_budget, period=0}
 };
 ```
 
@@ -1401,6 +1405,10 @@ ExecutorSnapshot get_snapshot() const;
 std::string get_snapshot_text() const;
 void set_snapshot_diagnostic_callback(ExecutorSnapshotCallback callback);
 
+// 0.7.2 §4.2 聚合级执行反馈（lockfree / realtime 后端）
+AggregateExecutionStats get_aggregate_execution_stats(const std::string& executor_name) const;
+std::map<std::string, AggregateExecutionStats> get_all_aggregate_execution_stats() const;
+
 TaskStatistics get_task_statistics(const std::string& task_type) const;
 std::map<std::string, TaskStatistics> get_all_task_statistics() const;
 ```
@@ -1419,6 +1427,7 @@ std::map<std::string, TaskStatistics> get_all_task_statistics() const;
 - `get_cancellation_status`：取消生命周期独立计数（`request_count`、`queued_cancelled_count`、`running_request_count`、`completed_after_request_count`），不并入 `ExecutorFailureStatus`。
 - `closure_graveyard_size`：parked 超时闭包转入的延迟析构墓地当前规模（诊断观测）。规模以"parked 超时触发 + 竞争输家"次数为界，`shutdown()` 终局清空、facade 析构释放；长期高频超时的进程可借此观测常驻内存累积。
 - `get_timer_status_summary`：定时任务计数（`pending_count`、`executed_count`、`cancelled_count`），同样独立于 failure 体系。
+- `get_aggregate_execution_stats(name)` / `get_all_aggregate_execution_stats()`（0.7.2 §4.2）：lockfree / realtime 后端的聚合级执行反馈快照——`AggregateExecutionStats{executed_count, over_budget_count, period_count}`，全部为累计值，按自己的采样周期取差分即"周期内执行数 / 超预算次数"。relaxed 原子快照，任意线程可调用，不触碰执行线程、不产生逐任务回调；未知名称返回零值（"未知即宽容"）。realtime 的 over_budget/period 与 `get_realtime_executor_status` 的 cycle_timeout_count/cycle_count 同源；lockfree 的超预算计数需先 `set_execution_budget_ns()` 声明预算（见 §5.4）。
 
 ### 6.1 完整生命周期快照
 
@@ -1988,11 +1997,20 @@ auto submit_gpu(const std::string& executor_name,
                KernelFunc&& kernel,
                const gpu::GpuTaskConfig& config)
     -> std::future<void>;
+
+// 0.7.2 §4.2：带 stream 完成回调计时的提交（见 §8.3）
+template<typename KernelFunc>
+auto submit_gpu(const std::string& executor_name,
+               KernelFunc&& kernel,
+               const gpu::GpuTaskConfig& config,
+               IGpuExecutor::KernelTimingSink timing_sink)
+    -> std::future<void>;
 ```
 
 - `register_gpu_executor`：按 `config.backend` 创建并注册 GPU 执行器；当前支持 `GpuBackend::CUDA` 和 `GpuBackend::OPENCL`。对应后端还需在编译时启用 `KAIRO_ENABLE_CUDA` / `KAIRO_ENABLE_OPENCL`，并且运行时设备、驱动和平台可用；否则创建或启动失败。
 - `register_gpu_executor` 返回可诊断结果，可区分 `InvalidConfig`、`DuplicateName`、`BackendUnavailable` 和 `StartFailed`。例如未编译对应后端、SYCL/HIP 尚未实现、运行时创建失败都会返回 `BackendUnavailable` 或更具体的启动失败信息。
 - `submit_gpu`：向指定 GPU 执行器提交 kernel；kernel 可为 `void()` 或 `void(void*)`（流句柄，CUDA 下为 `cudaStream_t`，OpenCL 下为 `cl_command_queue`）。
+- `submit_gpu(..., timing_sink)`（0.7.2 §4.2）：与 `submit_gpu` 等价，另以 `timing_sink` 逐提交交付一条 `gpu::GpuKernelTimingRecord`（提交侧失败也交付 `success == false` 的记录）。仅对 `supports_completion_timing() == true` 的执行器有意义（当前为 CUDA）；不支持的执行器照常提交、不调用 sink——建议先经 `IGpuExecutor*` 查询能力再选择路径。注入 `wants_feedback()` 的调度器后，`submit_auto(CpuGpuTask)` 的 GPU 分支会自动使用该通道产出 `SchedulingFeedback`（execution_duration 观测至 stream 完成点）。
 
 ### 8.2 查询与状态
 
@@ -2012,6 +2030,7 @@ gpu::GpuExecutorStatus get_gpu_executor_status(const std::string& name) const;
 - **批量执行**：`submit_kernels_batch`（一次性提交一组 kernel+config，返回等长 `std::vector<std::future<void>>`；关停时每个输入均保证返回一个 future——CUDA 侧已入队的 kernel 继续排空，OpenCL 侧未被 worker 取出的以 `ExecutorStopping` 就绪，见上文 stop() 队列契约）
 - **流**：`create_stream`、`destroy_stream`、`synchronize_stream`、`add_stream_callback`。`add_stream_callback` 当前仅支持 CUDA；调用前使用 `supports_stream_callback()` 查询，OpenCL 会返回 `false`，并在 `get_status().last_error_message` 中说明该能力尚未实现（计划通过 `cl_event` 轮询跟进）。
 - **执行**：`submit_kernel(kernel, config)`（返回 `std::future<void>`）、`synchronize`、`wait_for_completion`
+- **完成计时（0.7.2 §4.2）**：`supports_completion_timing()`（默认 `false`，CUDA 为 `true`）与 `submit_kernel_with_timing(kernel_func, config, sink)`。async kernel 的完成时点由 stream 完成回调观测——回调内不做任何 CUDA 调用（CR-153：驱动线程调 CUDA API 会死锁），计时数据转交到执行器线程后才调用 `sink`；sync（`async=false`）任务在 `cudaStreamSynchronize` 返回点交付。每提交恰好一条 `gpu::GpuKernelTimingRecord{submit_ns, start_ns, completion_ns, stream_id, success, completed_on_stream}`（全 steady 时钟纳秒）：launch 失败/执行异常/停止排空交付 `success == false` 或 `completion_ns == 0`；`completion_ns == 0` 语义为"完成时点不可得"，消费方不得按"耗时 0"解读。`sink` 在执行器线程调用且异常被隔离，应快速返回。
 - **状态**：`get_name`、`get_device_info`、`get_status`、`start`、`stop`
 
 CUDA 的 `stop()` 可被多个外部线程并发调用：其中一个调用方接管并等待 worker 线程，其余调用方安全返回。需要区分调用方时可直接使用 `CudaExecutor::stop_and_join()`；它在外部线程返回 `true`，在 CUDA worker 内调用时只请求停止并返回 `false`，外部线程随后必须调用一次 `stop_and_join()` 完成线程回收。自停止后的重新 `start()` 会在 worker 句柄被外部回收前被拒绝。

@@ -396,6 +396,28 @@ struct RealtimeExecutorStatus {
     uint64_t cycle_manager_error_count = 0;       // 外部周期管理器调用异常累计数
 };
 
+/**
+ * @brief 聚合级执行反馈（0.7.2 §4.2，lockfree / realtime 后端）。
+ *
+ * 0.6.1 的 measurement contract 只覆盖默认异步池（逐任务
+ * SchedulingFeedback）；lockfree / realtime 路径为保住无分配/无回调约束，
+ * 只提供聚合计数——全部为自执行器启动起的累计值，消费方按自己的采样
+ * 周期取差分得到"周期内执行数 / 超预算次数"。读路径为 relaxed 原子快照，
+ * 可在任意线程调用，RT 线程不受影响。
+ *
+ * - executed_count：累计已执行任务数（含执行中抛异常的任务）。
+ * - over_budget_count：累计超预算事件数。realtime = 周期执行时间超过
+ *   cycle_period_ns 的次数；lockfree = 声明了执行预算
+ *   （set_execution_budget_ns）且单任务执行时长超预算的次数，未声明
+ *   预算时恒为 0。
+ * - period_count：realtime = 已完成周期数；lockfree = 0（无周期语义）。
+ */
+struct AggregateExecutionStats {
+    uint64_t executed_count = 0;
+    uint64_t over_budget_count = 0;
+    uint64_t period_count = 0;
+};
+
 enum class BlockingIoStopReason {
     None,
     Requested,
@@ -566,6 +588,26 @@ struct GpuTaskConfig {
     int stream_id = 0;                            // 流ID（0表示默认流）
     bool async = true;                            // 是否异步执行
     int priority = 1;                             // 优先级（0=LOW, 1=NORMAL, 2=HIGH, 3=CRITICAL），与 CPU submit_priority 对齐
+};
+
+/**
+ * @brief 一次 GPU kernel 提交的完成计时记录（0.7.2 §4.2 stream 完成回调计时）。
+ *
+ * 全部时点取 steady 时钟（纳秒）。completion_ns 由 stream 完成回调在驱动
+ * 线程观测（completed_on_stream == true，async 任务），或由执行器线程在
+ * cudaStreamSynchronize 返回后观测（completed_on_stream == false，同步任务）。
+ *
+ * 未知即宽容语义：completion_ns == 0 表示完成时点不可得（转交通道溢出/
+ * 执行器停止）——消费方不得把它当成"耗时 0"，应按"未知"处理（与
+ * FeedbackAggregator 的 0 = 未知口径一致）。
+ */
+struct GpuKernelTimingRecord {
+    int64_t submit_ns = 0;      // 提交时点（进入执行器队列前）
+    int64_t start_ns = 0;       // kernel 发起 launch 的时点（执行器线程）
+    int64_t completion_ns = 0;  // 完成观测时点；0 = 不可得
+    int stream_id = 0;          // 提交配置的流 ID（0 = 默认流）
+    bool success = false;       // kernel 是否成功发起（launch 成功即 true）
+    bool completed_on_stream = false;  // 完成时点是否来自 stream 完成回调
 };
 
 } // namespace gpu

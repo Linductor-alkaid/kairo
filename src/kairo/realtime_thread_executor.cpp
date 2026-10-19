@@ -527,6 +527,9 @@ void RealtimeThreadExecutor::process_tasks() {
             } catch (...) {
                 exception_handler_.handle_task_exception(name_, std::current_exception());
             }
+            // 0.7.2 §4.2 聚合反馈：已执行任务计数（含异常终态；relaxed，
+            // RT 线程内唯一写者，无分配）。
+            executed_task_count_.fetch_add(1, std::memory_order_relaxed);
         }
 
         // 释放回对象池
@@ -535,6 +538,18 @@ void RealtimeThreadExecutor::process_tasks() {
             break;
         }
     }
+}
+
+AggregateExecutionStats RealtimeThreadExecutor::get_aggregate_execution_stats() const {
+    AggregateExecutionStats stats;
+    stats.executed_count = executed_task_count_.load(std::memory_order_relaxed);
+    // 超预算口径 = 周期执行时间超过 cycle_period_ns 的次数（与
+    // get_status().cycle_timeout_count 同源）。
+    stats.over_budget_count =
+        static_cast<uint64_t>(cycle_timeout_count_.load(std::memory_order_relaxed));
+    stats.period_count =
+        static_cast<uint64_t>(cycle_count_.load(std::memory_order_relaxed));
+    return stats;
 }
 
 void RealtimeThreadExecutor::update_statistics(int64_t cycle_time_ns) {

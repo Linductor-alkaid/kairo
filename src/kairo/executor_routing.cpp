@@ -735,6 +735,35 @@ size_t Executor::get_in_flight_submissions() const {
     return current > 0 ? static_cast<size_t>(current) : 0;
 }
 
+AggregateExecutionStats Executor::get_aggregate_execution_stats(
+    const std::string& executor_name) const {
+    // 0.7.2 §4.2：按名称解析 realtime / lockfree 后端的聚合计数。
+    // unknown 即零值（"未知即宽容"），调用方无需区分后端类型。
+    if (auto realtime = manager_->get_realtime_executor_snapshot(executor_name)) {
+        return realtime->get_aggregate_execution_stats();
+    }
+    if (auto lockfree = manager_->get_lockfree_executor_snapshot(executor_name)) {
+        return lockfree->get_aggregate_execution_stats();
+    }
+    return AggregateExecutionStats{};
+}
+
+std::map<std::string, AggregateExecutionStats>
+Executor::get_all_aggregate_execution_stats() const {
+    std::map<std::string, AggregateExecutionStats> result;
+    for (const auto& name : manager_->get_realtime_executor_names()) {
+        if (auto realtime = manager_->get_realtime_executor_snapshot(name)) {
+            result.emplace(name, realtime->get_aggregate_execution_stats());
+        }
+    }
+    for (const auto& name : manager_->get_lockfree_executor_names()) {
+        if (auto lockfree = manager_->get_lockfree_executor_snapshot(name)) {
+            result.emplace(name, lockfree->get_aggregate_execution_stats());
+        }
+    }
+    return result;
+}
+
 AllocationMetrics Executor::get_allocation_metrics() const {
     auto executor = manager_->get_default_async_executor_snapshot();
     if (!executor) {

@@ -611,11 +611,25 @@ public:
 
     /**
      * @brief 获取实时执行器状态
-     * 
+     *
      * @param name 执行器名称
      * @return 实时执行器状态
      */
     RealtimeExecutorStatus get_realtime_executor_status(const std::string& name) const;
+
+    /**
+     * @brief 聚合级执行反馈快照（0.7.2 §4.2）。
+     *
+     * 按名称解析 realtime / lockfree 后端并返回其累计执行计数；未知
+     * 名称返回零值（"未知即宽容"）。任意线程可调用，不触碰执行线程。
+     */
+    AggregateExecutionStats get_aggregate_execution_stats(
+        const std::string& executor_name) const;
+
+    /**
+     * @brief 全部 realtime / lockfree 后端的聚合级执行反馈（0.7.2 §4.2）。
+     */
+    std::map<std::string, AggregateExecutionStats> get_all_aggregate_execution_stats() const;
 
     /**
      * @brief 设置 facade 失败事件回调
@@ -781,7 +795,7 @@ public:
 
     /**
      * @brief 提交 GPU kernel 任务
-     * 
+     *
      * @tparam KernelFunc GPU kernel 函数类型
      * @param executor_name GPU 执行器名称
      * @param kernel GPU kernel 函数
@@ -792,6 +806,28 @@ public:
     auto submit_gpu(const std::string& executor_name,
                    KernelFunc&& kernel,
                    const gpu::GpuTaskConfig& config)
+        -> std::future<void>;
+
+    /**
+     * @brief 提交 GPU kernel 并逐提交交付 stream 完成计时（0.7.2 §4.2）。
+     *
+     * 与 submit_gpu 等价，另以 timing_sink 交付一条 GpuKernelTimingRecord
+     * （async 任务完成点由 stream 完成回调观测——回调内不做任何 CUDA
+     * 调用，计时数据转交到执行器线程后 sink 才被调用；CR-153）。建议
+     * 仅对 supports_completion_timing() == true 的执行器使用。
+     *
+     * @tparam KernelFunc GPU kernel 函数类型
+     * @param executor_name GPU 执行器名称
+     * @param kernel GPU kernel 函数
+     * @param config GPU 任务配置
+     * @param timing_sink 完成计时回调（执行器线程调用，异常被隔离）
+     * @return std::future<void> 任务执行结果的 future
+     */
+    template<typename KernelFunc>
+    auto submit_gpu(const std::string& executor_name,
+                   KernelFunc&& kernel,
+                   const gpu::GpuTaskConfig& config,
+                   IGpuExecutor::KernelTimingSink timing_sink)
         -> std::future<void>;
 
     /**
@@ -3346,6 +3382,38 @@ auto Executor::submit_gpu(const std::string& executor_name,
     return executor->submit_kernel(std::forward<KernelFunc>(kernel), config);
 }
 
+// 0.7.2 §4.2：带 stream 完成计时的 GPU 提交。仅对
+// supports_completion_timing() == true 的执行器有意义（否则照常提交、
+// sink 不被调用——调用方应先查询能力）；每提交恰好交付一条
+// GpuKernelTimingRecord（提交侧失败也交付 success == false）。
+template<typename KernelFunc>
+auto Executor::submit_gpu(const std::string& executor_name,
+                         KernelFunc&& kernel,
+                         const gpu::GpuTaskConfig& config,
+                         IGpuExecutor::KernelTimingSink timing_sink)
+    -> std::future<void> {
+    auto executor = manager_->get_gpu_executor_snapshot(executor_name);
+    if (!executor) {
+        const std::string message =
+            "submit_gpu: no GPU executor registered with name " + executor_name;
+        record_submit_rejected(executor_name, "facade_submit_gpu", message);
+        throw std::runtime_error("GPU executor '" + executor_name + "' not found. Call register_gpu_executor() first.");
+    }
+    std::function<void(void*)> kernel_func;
+    if constexpr (std::is_invocable_v<KernelFunc, void*>) {
+        kernel_func = [kernel = std::forward<KernelFunc>(kernel)](void* stream) mutable {
+            kernel(stream);
+        };
+    } else {
+        kernel_func = [kernel = std::forward<KernelFunc>(kernel)](void* stream) mutable {
+            (void)stream;
+            kernel();
+        };
+    }
+    return executor->submit_kernel_with_timing(std::move(kernel_func), config,
+                                               std::move(timing_sink));
+}
+
 template<typename F, typename... Args>
 auto Executor::submit_auto(F&& f, Args&&... args)
     -> std::future<typename std::invoke_result<F, Args...>::type> {
@@ -3618,6 +3686,63 @@ std::future<void> Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction> tas
     try {
         auto gpu_config = task.gpu_config();
         if (feedback_enabled) {
+            // 0.7.2 §4.2：执行器支持 stream 完成回调计时时走计时提交——
+            // execution_duration 观测至 stream 完成点（async kernel 不再
+            // 只测到 launch 为止），queue_wait 含执行器内部队列等待。
+            // 不支持的执行器回落到既有 host 侧包装（sync 任务仍精确）。
+            const bool stream_timing = [this, &gpu_name]() {
+                auto gpu_executor = manager_->get_gpu_executor_snapshot(gpu_name);
+                return gpu_executor && gpu_executor->supports_completion_timing();
+            }();
+            if (stream_timing) {
+                struct GpuTimingFeedbackState {
+                    std::string task_id;
+                    std::string executor_name;
+                    QosClass qos;
+                    int64_t submit_ns;
+                    int64_t deadline_ns;
+                };
+                auto timing_state = std::make_shared<GpuTimingFeedbackState>(
+                    GpuTimingFeedbackState{task_name, gpu_name, options.qos,
+                                           submit_ns, deadline_ns});
+                IGpuExecutor::KernelTimingSink timing_sink =
+                    [this, timing_state](const gpu::GpuKernelTimingRecord& record) {
+                        SchedulingFeedback feedback;
+                        feedback.task_id = timing_state->task_id;
+                        feedback.qos = timing_state->qos;
+                        feedback.backend = ExecutionBackend::Gpu;
+                        feedback.executor_name = timing_state->executor_name;
+                        feedback.queue_wait_ns =
+                            record.start_ns > 0
+                                ? record.start_ns - timing_state->submit_ns
+                                : 0;
+                        feedback.had_deadline = timing_state->deadline_ns > 0;
+                        feedback.deadline_missed =
+                            timing_state->deadline_ns > 0 &&
+                            record.start_ns > timing_state->deadline_ns;
+                        feedback.success = record.success;
+                        feedback.failure_kind =
+                            record.success ? FailureKind::None
+                                           : FailureKind::GpuFailure;
+                        // execution_duration 至 stream 完成点；completion
+                        // 未知（0，转交通道异常/执行器停止）或提交失败时
+                        // 按聚合口径记 0——"未知"，不是"快"。
+                        feedback.execution_duration_ns =
+                            (record.success && record.completion_ns > 0 &&
+                             record.start_ns > 0)
+                                ? record.completion_ns - record.start_ns
+                                : 0;
+                        report_scheduling_feedback(feedback);
+                    };
+                // 泛型转发包装：GPU callable 可为 (void* stream) 或无参
+                // 形态，包装按执行器的调用形态原样转发。
+                return submit_gpu(
+                    gpu_name,
+                    [inner = std::move(task).take_gpu()](auto&&... args) mutable {
+                        inner(std::forward<decltype(args)>(args)...);
+                    },
+                    gpu_config, std::move(timing_sink));
+            }
             // 泛型转发包装：GPU callable 可为 (void* stream) 或无参形态，
             // 包装按执行器的调用形态原样转发。
             return submit_gpu(

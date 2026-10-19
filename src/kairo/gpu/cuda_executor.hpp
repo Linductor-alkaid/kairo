@@ -12,6 +12,7 @@
 #include <string>
 #include <atomic>
 #include <mutex>
+#include <deque>
 #include <unordered_map>
 #include <vector>
 #include <future>
@@ -32,6 +33,37 @@ class InvalidStreamException : public std::runtime_error {
 public:
     explicit InvalidStreamException(const std::string& message)
         : std::runtime_error(message) {}
+};
+
+// ---- 0.7.2 §4.2 stream 完成回调计时（roadmap §4.2）----
+//
+// async kernel 的完成时点由 cudaLaunchHostFunc 探针在驱动线程观测。观测
+// 回调内禁止任何 CUDA API（CR-153：驱动级死锁）且不得执行用户代码——
+// 只做时间戳 + 把上下文转交给执行器 worker 线程，sink（含用户反馈回调）
+// 一律在 worker 线程执行。转交状态自持有 mutex/cv/队列并经 shared_ptr
+// 与上下文共享：晚于执行器析构抵达的回调读到 alive==false 后自行销毁
+// 上下文，不触碰已析构的成员（final drain 与回调 push 经同一把 mutex
+// 全序，无丢失、无 UAF）。
+
+/** @brief 一次计时提交的转交上下文（堆分配，恰被交付/销毁一次）。 */
+struct TimingContext {
+    GpuKernelTimingRecord record;
+    IGpuExecutor::KernelTimingSink sink;
+    std::shared_ptr<struct TimingHandoffState> state;
+};
+
+/** @brief 回调 → worker 的转交队列（自持有同步原语，晚到回调安全）。
+ *
+ * worker_cv / worker_queue_mutex 指回执行器成员（构造时接线）：仅当
+ * alive == true 时允许触碰——alive 在 finalize_timing（stop_and_join 内、
+ * 析构之前）翻 false，此后晚到回调只自弃上下文，不再解引用。 */
+struct TimingHandoffState {
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::atomic<bool> alive{true};
+    std::deque<TimingContext*> pending;  // 回调线程生产，worker 单消费
+    std::condition_variable* worker_cv = nullptr;
+    std::mutex* worker_queue_mutex = nullptr;
 };
 
 /**
@@ -60,6 +92,13 @@ public:
     CudaExecutor& operator=(const CudaExecutor&) = delete;
     CudaExecutor(CudaExecutor&&) = delete;
     CudaExecutor& operator=(CudaExecutor&&) = delete;
+
+    // ---- 0.7.2 §4.2 stream 完成回调计时 ----
+    bool supports_completion_timing() const noexcept override;
+    std::future<void> submit_kernel_with_timing(
+        std::function<void(void*)> kernel_func,
+        const GpuTaskConfig& config,
+        KernelTimingSink timing_sink) override;
 
     // 实现 IGpuExecutor 接口
     void* allocate_device_memory(size_t size) override;
@@ -135,6 +174,9 @@ private:
         GpuTaskConfig config;
         std::shared_ptr<std::promise<void>> promise;
         int64_t submit_time_ns = 0;
+        // 0.7.2 §4.2：计时提交携带；随任务进入执行路径（成功交付或
+        // 失败路径逐点交付，保证每提交恰一条记录）。
+        std::unique_ptr<TimingContext> timing_ctx;
 #ifdef KAIRO_ENABLE_CUDA
         std::shared_ptr<StreamWrapper> stream;
 #endif
@@ -271,6 +313,31 @@ private:
     std::exception_ptr make_cuda_exception_ptr(cudaError_t error_code, const char* operation) const;
 #endif
 
+    // ---- 0.7.2 §4.2 stream 完成回调计时（内部）----
+
+    /** @brief 入队共享路径：submit_kernel_impl / submit_kernel_with_timing
+     *  的公共体。timing_ctx 为空等价普通提交；非空时所有失败路径逐点
+     *  交付 success == false 记录。 */
+    std::future<void> enqueue_kernel(
+        std::function<void(void*)> kernel_func,
+        const GpuTaskConfig& config,
+        std::unique_ptr<TimingContext> timing_ctx);
+
+    /** @brief 交付一条计时记录（worker 语义线程）：隔离 sink 异常后销毁
+     *  上下文。completion_ns == 0 表示完成时点不可得。 */
+    void deliver_timing_record(std::unique_ptr<TimingContext> timing_ctx) noexcept;
+
+    /** @brief 排空转交队列（worker 每轮循环调用；幂等）。 */
+    void drain_timing_records();
+
+    /** @brief 关停收尾：置 alive=false、排空残余上下文（逐条交付
+     *  completion_ns == 0 记录）。与回调 push 经同一把 mutex 全序。 */
+    void finalize_timing() noexcept;
+
+    /** @brief cudaLaunchHostFunc 探针入口。CR-153：不得调用任何 CUDA
+     *  API，只做时间戳 + 转交。 */
+    static void timing_host_callback(void* user_data) noexcept;
+
 private:
     std::string name_;                          // 执行器名称
     GpuExecutorConfig config_;                  // 配置
@@ -315,6 +382,16 @@ private:
     std::atomic<bool> worker_started_{false};
 
     util::ExceptionHandler exception_handler_;  // 任务异常处理，与 CPU 执行器一致
+
+    // 0.7.2 §4.2 计时转交状态。构造即建（worker 只读指针本身，无惰性
+    // 初始化竞争）；shared_ptr 与每个在途 TimingContext 共享，晚于析构
+    // 抵达的驱动回调经 alive 标志安全自弃。worker 侧指针在构造函数体
+    // 接线（成员初始化列表阶段 this 成员地址可用但保持统一入口）。
+    std::shared_ptr<TimingHandoffState> timing_state_ =
+        std::make_shared<TimingHandoffState>();
+    // 首次计时提交置位：worker 由此从纯阻塞等待切换到含转交队列的
+    // 等待谓词；未计时时等待路径零变化。
+    std::atomic<bool> timing_armed_{false};
 };
 
 } // namespace gpu

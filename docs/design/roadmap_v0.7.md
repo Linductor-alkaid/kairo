@@ -27,9 +27,11 @@
 > **§4.1 堆分配优化阶段一已落地并通过独立验证**（Task 节点池 +
 > facade 单控制块整合 + AllocationMetrics 观测，9→7 allocs /
 > 768→512B，A/B 全线达标，TSAN/ASAN 干净，2026-10-19，实施记录见
-> `allocation_optimization_proposal.md` §9）；
-> 0.7.2 余项：§4.0 正式移除（发布收尾）、§4.2 反馈覆盖扩展、
-> §4.3 可靠性收尾。
+> `allocation_optimization_proposal.md` §9）。
+> **§4.2 反馈覆盖扩展已落地并通过独立验证**（GPU stream 完成回调计时
+> + lockfree/realtime 聚合级反馈 + NN-03 guard 入 CI 矩阵，2026-10-19，
+> 实施记录见 `scheduling_runtime.md` §15）；
+> 0.7.2 余项：§4.0 正式移除（发布收尾）、§4.3 可靠性收尾。
 
 ## 0. 系列主题与原则
 
@@ -525,13 +527,32 @@ class Executor {
 };
 ```
 
-### 4.2 反馈接入其他后端
+### 4.2 反馈接入其他后端 ✅ 已落地（2026-10-19，实施记录见
+scheduling_runtime.md §15）
 
 0.6.1 的反馈只覆盖默认异步池。本版把 measurement contract 扩展到：
 
 - **GPU**：以 stream 完成回调计时（注意 CR-153：回调内不得调用 CUDA API，计时数据要转交出去处理）；
 - **lockfree / realtime**：只提供聚合级反馈（周期内执行数、超预算次数），**不提供逐任务回调**，
   不破坏 RT 路径的无分配约束（随 NN-03 一起，把 realtime allocation guard 纳入 CI 构建矩阵）。
+
+**验收（2026-10-19 独立验证）**：
+- [x] 聚合反馈：`AggregateExecutionStats` + facade 快照 API；
+      realtime（executed/超周期/周期，与 get_status 同源）、lockfree
+      （opt-in 执行预算，默认零新增采样）——11 用例
+- [x] GPU 计时：`GpuKernelTimingRecord` + `submit_kernel_with_timing`
+      sink 通道；CR-153 由"探针回调只做时间戳+转交，sink 一律执行器
+      worker 线程"结构性履行；每提交恰一条记录（失败/停止路径逐点
+      交付）——facade 组装层 5 用例 + CUDA 失败路径 3 用例（stub 编译）
+- [x] 无逐任务回调、RT 无分配约束不破坏：RT 线程内仅 relaxed 原子
+      计数；TSAN 子集零告警
+- [x] NN-03：CI guard-ON job 全量构建 + realtime/lockfree/object_pool
+      套件（本地复刻 24/24；随动修复 benchmark 全局 new 冲突与 500ns
+      时延断言的分配器敏感性）
+- [x] 全量回归 178/182（4 失败经 A/B 定性为预存容差 flaky 与 doc 测试
+      cwd 环境问题，非本次引入）
+- 残余风险：无 GPU 硬件，async 探针/sync 交付/晚到回调自弃仅 stub
+  编译 + 契约层验证；OpenCL 计时 parity 属后续项
 
 ### 4.3 未结的可靠性项（来自 2026-09-30 评审）
 

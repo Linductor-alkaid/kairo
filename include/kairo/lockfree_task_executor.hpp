@@ -1,5 +1,7 @@
 #pragma once
 
+#include "kairo/types.hpp"
+
 #include <functional>
 #include <memory>
 #include <thread>
@@ -196,6 +198,25 @@ public:
      */
     QueueStats expensive_diagnostic_snapshot() const;
 
+    /**
+     * @brief 声明单任务执行预算（0.7.2 §4.2 聚合反馈，opt-in）。
+     *
+     * budget_ns > 0 时 worker 对每个任务做两次 steady 时钟采样，执行时长
+     * 超过预算计入 over_budget_count（见 get_aggregate_execution_stats）；
+     * 0（默认）关闭计时——任务执行路径零新增时钟采样。负值按 0 处理。
+     * 运行期可随时调整（relaxed 读，无需与 worker 同步）。
+     */
+    void set_execution_budget_ns(int64_t budget_ns) noexcept;
+
+    /**
+     * @brief 聚合级执行反馈快照（0.7.2 §4.2）。
+     *
+     * executed_count = 累计已执行任务数（同 processed_count()）；
+     * over_budget_count = 声明预算后单任务执行超预算的累计次数（未声明
+     * 恒为 0）；period_count = 0（lockfree 无周期语义）。
+     */
+    AggregateExecutionStats get_aggregate_execution_stats() const;
+
     // Test/debug hook: invoked after a producer reserves a slot and before it
     // enters the non-interruptible write window. This method may be called
     // concurrently with push_task(); each producer observes either the old
@@ -235,6 +256,10 @@ private:
     void worker_thread();
     size_t park_worker(TaskWrapper** batch, size_t batch_size);
     void wake_worker_if_parking();
+    // 0.7.2 §4.2：执行单个任务并按需做预算计时；异常计数/回调与两个
+    // worker 循环共用。
+    void run_wrapped_task(TaskWrapper& wrapper) noexcept;
+    void account_worker_exception();
     QueueStats make_queue_stats(const util::LockFreeQueueStats& raw) const;
 
     std::unique_ptr<util::LockFreeQueue<TaskWrapper*>> queue_;
@@ -260,6 +285,10 @@ private:
     // is a public header and cannot depend on internal src/ headers.
     std::atomic<uint32_t> push_gate_{0};
     std::atomic<uint64_t> processed_count_{0};
+    // 0.7.2 §4.2 聚合反馈：单任务执行预算（纳秒，0 = 关闭计时）与超预算
+    // 计数。worker 内 relaxed 读写；set_execution_budget_ns 任意线程可调。
+    std::atomic<int64_t> execution_budget_ns_{0};
+    std::atomic<uint64_t> over_budget_count_{0};
     // P-260618-006: 累计异常计数, 始终累计, worker 线程写, 读取方任意线程.
     std::atomic<uint64_t> exception_count_{0};
     // 空任务属于提交拒绝，而不是 worker 执行异常。

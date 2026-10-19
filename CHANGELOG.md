@@ -47,6 +47,26 @@
   未命中累计）；`Executor::get_allocation_metrics()` 与
   `Executor::get_task_pool_hit_rate()`（默认池快照，未初始化返回零）；
   `IAsyncExecutor::get_allocation_metrics()` 虚方法（additive，默认零）。
+- **反馈覆盖扩展（roadmap §4.2）**：measurement contract 扩展到
+  GPU / lockfree / realtime。① 聚合级执行反馈：`AggregateExecutionStats`
+  （executed/over_budget/period 累计计数）+
+  `IRealtimeExecutor::get_aggregate_execution_stats()`（默认零）+
+  `Executor::get_aggregate_execution_stats(name)` /
+  `get_all_aggregate_execution_stats()`；realtime 执行线程内仅
+  relaxed 原子计数（无逐任务回调、RT 无分配约束不破坏），lockfree
+  超预算计数经 opt-in `LockFreeTaskExecutor::set_execution_budget_ns()`
+  （默认 0 = 关闭计时）。② GPU stream 完成回调计时：`IGpuExecutor`
+  新增 `supports_completion_timing()` / `submit_kernel_with_timing()`
+  与 `gpu::GpuKernelTimingRecord`（每提交恰一条，completion_ns==0
+  语义为"未知"）；CudaExecutor async kernel 经 `cudaLaunchHostFunc`
+  探针观测完成点，回调内不做任何 CUDA 调用、计时数据转交执行器线程
+  后才调用 sink（CR-153 结构性履行）；`submit_gpu` 新增带 sink
+  overload，`submit_auto(CpuGpuTask)` 在 wants_feedback() 且执行器
+  支持时自动走计时路径（execution_duration 观测至 stream 完成点，
+  queue_wait 含执行器内部队列等待），不支持时回落既有 host 侧包装。
+  独立验证：新测试 19/19，全量回归 178/182（4 失败为预存 flaky，
+  A/B 定性），TSAN 零告警。实施记录见
+  `docs/design/scheduling_runtime.md` §15。
 
 ### 文档
 
@@ -56,6 +76,8 @@
   what-is-kairo / decisions / concurrency-antipatterns 同步新表达；
   版本与迁移页（中英）新增 0.7.2 开发快照。示例（basic_submit、
   tutorial/02_priority）与 facade 层测试调用（8 处）全部迁移。
+- **CI（NN-03）**：realtime-allocation-guard job 扩为 guard-ON 全量
+  构建 + realtime/lockfree/object_pool 套件（此前仅 guard 自身测试）。
 
 ---
 

@@ -120,6 +120,15 @@ public:
      */
     RealtimeExecutorStatus get_status() const override;
 
+    /**
+     * @brief 聚合级执行反馈快照（0.7.2 §4.2）
+     *
+     * executed_count = 累计已执行任务数；over_budget_count = 周期执行
+     * 超过 cycle_period_ns 的次数（同 get_status().cycle_timeout_count）；
+     * period_count = 已完成周期数。relaxed 原子快照，任意线程可调用。
+     */
+    AggregateExecutionStats get_aggregate_execution_stats() const override;
+
 private:
     /**
      * @brief 简单周期循环（内置默认实现）
@@ -241,6 +250,9 @@ private:
     std::atomic<uint64_t> pool_exhausted_count_{0};
     std::atomic<uint64_t> queue_full_count_{0};
     std::atomic<uint64_t> cycle_manager_error_count_{0};
+    // 0.7.2 §4.2 聚合反馈：累计已执行任务数（RT 线程内 relaxed 计数，
+    // 无分配无回调；读侧经 get_aggregate_execution_stats()）。
+    std::atomic<uint64_t> executed_task_count_{0};
     // P-001 (260615): 构造时指定的统计开关, push_task() 路径不依赖此开关.
     const bool enable_stats_;
     

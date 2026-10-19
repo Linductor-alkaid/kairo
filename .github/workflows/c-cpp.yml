@@ -265,16 +265,17 @@ jobs:
           -DKAIRO_ENABLE_COVERAGE=OFF \
           -DKAIRO_ENABLE_REALTIME_ALLOCATION_GUARD=ON
 
-    - name: 编译实时分配测试
-      run: |
-        cmake --build build-realtime-allocation --config Release -j --target \
-          test_comm_realtime_memory
+    - name: 编译（guard 全量：库 + 测试矩阵，NN-03）
+      # 0.7.2 §4.2：guard-ON 不再只编译 guard 自身测试——整个库与测试
+      # 矩阵都在替换后的 operator new 下编译，RT/lockfree 相关套件在
+      # guard 激活作用域内运行（CR-044 对齐变体盲区由全量编译封堵）。
+      run: cmake --build build-realtime-allocation --config Release -j
 
-    - name: 运行实时分配测试
+    - name: 运行实时/无锁测试（guard-ON）
       working-directory: build-realtime-allocation
       run: |
         ctest -C Release --output-on-failure --verbose \
-          -R '^test_comm_realtime_memory$'
+          -R '(^test_realtime|^test_lockfree|^test_comm_realtime|^test_object_pool)'
 
   gpu-headers-build:
     if: github.event_name != 'schedule'
