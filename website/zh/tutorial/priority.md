@@ -15,7 +15,7 @@ description: 使用 submit_auto(TaskBuilder) 的 priority() 让少量控制工�
 
 ## 推荐方案
 
-优先级是调度策略维度，经 `submit_auto(TaskBuilder)` 的 `priority()` 表达（0.7.2 起 `submit_priority` 已弃用）。优先级取 `TaskPriority` 枚举：`LOW`、`NORMAL`、`HIGH`、`CRITICAL`；普通任务使用默认优先级。下面的示例以单工作线程演示两类工作均可正确完成。
+优先级是调度策略维度，经 `submit_auto(TaskBuilder)` 的 `priority()` 表达（0.7.2 起 `submit_priority` 已移除）。优先级取 `TaskPriority` 枚举：`LOW`、`NORMAL`、`HIGH`、`CRITICAL`；普通任务使用默认优先级。下面的示例以单工作线程演示两类工作均可正确完成。
 
 <<< @/../examples/tutorial/02_priority.cpp{6-7,9-26,28-30}
 
@@ -55,7 +55,7 @@ auto applied = executor.submit_auto(
 
 示例固定一个 worker，只提交一个分析任务和一个控制任务，目的是验证两种 future 都能完成，而不是证明控制任务一定先完成。任务返回短字符串，没有捕获外部对象；真实 `ControlCommand` 应按值或用明确所有权传入，不能引用提交函数栈上的临时对象。
 
-优先级只用四档枚举：`LOW`、`NORMAL`、`HIGH`、`CRITICAL`（整数值 0-3，与 0.7.1 及之前的 `submit_priority` 整型一致）。应用应定义一张全局等级表，不要让不同模块用任意大数互相"加价"。如果最高级任务长期占据大多数提交，普通任务可能持续饥饿。
+优先级只用四档枚举：`LOW`、`NORMAL`、`HIGH`、`CRITICAL`（整数值 0-3，与 0.7.1 及之前的 `submit_priority` 整型一致，该 API 已在 0.7.2 移除）。应用应定义一张全局等级表，不要让不同模块用任意大数互相"加价"。如果最高级任务长期占据大多数提交，普通任务可能持续饥饿。
 
 ## 失败如何观察
 
@@ -83,7 +83,7 @@ auto applied = executor.submit_auto(
 | 有固定周期和 jitter 预算 | 迁移到专用实时任务 |
 | 控制输入持续流入 | 用有界通信组件表达背压，不用无限提交任务 |
 
-## 从 submit_priority 迁移
+## 从 submit_priority 迁移（0.7.2 移除了该 API）
 
 0.7.1 及之前的 `executor.submit_priority(P, fn)` 一律改为
 `executor.submit_auto(kairo::TaskBuilder(fn).priority(P'))`，调度顺序

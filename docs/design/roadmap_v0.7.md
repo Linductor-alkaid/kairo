@@ -30,8 +30,12 @@
 > `allocation_optimization_proposal.md` §9）。
 > **§4.2 反馈覆盖扩展已落地并通过独立验证**（GPU stream 完成回调计时
 > + lockfree/realtime 聚合级反馈 + NN-03 guard 入 CI 矩阵，2026-10-19，
-> 实施记录见 `scheduling_runtime.md` §15）；
-> 0.7.2 余项：§4.0 正式移除（发布收尾）、§4.3 可靠性收尾。
+> 实施记录见 `scheduling_runtime.md` §15）。
+> **§4.3 可靠性收尾已落地并通过两轮独立验证**（10 组修复 + P2 定性，
+> 执行记录见 `docs/CODE_REVIEW_2026-09-30.md` §4.3 节）。
+> **§4.0 正式移除已完成**（facade `submit_priority` 声明删除，文档全面
+> 统一，2026-10-19）——0.7.2 全部路线图项收官，**0.7.2 已发布
+> （tag v0.7.2）**。
 
 ## 0. 系列主题与原则
 

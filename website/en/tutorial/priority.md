@@ -11,7 +11,7 @@ Queue urgent `ControlCommand` work before ordinary frame analysis in the same ro
 
 ## Recommended approach
 
-Priority is a scheduling dimension, expressed through `submit_auto(TaskBuilder)` with `priority()` (`submit_priority` is deprecated as of 0.7.2). Priority takes the `TaskPriority` enum: `LOW`, `NORMAL`, `HIGH`, `CRITICAL`; ordinary work uses the default priority.
+Priority is a scheduling dimension, expressed through `submit_auto(TaskBuilder)` with `priority()` (`submit_priority` was removed in 0.7.2). Priority takes the `TaskPriority` enum: `LOW`, `NORMAL`, `HIGH`, `CRITICAL`; ordinary work uses the default priority.
 
 <<< @/../examples/tutorial/02_priority.cpp{6-7,9-26,28-30}
 
@@ -38,7 +38,7 @@ auto applied = executor.submit_auto(
         .priority(kairo::TaskPriority::CRITICAL));
 ```
 
-`command` is saved by value. Increasing priority does not make a raw `this` pointer, a borrowed pointer, or shared mutable state safe. Define one application-wide priority vocabulary using the four enum values (`LOW`, `NORMAL`, `HIGH`, `CRITICAL` — integer values 0-3, matching the old `submit_priority` integers). A constant stream of critical work can starve ordinary work.
+`command` is saved by value. Increasing priority does not make a raw `this` pointer, a borrowed pointer, or shared mutable state safe. Define one application-wide priority vocabulary using the four enum values (`LOW`, `NORMAL`, `HIGH`, `CRITICAL` — integer values 0-3, matching the old `submit_priority` integers, which 0.7.2 removed). A constant stream of critical work can starve ordinary work.
 
 Keep the returned futures. Empty work and submission after shutdown produce observable rejection or exception results; handle an execution failure at that task's `future.get()`.
 
@@ -51,7 +51,7 @@ Keep the returned futures. Empty work and submission after shutdown produce obse
 
 If a command must take effect within a fixed time, measure queue latency and define timeout/degradation behavior. Critical priority alone is not an acceptance criterion. For fixed periods or jitter budgets, use the dedicated real-time path rather than pool priority.
 
-## Migrating from submit_priority
+## Migrating from submit_priority (removed in 0.7.2)
 
 Replace `executor.submit_priority(P, fn)` with
 `executor.submit_auto(kairo::TaskBuilder(fn).priority(P'))`; the scheduling order (priority → EDF → FIFO) is bit-for-bit identical. Old calls with bound arguments follow the capture/`std::bind` pattern above. See [version and migration](/en/reference/version-and-migration) and `docs/MIGRATION.md` (0.7.2 section).

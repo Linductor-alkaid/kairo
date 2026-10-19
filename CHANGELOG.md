@@ -4,24 +4,25 @@
 
 ---
 
-## [0.7.2] - Unreleased（rc1 阶段）
+## [0.7.2] - 2026-10-19
 
-优先级语义转移到调度器（roadmap §4.0，0.7.x 唯一破坏性变更；
-设计记录见 `docs/design/scheduling_runtime.md` §14 与
-`docs/design/priority_refactoring_decision.md`）。
+优先级语义转移到调度器（roadmap §4.0，0.7.x 唯一破坏性变更）+
+堆分配优化阶段一（§4.1）+ 反馈覆盖扩展（§4.2）+ 生命周期可靠性
+收尾（§4.3）。设计记录见 `docs/design/scheduling_runtime.md`
+§14/§15 与 `docs/design/priority_refactoring_decision.md`。
 
 ### 变更（Breaking，仅此一项）
 
-- **`Executor::submit_priority` 标记 `[[deprecated]]`**（正式版移除
-  声明）：优先级是调度策略维度而非提交协议，统一经
+- **`Executor::submit_priority` 已移除**（0.7.2-rc1 曾标记
+  `[[deprecated]]`）：优先级是调度策略维度而非提交协议，统一经
   `submit_auto(kairo::TaskBuilder(fn).priority(p))` 表达——与
   QoS/deadline 共享同一 `IScheduler` 协议（`effective_priority_for()`
   咨询、显式 priority 永不被覆盖）。调度顺序（priority → EDF → FIFO）
-  与 0.7.1 逐位一致：两条路径最终调用同一内部实现
-  `submit_priority_scheduled`（保留，供 facade 复用），admission 与
-  `task_id`（`facade_submit_priority`）不变。
+  与 0.7.1 逐位一致：共享内部实现
+  `submit_priority_scheduled` 保留（供 facade 复用，非公共协议），
+  admission 与 `task_id`（`facade_submit_priority`）不变。
 - **`submit_batch_priority` 行为不变、内部改走共享实现**：不再经由
-  已弃用的 `submit_priority`，无弃用警告泄漏。
+  `submit_priority`（已移除），无弃用警告路径。
 - 内部层 `ThreadPool::submit_priority` / `try_submit_priority*` 不变。
 
 ### 新增

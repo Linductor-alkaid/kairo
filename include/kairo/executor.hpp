@@ -279,32 +279,11 @@ public:
      */
     double get_task_pool_hit_rate() const;
 
-    /**
-     * @brief 提交优先级任务（0.7.2 起弃用）
-     *
-     * @deprecated 优先级是调度策略维度而非提交协议。请改用
-     *             submit_auto(TaskBuilder(f).priority(p))——经 IScheduler
-     *             的 effective_priority_for() 咨询，与 QoS/deadline 共享
-     *             同一调度协议；调度语义（priority → EDF → FIFO）与
-     *             0.7.1 逐位一致。见 docs/MIGRATION.md 0.7.2 节与
-     *             scripts/migrate_submit_priority.sh。
-     *
-     * @tparam F 可调用对象类型
-     * @tparam Args 参数类型
-     * @param priority 优先级（0=LOW, 1=NORMAL, 2=HIGH, 3=CRITICAL）
-     * @param f 可调用对象
-     * @param args 参数
-     * @return std::future 任务执行结果的 future
-     */
-    template<typename F, typename... Args>
-    [[deprecated("Use submit_auto(TaskBuilder(f).priority(p)) instead. "
-                 "Priority is a scheduling dimension, not a submission protocol. "
-                 "See docs/MIGRATION.md v0.7.2.")]]
-    auto submit_priority(int priority, F&& f, Args&&... args)
-        -> std::future<typename std::invoke_result<F, Args...>::type>;
-
-    // submit_priority 的共享实现（meta 非空时经协议传递调度元数据；
-    // terminal_release 非空时随终态释放链归还资源租约，0.7.1 §3.1）
+    // 优先级提交的唯一入口（0.7.2 §4.0 起 submit_priority 已移除）：
+    // submit_auto(TaskBuilder(f).priority(p))。本方法是共享实现（meta
+    // 非空时经协议传递调度元数据；terminal_release 非空时随终态释放链
+    // 归还资源租约，0.7.1 §3.1），由 submit_auto(TaskBuilder) 与
+    // submit_batch_priority 复用，非公共提交协议。
     template<typename F, typename... Args>
     auto submit_priority_scheduled(
         int priority, std::optional<TaskSchedulingMeta> meta,
@@ -2705,14 +2684,7 @@ auto Executor::submit_tracked_with_hook(
     return submission;
 }
 
-template<typename F, typename... Args>
-auto Executor::submit_priority(int priority, F&& f, Args&&... args)
-    -> std::future<typename std::invoke_result<F, Args...>::type> {
-    return submit_priority_scheduled(priority, std::nullopt, nullptr,
-                                     std::forward<F>(f), std::forward<Args>(args)...);
-}
-
-// submit_priority 的共享实现；meta 存在时经调度协议写入 Task
+// 优先级提交的共享实现；meta 存在时经调度协议写入 Task
 //（EDF 排序 + QoS 观测，0.6.0 Scheduling Runtime）。terminal_release
 // 非空时（0.7.1 §3.1 资源预留）在所有终态路径与 admission 同步释放
 //（成功/异常/软超时/提交拒绝；析构兜底 shutdown 排空丢弃路径）。
@@ -3294,8 +3266,8 @@ std::vector<std::future<void>> Executor::submit_batch_priority(
     futures.reserve(tasks.size());
 
     for (const auto& task : tasks) {
-        // 0.7.2 起直接走共享实现：submit_priority 已弃用，batch 变体
-        // 经同一 submit_priority_scheduled 路径，行为不变、无弃用警告。
+        // 0.7.2 起直接走共享实现：submit_priority 已移除，batch 变体
+        // 经同一 submit_priority_scheduled 路径，行为不变。
         futures.push_back(submit_priority_scheduled(
             priority, std::nullopt, nullptr, task));
     }

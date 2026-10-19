@@ -1,5 +1,5 @@
 // 0.7.2：优先级是调度策略维度，经 submit_auto(TaskBuilder) 的 priority()
-// 表达（submit_priority 已弃用）。见 docs/MIGRATION.md 0.7.2 节。
+// 表达（submit_priority 已在 0.7.2 移除）。见 docs/MIGRATION.md 0.7.2 节。
 #include <iostream>
 #include <string>
 

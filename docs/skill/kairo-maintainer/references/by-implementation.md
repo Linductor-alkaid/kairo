@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | `Executor`, `ExecutorManager`, `initialize`, `shutdown` | [Facade and lifecycle](capabilities/facade-lifecycle.md) | `executor.hpp`, `executor.cpp`, `executor_manager.cpp` |
 | `submit_auto`, `submit`, `wait_for_completion` | [General submission](capabilities/general-submission.md) | `test_executor_facade`, `test_wait_*` |
-| `submit_priority`, `submit_delayed`, `submit_periodic`, `TaskHandle` | [Scheduling and task graphs](capabilities/scheduling-task-graph.md) | `priority_scheduler`, `task_dependency_manager` |
+| priority via `submit_auto(TaskBuilder)` (0.7.2: `submit_priority` removed), `submit_delayed`, `submit_periodic`, `TaskHandle` | [Scheduling and task graphs](capabilities/scheduling-task-graph.md) | `priority_scheduler`, `task_dependency_manager` |
 | `IScheduler`, `DefaultScheduler`, `set_scheduler`, `QosClass`, EDF, `DeadlineMissed` | [Scheduling Runtime](capabilities/scheduling-runtime.md) | `scheduling.cpp`, `scheduler.cpp`, `test_scheduling_runtime` |
 | `dispatch_auto`, `TaskOptions`, `TaskRouter`, `RoutingDecision` | [Routing](capabilities/routing.md) | `task_router.cpp`, `test_executor_auto_routing` |
 | `RealtimeThreadExecutor`, `register_realtime_task`, `push_realtime_task` | [Realtime control](capabilities/realtime-control.md) | `test_realtime_*`, `test_realtime_push_task_contract` |

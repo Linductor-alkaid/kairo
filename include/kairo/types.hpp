@@ -587,7 +587,7 @@ struct GpuTaskConfig {
     size_t shared_memory_bytes = 0;               // 共享内存大小（字节）
     int stream_id = 0;                            // 流ID（0表示默认流）
     bool async = true;                            // 是否异步执行
-    int priority = 1;                             // 优先级（0=LOW, 1=NORMAL, 2=HIGH, 3=CRITICAL），与 CPU submit_priority 对齐
+    int priority = 1;                             // 优先级（0=LOW, 1=NORMAL, 2=HIGH, 3=CRITICAL），与 CPU 优先级语义（TaskBuilder.priority）对齐
 };
 
 /**

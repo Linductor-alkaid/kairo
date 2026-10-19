@@ -6,11 +6,12 @@
 
 ## 从 0.7.1 升级到 0.7.2：优先级语义转移到调度器（唯一破坏性变更）
 
-0.7.2 移除 `Executor::submit_priority` 的独立提交协议地位（0.7.2-rc1 起
-标记 `[[deprecated]]`，正式版移除声明；内部实现
-`submit_priority_scheduled` 与 `ThreadPool` 层 `submit_priority` /
-`try_submit_priority*` **不变**，仍供 facade 与内部层复用）。
-优先级作为调度策略维度，统一经 `IScheduler` 协议表达：
+0.7.2 **移除了 `Executor::submit_priority`**（0.7.x 唯一破坏性变更；
+0.7.2-rc1 曾标记 `[[deprecated]]`，正式版起声明已删除，调用处直接编译
+失败。内部实现 `submit_priority_scheduled` 与 `ThreadPool` 层
+`submit_priority` / `try_submit_priority*` **不变**，仍供 facade 与内部
+层复用，不属于公共提交协议）。优先级作为调度策略维度，统一经
+`IScheduler` 协议表达：
 
 ```cpp
 // 旧 API（0.7.1 及之前）

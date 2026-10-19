@@ -7,7 +7,7 @@ description: Entry points for releases and API migration.
 
 ## Current scope
 
-The latest release record is `v0.7.1`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
+The latest release record is `v0.7.2`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
 
 | What to check | Source of truth |
 | --- | --- |
@@ -16,31 +16,37 @@ The latest release record is `v0.7.1`. This site uses that stable version as its
 | Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | Complete current signatures | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
-## 0.7.2 (development snapshot): priority semantics move to the scheduler
+## 0.7.2 (released 2026-10-19): priority semantics move to the scheduler + allocation optimization + feedback coverage + reliability closeout
 
-In progress per `docs/design/roadmap_v0.7.md` §4.0 (branch `feat/v072-priority-transfer`).
-This is the **only breaking change in the 0.7.x series**, currently at the rc1 stage:
+0.7.2 is the only release in the 0.7.x series with a **breaking change**:
 
-- `Executor::submit_priority` is marked `[[deprecated]]`; priority is now
+- **`Executor::submit_priority` removed** (breaking): priority is now
   expressed via `submit_auto(kairo::TaskBuilder(fn).priority(p))`, sharing the
   same `IScheduler` protocol as QoS/deadline. Scheduling order
   (priority → EDF → FIFO) is bit-for-bit identical to 0.7.1; internal
-  machinery (PriorityScheduler, `effective_priority_for()`, aging) is unchanged.
-- `submit_batch_priority` remains, internally routed through the same shared
-  implementation; behavior is unchanged.
-- Migration support: `scripts/migrate_submit_priority.sh` plus the 0.7.2
-  section of `docs/MIGRATION.md` (semantic-equivalence notes and a checklist).
-  Tutorials and examples are fully migrated.
+  machinery (PriorityScheduler, `effective_priority_for()`, aging) is
+  unchanged. `submit_batch_priority` remains with unchanged behavior.
+  Migration support: `scripts/migrate_submit_priority.sh` plus the 0.7.2
+  section of `docs/MIGRATION.md`. The internal `submit_priority_scheduled`
+  and ThreadPool-layer APIs remain and are not a public submission protocol.
 - **Heap-allocation optimization phase one (roadmap §4.1, additive and
   automatic)**: the submit path drops from 9 to 7 allocs/task and 768 to
   512 bytes/task (task scheduler-node pool + facade single-control-block
   consolidation; scheduling semantics unchanged). New observability APIs:
-  `get_allocation_metrics()` / `get_task_pool_hit_rate()`. Implementation
-  record: `docs/design/allocation_optimization_proposal.md` §9.
-- The 0.7.2 release will remove the `submit_priority` declaration (the internal
-  `submit_priority_scheduled` and ThreadPool-layer APIs remain).
-
-Unreleased content is not a version commitment; rely on the official release and CHANGELOG.
+  `get_allocation_metrics()` / `get_task_pool_hit_rate()`.
+- **Feedback coverage expansion (roadmap §4.2, additive)**: aggregate
+  execution feedback `AggregateExecutionStats` (lockfree/realtime) with
+  facade snapshot APIs; GPU stream-completion timing
+  (`GpuKernelTimingRecord` + `submit_kernel_with_timing`; async kernel
+  latency now observed to stream completion); the realtime allocation
+  guard joins the CI matrix.
+- **Lifecycle reliability closeout (roadmap §4.3)**: interruptible RT-loop
+  stop, BlockingIO wakeup outside the lifecycle lock + stop fence,
+  `SerialExecutionContext::reserve_guarded()`, WorkerHandle invalidation
+  detection, transactional resize, KeepLatest rolling-window semantics
+  (behavior change), explicit `gpu::GpuStopMode`,
+  `TimerOperationResult::InternalError`, and more — ten fix groups plus
+  P2 qualification.
 
 ## 0.7.1: smarter submit_auto routing + deadline policy + resource reservation
 

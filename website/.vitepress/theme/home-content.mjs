@@ -4,7 +4,8 @@ const snippets = {
   async: `auto& ex = kairo::Executor::instance();
 auto answer = ex.submit_auto([] { return 42; });
 std::cout << answer.get() << '\\n';`,
-  orchestrate: `auto urgent = ex.submit_priority(3, [] { send_stop(); });
+  orchestrate: `auto urgent = ex.submit_auto(
+    kairo::TaskBuilder([] { send_stop(); }).priority(kairo::TaskPriority::CRITICAL));
 auto load = ex.submit_with_handle([] { return load_map(); });
 auto plan = ex.submit_after(load.handle, [] { return plan_route(); });`,
   scheduling: `auto task = kairo::task([] { return infer(); })
@@ -37,7 +38,7 @@ export const homeContent = {
       primary: { text: '十分钟跑通第一个任务', link: '/zh/quick-start/build' },
       secondary: { text: 'Kairo 是什么', link: '/zh/getting-started/what-is-kairo' },
       facts: [
-        ['版本', 'v0.7.1'],
+        ['版本', 'v0.7.2'],
         ['语言', 'C++20'],
         ['构建', 'CMake 3.16+'],
         ['平台', 'Linux、Windows、Android'],
@@ -66,7 +67,7 @@ export const homeContent = {
           id: 'orchestrate',
           sticker: 'tablet',
           name: '优先级、延迟、批量与依赖',
-          api: 'submit_priority / submit_delayed / submit_batch / submit_after',
+          api: 'submit_auto(TaskBuilder.priority) / submit_delayed / submit_batch / submit_after',
           returns: 'future、任务 ID，或可继续串联的 TaskHandle',
           note: '优先级只影响排队顺序，不抢占已运行的任务；依赖失败时后续任务默认不执行，future 带回原因。',
           code: snippets.orchestrate,
@@ -165,7 +166,7 @@ export const homeContent = {
       ],
     },
     closing: { title: '十分钟，跑通你的第一个任务', detail: '编译、链接、拿到返回值，再故意抛一个异常看看它怎么回来。' },
-    versionNote: '本手册对应 v0.7.1；master 上的后续能力需在发布 tag 后才构成稳定版承诺。'
+    versionNote: '本手册对应 v0.7.2；master 上的后续能力需在发布 tag 后才构成稳定版承诺。'
   },
   en: {
     hero: {
@@ -174,7 +175,7 @@ export const homeContent = {
       primary: { text: 'Run your first task', link: '/en/quick-start/build' },
       secondary: { text: 'What is Kairo?', link: '/en/getting-started/what-is-kairo' },
       facts: [
-        ['Version', 'v0.7.1'],
+        ['Version', 'v0.7.2'],
         ['Language', 'C++20'],
         ['Build', 'CMake 3.16+'],
         ['Platforms', 'Linux, Windows, Android'],
@@ -203,7 +204,7 @@ export const homeContent = {
           id: 'orchestrate',
           sticker: 'tablet',
           name: 'Priority, delay, batches, dependencies',
-          api: 'submit_priority / submit_delayed / submit_batch / submit_after',
+          api: 'submit_auto(TaskBuilder.priority) / submit_delayed / submit_batch / submit_after',
           returns: 'a future, a task ID, or a TaskHandle you can chain',
           note: 'Priority only orders the queue and never preempts running work. If a dependency fails, dependents do not run and their futures carry the reason.',
           code: snippets.orchestrate,
@@ -302,7 +303,7 @@ export const homeContent = {
       ],
     },
     closing: { title: 'Ten minutes to your first task', detail: 'Compile, link, get a value back, then throw on purpose and watch the exception come home.' },
-    versionNote: 'This guide corresponds to v0.7.1. Later capabilities on master become stable promises only after their release tag.'
+    versionNote: 'This guide corresponds to v0.7.2. Later capabilities on master become stable promises only after their release tag.'
   }
 }
 

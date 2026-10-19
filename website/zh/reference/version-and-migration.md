@@ -7,7 +7,7 @@ description: 发布版本和 API 迁移的入口。
 
 ## 当前版本说明
 
-项目 CMake 与最新发布记录的版本均为 `v0.7.1`。本站以该稳定版为基线，同时跟随 `master` 的后续开发；未在稳定 tag 中发布的能力不构成版本承诺。首发不维护历史版本站点；发布时应以 tag 重新核对页面。
+项目 CMake 与最新发布记录的版本均为 `v0.7.2`。本站以该稳定版为基线，同时跟随 `master` 的后续开发；未在稳定 tag 中发布的能力不构成版本承诺。首发不维护历史版本站点；发布时应以 tag 重新核对页面。
 
 | 需要确认什么 | 入口 |
 | --- | --- |
@@ -16,28 +16,32 @@ description: 发布版本和 API 迁移的入口。
 | 选项、编译器与后端前置 | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | 当前完整签名 | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
-## 0.7.2（开发快照）：优先级语义转移到调度器
+## 0.7.2（2026-10-19 发布）：优先级语义转移到调度器 + 堆分配优化 + 反馈覆盖扩展 + 可靠性收尾
 
-按 `docs/design/roadmap_v0.7.md` §4.0 推进中（分支 `feat/v072-priority-transfer`）。
-这是 0.7.x **唯一的破坏性变更**，当前处于 rc1 阶段：
+0.7.2 是 0.7.x 系列唯一含**破坏性变更**的版本：
 
-- `Executor::submit_priority` 标记 `[[deprecated]]`，优先级统一经
+- **`Executor::submit_priority` 已移除**（破坏性）：优先级统一经
   `submit_auto(kairo::TaskBuilder(fn).priority(p))` 表达，与 QoS/deadline
   共享同一 `IScheduler` 协议；调度顺序（priority → EDF → FIFO）与 0.7.1
   逐位一致，内部实现（PriorityScheduler、`effective_priority_for()`、aging）
-  不变。
-- `submit_batch_priority` 保留，内部改走同一共享实现，行为不变。
-- 迁移支持：`scripts/migrate_submit_priority.sh` 自动改写 + `docs/MIGRATION.md`
-  0.7.2 节（语义等价性说明与排查清单）。教程页与示例已全部迁移。
+  不变。`submit_batch_priority` 保留，行为不变。迁移支持：
+  `scripts/migrate_submit_priority.sh` 自动改写 + `docs/MIGRATION.md`
+  0.7.2 节。内部层 `submit_priority_scheduled` 与 `ThreadPool` 层 API
+  保留，不属于公共提交协议。
 - **堆分配优化阶段一（roadmap §4.1，additive 自动生效）**：submit 主路径
   9 → 7 allocs/task、768 → 512 bytes/task（Task 调度节点对象池 +
   facade 提交路径单控制块整合，调度语义零变化）；新增观测 API
-  `get_allocation_metrics()` / `get_task_pool_hit_rate()`。实施记录见
-  `docs/design/allocation_optimization_proposal.md` §9。
-- 0.7.2 正式版将移除 `submit_priority` 声明（内部
-  `submit_priority_scheduled` 与 `ThreadPool` 层 API 保留）。
-
-未发布内容不构成版本承诺；以正式发布与 CHANGELOG 为准。
+  `get_allocation_metrics()` / `get_task_pool_hit_rate()`。
+- **反馈覆盖扩展（roadmap §4.2，additive）**：聚合级执行反馈
+  `AggregateExecutionStats`（lockfree/realtime）与 facade 快照 API；
+  GPU stream 完成回调计时（`GpuKernelTimingRecord` +
+  `submit_kernel_with_timing`，async kernel 时延观测至 stream 完成点）；
+  realtime allocation guard 入 CI 矩阵。
+- **生命周期可靠性收尾（roadmap §4.3）**：RT 循环 stop 可中断、
+  BlockingIO 唤醒锁外化 + stop 栅栏、`SerialExecutionContext::
+  reserve_guarded()` RAII 预留、`WorkerHandle` 失效检测、事务化 resize、
+  KeepLatest 滚动窗口语义（行为变更）、`gpu::GpuStopMode` 显式 stop、
+  `TimerOperationResult::InternalError` 等十组修复与定性。
 
 ## 0.7.1：submit_auto 路由智能化 + deadline policy + 资源预留
 
