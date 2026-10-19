@@ -74,7 +74,10 @@ TEST(FacadeCommUsage, SensorFramesFanOutToPlannerAndRecorder) {
     ASSERT_TRUE(recorder.try_receive(frame));
     EXPECT_EQ(frame.sequence, 3);
     EXPECT_FALSE(recorder.try_receive(frame));
-    EXPECT_EQ(recorder.stats().overwritten_count, 1U);
+    // NN-09（0.7.2 §4.3）：KeepLatest 饱和置换为滚动窗口——capacity 2
+    // 收 4 条时逐出 0、1 各一条，overwrite 逐条计数（旧 recycle_all
+    // 语义为坍缩一次 overwrite=1，本测试此前钉死旧值）。
+    EXPECT_EQ(recorder.stats().overwritten_count, 2U);
 }
 
 TEST(FacadeCommUsage, ConfigThreadRealtimeControlThread) {

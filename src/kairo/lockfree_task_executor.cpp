@@ -528,6 +528,12 @@ void LockFreeTaskExecutor::worker_thread() {
                 if (!running_.load(std::memory_order_acquire) &&
                     self_stop_requested_.load(std::memory_order_acquire)) {
                     // 批内自停：已执行的批量回收，剩余的也立即归还。
+                    // CR-123（0.7.2 §4.3 P2 定性，契约注释）：自停路径上
+                    // 未执行的任务被**静默丢弃**——不执行、不重投、无逐
+                    // 任务回调；fire-and-forget 语义下调用方以 stop() 的
+                    // 拒绝契约自行兜底（与 run() 尾部排空循环的"先执行
+                    // 完剩余再退出"不同：那只覆盖外部停机后的常规排空，
+                    // 不覆盖 worker 自停）。
                     clear_batch_callables(batch.data(), executed);
                     clear_batch_callables(batch.data() + executed,
                                           popped - executed);

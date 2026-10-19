@@ -130,6 +130,9 @@ public:
     GpuExecutorStatus get_status() const override;
     bool start() override;
     void stop() override;
+    // CR-154（0.7.2 §4.3）：显式 stop 模式。Drain = 既有排空行为；
+    // Cancel = 未取出任务以 ExecutorStopping 落终态后立即收尾。
+    void stop(gpu::GpuStopMode mode) override;
 
     /**
      * @brief 请求停止并在外部线程中等待 CUDA worker 结束
@@ -137,6 +140,13 @@ public:
      */
     bool stop_and_join();
     void wait_for_completion() override;
+
+    /** @brief stop_and_join 的模式化内核（CR-154）：cancel_queued 为
+     *  true 时在 join 前对未取出任务落 ExecutorStopping 终态。 */
+    bool stop_and_join(bool cancel_queued);
+    /** @brief 取消队列中未取出的任务（Cancel 模式；计时提交逐条交付
+     *  失败记录）。worker 未启动时一并承担 fail_all 职责之外的收尾。 */
+    void cancel_queued_tasks();
 
     /**
      * @brief 设置任务异常回调（与 CPU 执行器一致，用于监控/日志）

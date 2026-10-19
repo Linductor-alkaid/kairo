@@ -203,6 +203,12 @@ private:
     // invoke a callback that calls stop_and_join().
     std::mutex stop_mutex_;
     std::condition_variable stop_completion_cv_;
+    // CR-054（0.7.2 §4.3）：内置周期循环的可中断等待。stop 路径持本锁
+    // 置 running_=false 后 notify，cycle 线程的 wait_until 立即退出——
+    // stop 延迟不再受一个完整周期约束。锁序：stop_mutex_ → cycle_wait_mutex_
+    //（cycle 线程只取后者，无反向）。
+    std::mutex cycle_wait_mutex_;
+    std::condition_variable cycle_cv_;
     std::atomic<bool> stopping_{false};
     bool stop_finalization_in_progress_{false};
     std::atomic<bool> cycle_manager_active_{false};

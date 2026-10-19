@@ -75,7 +75,10 @@ auto tracked = ex.submit_on_with_handle(context, [] { /* FIFO */ });
 ```
 
 `SerialExecutionContext` 使用单线程 FIFO 执行回调；任务仍先进入 facade admission，
-因此提交拒绝、异常和取消可在 kairo 状态中观察。`submit_on_with_handle` 返回的
+因此提交拒绝、异常和取消可在 kairo 状态中观察。预留侧提供 RAII 句柄
+`reserve_guarded()`（0.7.2 §4.3，CR-057）：未 `publish` 时析构自动 `abandon`，
+强制"要么 publish 要么 abandon"——裸 `reserve()` 的预留若永不发布/放弃会
+永久卡死 FIFO 水位，应优先使用 RAII 形态。`submit_on_with_handle` 返回的
 句柄可用于 `request_task_cancel()`。上下文关闭后新提交会以 `ExecutorStopping` 完成。
 
 派发与结算分离：池 worker 只执行有界非阻塞的 ticket 发布，不等待串行回调完成，
@@ -602,7 +605,9 @@ TimerHandle submit_periodic_cancellable(int64_t period_ms,
   `TaskCancelled(Explicit)` 就绪）；到期派发后返回
   `CancellationRequestedAfterDispatch`，继续向排队/运行中的任务传播取消；
   重复取消幂等（`AlreadyCancelled`）；句柄过期或 Executor 已销毁返回 `NotFound`。
-  取消是生命周期事件，**不产生 failure 事件**。
+  取消是生命周期事件，**不产生 failure 事件**。操作内部的异常（如
+  bad_alloc）以新增的 `InternalError` 报告（0.7.2 §4.3，CR-136），不再
+  与 `NotFound` 混淆。
 - `reschedule_after(delay_ms)`：仅对 `Scheduled` 状态生效；一次性 timer 重排
   下一次到期，周期 timer 只改下一次到期时间、不改 `period_ms`。`delay_ms <= 0`
   返回 `InvalidDuration`。
@@ -2035,7 +2040,7 @@ gpu::GpuExecutorStatus get_gpu_executor_status(const std::string& name) const;
 
 CUDA 的 `stop()` 可被多个外部线程并发调用：其中一个调用方接管并等待 worker 线程，其余调用方安全返回。需要区分调用方时可直接使用 `CudaExecutor::stop_and_join()`；它在外部线程返回 `true`，在 CUDA worker 内调用时只请求停止并返回 `false`，外部线程随后必须调用一次 `stop_and_join()` 完成线程回收。自停止后的重新 `start()` 会在 worker 句柄被外部回收前被拒绝。
 
-`stop()` 的队列契约因后端而异：CUDA 会继续排空已入队的 kernel；OpenCL 会取消 `stop()` 开始时尚未被 worker 取出的 kernel。每个被取消的 OpenCL `std::future<void>` 都会就绪，`get()` 抛出 `kairo::ExecutorStopping`，而不会抛出 `std::future_error(broken_promise)`。取消会计入 OpenCL `GpuExecutorStatus::failed_kernels`，并将 `last_error_message` 更新为取消原因；已经由 worker 开始执行的 OpenCL kernel 正常完成或报告其自身执行错误。
+`stop()` 的队列契约因后端而异：CUDA 会继续排空已入队的 kernel；OpenCL 会取消 `stop()` 开始时尚未被 worker 取出的 kernel。0.7.2 §4.3（CR-154）起可用 `stop(gpu::GpuStopMode mode)` 显式选择语义：`Drain` = 已入队 kernel 执行至完成（原 CUDA 行为）；`Cancel` = 未开始的 kernel 以 `ExecutorStopping` 落终态（原 OpenCL 行为；正在执行的不中断）。无参 `stop()` 保持各后端历史默认（CUDA=Drain、OpenCL=Cancel）；接口默认实现等价 `stop()`，第三方实现不受影响。每个被取消的 OpenCL `std::future<void>` 都会就绪，`get()` 抛出 `kairo::ExecutorStopping`，而不会抛出 `std::future_error(broken_promise)`。取消会计入 OpenCL `GpuExecutorStatus::failed_kernels`，并将 `last_error_message` 更新为取消原因；已经由 worker 开始执行的 OpenCL kernel 正常完成或报告其自身执行错误。
 
 ### 8.4 配置与类型
 

@@ -68,6 +68,37 @@
   A/B 定性），TSAN 零告警。实施记录见
   `docs/design/scheduling_runtime.md` §15。
 
+### 修复（roadmap §4.3 生命周期可靠性收尾）
+
+- **CR-054**：实时线程内置循环的 stop 改为可中断等待（cv 绝对等待 +
+  stop 通知），stop 延迟不再随周期线性增长；自停止请求后不再发起新
+  一轮用户周期回调。
+- **CR-055**：BlockingIO 的用户 `wakeup()` 移出生命周期锁（重入不自
+  死锁）；并发 stop 新增终结栅栏，不再提前返回观测到未终结状态。
+- **CR-057**：SerialExecutionContext 新增 `reserve_guarded()` RAII 预留
+  句柄——未 publish 析构自动 abandon，预留永不 publish 不再能卡死整
+  个上下文的 FIFO 水位；修复 worker 线程内自析构的 terminate 隐患与
+  shutdown join 判定的数据竞争。
+- **CR-105**：`WorkerHandle` 经生命周期令牌作失效检测，facade 析构后
+  操作退化为无操作而非悬垂解引用。
+- **CR-113 / CR-114**：`ThreadPool::resize` 事务化（线程创建失败整体
+  回滚，不再留下队列数 ≠ worker 数的半更新状态）；worker 线程内缩容
+  显式拒绝（防自 join）。
+- **NN-09**：`DropPolicy::KeepLatest` 饱和语义修正为**滚动窗口**——
+  只逐出最旧一条（计一次 overwrite），保留最新 capacity 条含新值；
+  此前会丢弃整个队列内容。"坍缩为最新 1 条"的 mailbox 语义由
+  LatestMailbox 承担（行为变更，钉死旧行为的测试已同步更新）。
+- **CR-154**：GPU stop 语义显式化——`gpu::GpuStopMode{Drain, Cancel}`
+  + `IGpuExecutor::stop(mode)`；CUDA/OpenCL 的无参 `stop()` 保持各自
+  0.7.1 默认（排空 / 取消）。
+- **CR-023**：worker 队列 push 的字段拷贝抛出时归还 Task 内存（不再
+  泄漏）。
+- **CR-136**：`TimerOperationResult` 新增 `InternalError`（additive）——
+  定时器 request_cancel/reschedule 的内部异常不再伪装成 NotFound。
+- **CR-115 / CR-043/129 / CR-116/123/125/126/134**：契约文档化——
+  shutdown join 无超时明示（@warning）；Topic::publish 异常契约；
+  其余 P2 项定性注释落源码，结果回写评审文档。
+
 ### 文档
 
 - `docs/MIGRATION.md` 新增 0.7.2 节（语义等价性说明、迁移模式表、

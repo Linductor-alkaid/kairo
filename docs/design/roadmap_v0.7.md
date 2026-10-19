@@ -554,23 +554,26 @@ scheduling_runtime.md §15）
 - 残余风险：无 GPU 硬件，async 探针/sync 交付/晚到回调自弃仅 stub
   编译 + 契约层验证；OpenCL 计时 parity 属后续项
 
-### 4.3 未结的可靠性项（来自 2026-09-30 评审）
+### 4.3 未结的可靠性项（来自 2026-09-30 评审）✅ 已落地（2026-10-19，
+执行记录见 docs/CODE_REVIEW_2026-09-30.md "§4.3 可靠性收尾执行记录"）
 
-| 项 | 问题 | 方向 |
-|---|---|---|
-| CR-054 | RT 内置循环 stop 延迟可达一个整周期；自停止后仍会调用用户回调 | 用可中断等待替代 `sleep_until` |
-| CR-115 | shutdown 的 join 没有超时，超时参数给人"有界"的错觉 | 要么真正有界（带诊断的放弃 join），要么改名并写进文档 |
-| CR-055 | BlockingIO 持 `lifecycle_mutex_` 调用户 `wakeup()`；并发 stop 无终结栅栏 | 锁外唤醒 + stop 栅栏 |
-| CR-057 | SerialExecutionContext reservation 永不 publish 时整个上下文卡死 | reservation 超时 / 析构自动 abandon |
-| CR-105 | `WorkerHandle` 持裸 `ExecutorManager*` | 弱引用 + 失效检测 |
-| CR-043 / CR-129 | `Topic::publish` 异常导致部分扇出，且调用方拿不到部分完成信息 | 返回扇出结果，或给出明确的异常契约 |
-| NN-09 | KeepLatest 饱和时退化为"只保留最新 1 条" | 修正语义或改名 |
-| CR-113 / CR-114 | resize 中途失败的状态不一致；worker 内缩容会 join 自己 | 事务化 resize，拒绝自 join |
-| CR-154 | CUDA 与 OpenCL 的 stop 语义不一致（排空 vs 取消） | 统一为显式的 `StopMode` |
-| CR-023 / CR-050 一类 | 剩余的异常屏障缺口 | 逐项补齐，并配复现测试 |
+| 项 | 问题 | 方向 | 状态 |
+|---|---|---|---|
+| CR-054 | RT 内置循环 stop 延迟可达一个整周期；自停止后仍会调用用户回调 | 用可中断等待替代 `sleep_until` | ✅ cv 可中断等待 + 回调门控 |
+| CR-115 | shutdown 的 join 没有超时，超时参数给人"有界"的错觉 | 要么真正有界（带诊断的放弃 join），要么改名并写进文档 | ✅ 契约文档化（有界化需协议改造，记后续） |
+| CR-055 | BlockingIO 持 `lifecycle_mutex_` 调用户 `wakeup()`；并发 stop 无终结栅栏 | 锁外唤醒 + stop 栅栏 | ✅ |
+| CR-057 | SerialExecutionContext reservation 永不 publish 时整个上下文卡死 | reservation 超时 / 析构自动 abandon | ✅ RAII reserve_guarded + 自析构防护 |
+| CR-105 | `WorkerHandle` 持裸 `ExecutorManager*` | 弱引用 + 失效检测 | ✅ liveness 令牌 |
+| CR-043 / CR-129 | `Topic::publish` 异常导致部分扇出，且调用方拿不到部分完成信息 | 返回扇出结果，或给出明确的异常契约 | ✅ 扇出结果（既有）+ 异常契约文档化 |
+| NN-09 | KeepLatest 饱和时退化为"只保留最新 1 条" | 修正语义或改名 | ✅ 语义修正为滚动窗口（逐项计 overwrite） |
+| CR-113 / CR-114 | resize 中途失败的状态不一致；worker 内缩容会 join 自己 | 事务化 resize，拒绝自 join | ✅ |
+| CR-154 | CUDA 与 OpenCL 的 stop 语义不一致（排空 vs 取消） | 统一为显式的 `StopMode` | ✅ `gpu::GpuStopMode` |
+| CR-023 / CR-050 一类 | 剩余的异常屏障缺口 | 逐项补齐，并配复现测试 | ✅（CR-050 前次已修；CR-023 push 泄漏补齐） |
 
 其余 P2 项（CR-116/123/125/126/134/136/152 等）按"契约已文档化 / 补注释 / 修复"三类逐项
 定性，结果回写到评审文档，避免长期悬挂。
+✅ 已完成：CR-136 修复（InternalError）、CR-152 复核确认已修复、
+CR-116/123/125/126/134 契约注释落源码，定性结果见评审文档 §4.3 执行记录。
 
 ---
 

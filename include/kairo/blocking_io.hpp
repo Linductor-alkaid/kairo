@@ -48,7 +48,9 @@ class ExecutorManager;
  * @brief Lifecycle handle for a registered Blocking I/O worker.
  *
  * The handle reports startup admission, not one-shot task completion. It is
- * valid while its originating Executor remains alive.
+ * valid while its originating Executor remains alive: 0.7.2 §4.3 (CR-105)
+ * tracks manager liveness via a weak token, so a handle outliving the
+ * facade degrades to no-ops instead of dereferencing a dangling pointer.
  */
 class WorkerHandle {
 public:
@@ -65,10 +67,14 @@ public:
 private:
     friend class Executor;
 
-    WorkerHandle(ExecutorManager* manager, std::string name, ExecutorResult start_result)
-        : manager_(manager), name_(std::move(name)), start_result_(std::move(start_result)) {}
+    // 定义在 executor_backends.cpp：需要 ExecutorManager 完整类型
+    // （本头文件仅前向声明，liveness() 不可在此调用）。
+    WorkerHandle(ExecutorManager* manager, std::string name,
+                 ExecutorResult start_result);
 
+    // CR-105：裸指针仅在生命周期令牌未失效时解引用。
     ExecutorManager* manager_ = nullptr;
+    std::weak_ptr<void> manager_liveness_;
     std::string name_;
     ExecutorResult start_result_;
 };

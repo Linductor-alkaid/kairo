@@ -48,7 +48,15 @@ public:
     GpuExecutorStatus get_status() const override;
     bool start() override;
     void stop() override;
+    // CR-154（0.7.2 §4.3）：显式 stop 模式。Cancel = 既有取消行为
+    // （默认，与 0.7.1 一致）；Drain = 已入队 kernel 执行至完成。
+    void stop(gpu::GpuStopMode mode) override;
     void wait_for_completion() override;
+
+private:
+    // 无参 stop() = Cancel（0.7.1 语义）；mode 版本经 stop_impl 选择
+    // 是否取消未取出的队列任务。
+    void stop_impl(bool cancel_queued);
 
 protected:
     std::future<void> submit_kernel_impl(

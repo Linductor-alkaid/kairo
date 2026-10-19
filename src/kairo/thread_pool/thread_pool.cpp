@@ -673,6 +673,15 @@ bool ThreadPool::resize(size_t new_size) {
         return false;
     }
 
+    // CR-113（0.7.2 §4.3 事务化 resize）：exit_threads_ 的容量预留是
+    // 缩容标记路径唯一的可抛点，前移到首个不可逆变更（迁移本地队列）
+    // 之前——此后标记/发布/join 全程无抛点，中途失败不再留下
+    // "队列数 != worker 数"的半更新状态。
+    if (new_size < current_size) {
+        std::lock_guard<std::mutex> exit_lock(exit_threads_mutex_);
+        exit_threads_.reserve(exit_threads_.size() + (current_size - new_size));
+    }
+
     // Publish the replacement queue set before changing worker membership.
     // resize_local_queues() returns queued work to scheduler_ first, so a
     // worker selected for removal cannot strand tasks in its old local queue.
@@ -681,19 +690,97 @@ bool ThreadPool::resize(size_t new_size) {
     }
 
     if (new_size > current_size) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (stop_.load(std::memory_order_acquire) ||
-            !initialized_.load(std::memory_order_acquire)) {
+        {
+            // 状态校验 + 容量预留（可抛点）全部持 mutex_ 完成；此后线程
+            // 创建、回滚 join 与发布不再持 mutex_——worker 启动门需要
+            // 这把锁，持锁 join 未发布线程即自死锁（CR-113 复验缺陷）。
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (stop_.load(std::memory_order_acquire) ||
+                !initialized_.load(std::memory_order_acquire)) {
+                return false;
+            }
+            workers_.reserve(new_size);
+            worker_ids_.reserve(new_size);
+        }
+        // CR-113：新线程先在本地全部创建成功、再一次性发布（原实现
+        // worker_ids_.push_back 与 create_worker_thread 交替进行，线程
+        // 创建失败会留下"worker_ids_ 比 workers_ 长"的错位状态）。
+        std::vector<std::thread> new_threads;
+        std::vector<size_t> attempted_ids;
+        const auto rollback_created = [&]() noexcept {
+            // 未发布线程经 exit 集合回收 join——它们尚未对提交路径可见，
+            // 回收不影响对外语义。全程不持 mutex_（worker 启动门需要它）。
+            for (const size_t id : attempted_ids) {
+                std::lock_guard<std::mutex> exit_lock(exit_threads_mutex_);
+                exit_threads_.push_back(id);
+                exit_threads_count_.store(exit_threads_.size(),
+                                          std::memory_order_release);
+            }
+            if (!attempted_ids.empty()) {
+                condition_.notify_all();
+                signal_work_added(true);
+            }
+            for (auto& thread : new_threads) {
+                if (thread.joinable()) {
+                    thread.join();
+                }
+            }
+        };
+        try {
+            // 本地向量预留也在 try 内：极端 OOM 下与创建失败同一语义
+            // （回滚 + 返回 false），不以异常逃出 resize（复验建议）。
+            new_threads.reserve(new_size - current_size);
+            attempted_ids.reserve(new_size - current_size);
+            for (size_t worker_id = current_size; worker_id < new_size; ++worker_id) {
+                if (worker_thread_start_hook_for_test_) {
+                    worker_thread_start_hook_for_test_(worker_id);
+                }
+                new_threads.emplace_back(&ThreadPool::worker_thread, this, worker_id);
+                attempted_ids.push_back(worker_id);
+                // 与 create_worker_thread 一致的调优副作用（线程创建成功
+                // 后应用；这些工具调用不抛）。
+                if (config_.thread_priority != 0) {
+                    util::set_thread_priority(new_threads.back().native_handle(),
+                                              config_.thread_priority);
+                }
+                if (!config_.cpu_affinity.empty()) {
+                    const int cpu_id = config_.cpu_affinity[
+                        worker_id % config_.cpu_affinity.size()];
+                    util::set_cpu_affinity(new_threads.back().native_handle(), {cpu_id});
+                }
+            }
+        } catch (...) {
+            rollback_created();
             return false;
         }
-        workers_.reserve(new_size);
-        worker_ids_.reserve(new_size);
-        for (size_t worker_id = current_size; worker_id < new_size; ++worker_id) {
-            worker_ids_.push_back(worker_id);
-            create_worker_thread(worker_id);
+        bool publish_ok = true;
+        {
+            // 发布前复核：创建窗口内 stop_ 可能已翻转（shutdown 早期
+            // 阶段不持 resize_mutex_）——按创建失败同一语义回滚。
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (stop_.load(std::memory_order_acquire) ||
+                !initialized_.load(std::memory_order_acquire)) {
+                publish_ok = false;
+            } else {
+                for (size_t i = 0; i < new_threads.size(); ++i) {
+                    worker_ids_.push_back(current_size + i);
+                    workers_.emplace_back(std::move(new_threads[i]));
+                }
+                condition_.notify_all();
+            }
         }
-        condition_.notify_all();
+        if (!publish_ok) {
+            rollback_created();
+            return false;
+        }
         return true;
+    }
+
+    // CR-114：worker 线程内的缩容可能把调用者自身划入移除集合——join
+    // 自身即 resource_deadlock system_error，状态半残。显式拒绝（扩容
+    // 不 join，维持可用）。
+    if (is_current_worker_thread()) {
+        return false;
     }
 
     std::vector<size_t> removed_ids;

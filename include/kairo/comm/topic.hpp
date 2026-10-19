@@ -168,6 +168,14 @@ public:
         return TopicSubscription<T>{std::move(subscription), state_, id};
     }
 
+    /** 扇出结果（CR-043/129）：matched/delivered/rejected 逐订阅者计数，
+     *  部分完成对调用方可见。
+     *
+     *  异常契约：T 的拷贝/移动构造或通道节点分配在扇出中途抛出时，异常
+     *  原样传播、**已完成的投递保留**（部分扇出终态）——抛出点的订阅者
+     *  及其后的订阅者未收到该条消息； TopicPublishResult 只在无异常返回
+     *  时可用。需要完全隔离单订阅者异常的场景应在消息类型上保证不抛
+     *  构造，或在 publish 前自行拷贝。 */
     TopicPublishResult publish(const T& value) { return publish_impl(value); }
 
     TopicPublishResult publish(T&& value) {

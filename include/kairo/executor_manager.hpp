@@ -48,10 +48,21 @@ public:
 
     /**
      * @brief 析构函数（RAII）
-     * 
+     *
      * 自动关闭并释放所有执行器
      */
     ~ExecutorManager();
+
+    /**
+     * @brief 生命周期令牌（0.7.2 §4.3，CR-105）。
+     *
+     * 自持的 no-op 删除器 shared_ptr：不改变所有权语义（manager 仍由
+     * facade 独占），但控制块随 manager 析构而失效——外部句柄
+     * （WorkerHandle 等）持 weak 令牌即可检测"句柄晚于 facade 存活"
+     * 的失效场景，替代对裸指针的盲目解引用。残余窗口（manager 析构与
+     * 检测并发）仍属 UB，与标准库对象生命周期规则一致。
+     */
+    std::weak_ptr<void> liveness() const noexcept { return liveness_token_; }
 
     // 禁止拷贝和赋值
     ExecutorManager(const ExecutorManager&) = delete;
@@ -390,6 +401,10 @@ private:
 
     // 统计收集器（任务监控）
     std::unique_ptr<monitor::StatisticsCollector> statistics_collector_;
+
+    // CR-105 生命周期令牌：no-op 删除器自持（不改变所有权），控制块随
+    // 本对象析构失效；liveness() 供外部句柄作 weak 失效检测。
+    std::shared_ptr<void> liveness_token_{this, [](void*) noexcept {}};
 
     // 退出时自动关闭：atexit 回调（仅单例创建时注册，无参无返回、不抛异常）
     static void atexit_shutdown();

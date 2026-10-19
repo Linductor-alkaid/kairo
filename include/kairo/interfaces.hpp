@@ -935,6 +935,20 @@ public:
     virtual void stop() = 0;
 
     /**
+     * @brief 以显式模式停止（0.7.2 §4.3，CR-154）
+     *
+     * Drain：已入队 kernel 执行至完成；Cancel：未开始的 kernel 以
+     * ExecutorStopping 落终态（正在执行的不中断）。默认实现忽略模式、
+     * 等价 stop()——保持第三方实现与 0.7.1 行为不变；库内 CUDA/OpenCL
+     * 执行器各自覆写。无参 stop() 的默认语义 = 各后端历史行为
+     * （CUDA=Drain，OpenCL=Cancel）。
+     */
+    virtual void stop(gpu::GpuStopMode mode) {
+        (void)mode;
+        stop();
+    }
+
+    /**
      * @brief 等待所有任务完成
      */
     virtual void wait_for_completion() = 0;

@@ -26,9 +26,39 @@ class SerialExecutionContext {
 public:
     using Ticket = uint64_t;
 
-    class Shared {
+    class Shared : public std::enable_shared_from_this<Shared> {
     public:
-        Shared() : worker_([this] { run(); }) {}
+        // CR-057（复验修正）：构造私有、经 create() 组装，worker 线程
+        // 按值持有真实控制块的 shared_ptr；run() 内部另有
+        // shared_from_this() 自持引用贯穿循环（见 run 注释）。
+        // ~Shared 只可能在 run() 返回后于 worker 栈上发生（由析构体内
+        // 的自析构防护 detach 自线程句柄）。
+        static std::shared_ptr<Shared> create() {
+            std::shared_ptr<Shared> self = std::shared_ptr<Shared>(new Shared());
+            self->worker_ = std::thread([self] { self->run(); });
+            return self;
+        }
+
+        ~Shared() {
+            // CR-057：worker 线程内自析构防护。任务闭包持有本 Shared 的
+            // 最后一个引用、且任务正在 worker 上执行时，闭包析构触发本
+            // 析构——worker_ 仍 joinable 且属于当前线程，放任成员析构会
+            // 在 ~thread() 中 std::terminate。此时刻引用计数已为 1，
+            // 不可能有并发 shutdown()（其需要另一份引用），同锁内判定
+            // 并移走自线程句柄 detach 是安全的；非自线程场景正常路径
+            // 已由 shutdown() join 完毕（joinable 为 false）。
+            std::thread self;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (worker_.joinable() &&
+                    worker_.get_id() == std::this_thread::get_id()) {
+                    self = std::move(worker_);
+                }
+            }
+            if (self.joinable()) {
+                self.detach();
+            }
+        }
 
         std::optional<Ticket> reserve() {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -82,6 +112,7 @@ public:
 
         void shutdown() noexcept {
             bool should_join = false;
+            bool should_join_worker = false;
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 if (stopping_) {
@@ -98,10 +129,14 @@ public:
                     reserved_.clear();
                     release_ready_locked();
                 }
+                // CR-057：join 判定移入锁内——run() 的自退出路径会在同一把
+                // 锁下把自己的线程对象移走并 detach，锁外的 joinable() 读
+                // 与之构成数据竞争。
+                should_join_worker = worker_.joinable() &&
+                                     std::this_thread::get_id() != worker_.get_id();
             }
             if (!should_join) cv_.notify_all();
-            if (worker_.joinable() && std::this_thread::get_id() != worker_.get_id())
-                worker_.join();
+            if (should_join_worker) worker_.join();
         }
 
         bool is_stopped() const noexcept {
@@ -117,6 +152,8 @@ public:
     private:
         friend class SerialExecutionContext;
 
+        Shared() = default;
+
         // 公开对象析构时调用：先走常规 shutdown（结算预留、join worker），
         // 再置 detached。此后 facade 闭包的 post_reserved/abandon 全部短路，
         // 不会再触达任何会随公开对象语义消失的状态；共享状态本体由
@@ -131,6 +168,12 @@ public:
         }
 
         void run() noexcept {
+            // CR-057：自持引用贯穿循环。任务闭包是本循环的局部变量，
+            // 其析构（发生在循环体内）可能释放最后一外部引用——无自持
+            // 引用时对象会在 run() 栈帧活跃期间被析构，后续循环触碰已
+            // 析构成员（UAF）。shared_from_this() 在 create() 采纳后
+            // 必然有效（线程函数持引用在先）。
+            const auto self_keep_alive = shared_from_this();
             for (;;) {
                 std::function<void()> task;
                 {
@@ -184,9 +227,99 @@ public:
         std::thread worker_;
     };
 
-    SerialExecutionContext() : state_(std::make_shared<Shared>()) {}
+    SerialExecutionContext() : state_(Shared::create()) {}
     ~SerialExecutionContext() {
         if (state_) state_->detach();
+    }
+
+    /**
+     * @brief 强制"要么 publish 要么 abandon"的预留句柄（0.7.2 §4.3，CR-057）。
+     *
+     * 裸 reserve() 的风险：预留一个 ticket 后既不 post_reserved 也不
+     * abandon，FIFO 水位（next_ready_）永久停在该 ticket——整个上下文
+     * 的后续 post 全部卡死。Reservation 以析构兜底：未显式 publish 且
+     * 未 release 时自动 abandon（幂等；detached 状态下 abandon 本就是
+     * 空操作），水位不可能被单次预留永久卡住。
+     *
+     * 典型用法：
+     * @code
+     * auto res = context.reserve_guarded();
+     * if (!res) return;  // 已停止
+     * if (!try_prepare()) return;  // 析构自动 abandon，不阻塞水位
+     * res->publish(task);          // 显式发布（此后析构不再 abandon）
+     * @endcode
+     */
+    class Reservation {
+    public:
+        Reservation() = default;
+        Reservation(Reservation&& other) noexcept
+            : state_(std::move(other.state_)),
+              ticket_(std::exchange(other.ticket_, std::nullopt)) {}
+        Reservation& operator=(Reservation&& other) noexcept {
+            if (this != &other) {
+                release_unpublished();
+                state_ = std::move(other.state_);
+                ticket_ = std::exchange(other.ticket_, std::nullopt);
+            }
+            return *this;
+        }
+        Reservation(const Reservation&) = delete;
+        Reservation& operator=(const Reservation&) = delete;
+
+        ~Reservation() {
+            release_unpublished();
+        }
+
+        /** @brief 关联的 ticket（未持有返回 0；ticket 0 由 reserve 产出，
+         *  调用方应先经 operator bool 判持）。 */
+        Ticket ticket() const noexcept { return ticket_.value_or(0); }
+        explicit operator bool() const noexcept { return ticket_.has_value(); }
+
+        /** @brief 发布任务（等价 post_reserved）。发布成功后句柄进入
+         *  "已消费"状态，析构不再 abandon。 */
+        bool publish(std::function<void()> task) {
+            if (!state_ || !ticket_) return false;
+            const bool published = state_->post_reserved(*ticket_, std::move(task));
+            if (published) {
+                ticket_.reset();
+            } else {
+                // post_reserved 失败（stopped/detached/重复发布）：ticket
+                // 已在上下文侧终态化，句柄同步失效即可，无需再 abandon。
+                ticket_.reset();
+            }
+            return published;
+        }
+
+        /** @brief 显式放弃预留（等价 abandon；幂等）。 */
+        void abandon() noexcept {
+            if (!state_ || !ticket_) return;
+            state_->abandon(*ticket_);
+            ticket_.reset();
+        }
+
+    private:
+        friend class SerialExecutionContext;
+        Reservation(std::shared_ptr<Shared> state, Ticket ticket) noexcept
+            : state_(std::move(state)), ticket_(ticket) {}
+
+        void release_unpublished() noexcept {
+            if (state_ && ticket_) {
+                state_->abandon(*ticket_);
+            }
+            ticket_.reset();
+        }
+
+        std::shared_ptr<Shared> state_;
+        std::optional<Ticket> ticket_;
+    };
+
+    /** @brief RAII 预留：上下文已停止时返回空 optional（与 reserve()
+     *  的 nullopt 语义一致）。 */
+    std::optional<Reservation> reserve_guarded() {
+        if (!state_) return std::nullopt;
+        auto ticket = state_->reserve();
+        if (!ticket) return std::nullopt;
+        return Reservation(state_, *ticket);
     }
 
     SerialExecutionContext(const SerialExecutionContext&) = delete;

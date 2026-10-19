@@ -104,9 +104,15 @@ public:
                 // A consumer may have released capacity after the first scan.
                 node = acquire_node();
                 if (node == nullptr) {
-                    node = drop_policy_ == DropPolicy::KeepLatest
-                               ? recycle_all_for_write()
-                               : recycle_oldest_for_write();
+                    // NN-09（0.7.2 §4.3）：KeepLatest 的置换语义修正为
+                    // 滚动窗口——只逐出最旧一条，为"新值"腾位；此前
+                    // recycle_all 会丢弃整个队列内容，饱和下"保留最新
+                    // capacity 条"退化成"只保留最新 1 条"，且 capacity-1
+                    // 条被弃只计 1 次 overwrite（少计）。逐出一条即
+                    // record_overwrite 一次，计数与实际逐出一一对应。
+                    // （mailbox 式"坍缩为最新 1 条"语义由 LatestMailbox
+                    // 承担。）
+                    node = recycle_oldest_for_write();
                     displaced = node != nullptr;
                 }
                 if (node != nullptr) {
@@ -117,6 +123,11 @@ public:
         }
 
         if (node == nullptr) {
+            // CR-126（0.7.2 §4.3 P2 定性，契约注释）：acquire_node 单遍
+            // 扫描 + 置换自旋耗尽后，并发消费刚释放容量/并发生产者恰在
+            // 写入的瞬时竞争下，try_send 可能返回 false 而**此刻**队列
+            // 实际未满——满判断是 best-effort 而非线性一致。瞬时 false
+            // 应按"此刻不可入队"重试，而非"队列已满"的最终裁决。
             if (record_full_rejection) record_drop(event);
             return false;
         }
@@ -451,24 +462,6 @@ private:
         depth_.fetch_sub(1, std::memory_order_relaxed);
         node->state.store(kWriting, std::memory_order_release);
         return node;
-    }
-
-    Node* recycle_all_for_write() noexcept {
-        Node* replacement = pop_node();
-        if (replacement == nullptr) return nullptr;
-
-        replacement->item()->~Item();
-        depth_.fetch_sub(1, std::memory_order_relaxed);
-        replacement->state.store(kWriting, std::memory_order_release);
-
-        // Replacement admission excludes producers, so this loop visits at
-        // most the fixed-capacity snapshot present at promotion time.
-        for (size_t discarded = 1; discarded < capacity_; ++discarded) {
-            Node* node = pop_node();
-            if (node == nullptr) break;
-            release_node(node);
-        }
-        return replacement;
     }
 
     void record_drop(std::optional<CommEvent>& event) {

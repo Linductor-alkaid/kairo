@@ -163,6 +163,11 @@ public:
 
     // Configuration-plane operation. Concurrent setters are not supported;
     // previously installed entries stay alive until the owning primitive dies.
+    // CR-125（0.7.2 §4.3 P2 定性，契约注释）：entries_ 随每次 set 单调
+    // 增长（旧条目不可释放——并发读者可能仍持指针），属配置面有意的
+    // 空间换安全。set 仅供启动期配置（典型 ≤ 少数次调用），**不得**在
+    // 热路径或周期性代码中反复调用；高频换回调的场景应在应用层自行
+    // 经 current_ 指向的 latest 回调内部分派。
     void set(CommEventCallback callback) {
         if (!callback) {
             current_.store(nullptr, std::memory_order_release);

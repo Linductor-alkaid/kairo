@@ -648,3 +648,64 @@ Phase 4 曾将 CR-135 按"文档化"处理（cv 化被 gcc-11 TSAN 缺口阻断�
 
 1. **gcc-11 TSAN 论断错误（复验源码级证伪）**：初版声称 `wait_for(duration)` 走 `pthread_cond_timedwait` 可绕开 clockwait 缺口——实际 GCC ≥ 10 的 libstdc++ 把 `wait_for(duration)` 与 `wait_until(steady_clock)` **都**映射到 `pthread_cond_clockwait`（"wait_for→system_clock" 是 GCC 9 及更早的行为），该绕法在 CI 的 gcc-11 上无效。已改为**显式 `wait_until(lock, system_clock::now() + slice, pred)`**——system_clock 重载在所有 libstdc++ 版本均走 `pthread_cond_timedwait`；实时钟步进暴露已在注释中分析（循环顶部 steady 重算自愈）。CI TSAN job 已补入 test_timer_handle 作为 gcc-11 权威门禁。
 2. **periodic 漂移根因与修复**：初版实测周期抖动 826-1059µs avg（master 569-596µs），劣化 ~+45-78%。根因：周期分支 `next_execute_time = now + P` 以实际唤醒时刻锚定，每次唤醒过冲（~0.15ms）逐周期累积为漂移——旧 1ms 轮询的网格量化恰好掩盖了这一缺陷。修复为**理想网格锚定**：`next = entry.deadline + P`，已过期的周期按"错过不追补"跳到未来第一个格点（与 CR-051 结论的期限锚定语义一致）。实测周期抖动降到 **-47 ~ +24µs avg（p95 ≤ 55µs）**，比 master 好 20-50 倍。
+
+## §4.3 可靠性收尾执行记录（2026-10-19，roadmap v0.7.2 §4.3）
+
+### 修复项
+
+| 项 | 处置 | 验证 |
+|---|---|---|
+| CR-054 | RT 内置循环 `sleep_until` → `cycle_cv_.wait_until`（stop 路径持 `cycle_wait_mutex_` 置 `running_=false` 后 notify）；两条 cycle 路径回调前复核 `running_`——stop 延迟与周期解耦，自停止请求后不再发起新一轮用户回调 | 独立验证（见下） |
+| CR-055 | BlockingIO：用户 `wakeup()` 移出 `lifecycle_mutex_`（重入不自死锁）；新增 `stop_finalization_in_progress_` 终结栅栏，join 移交后的并发 stop 等待终结完成而非见 moved-from 句柄提前返回 | 独立验证 |
+| CR-057 | SerialExecutionContext：①`~Shared` 处理 worker 栈上自析构（最后引用在任务闭包中释放时移走自线程句柄 detach，防 ~thread terminate）；②shutdown 的 join 判定移入锁内（与析构路径互斥，消除 `worker_` 读竞争）；③新增 `reserve_guarded()` RAII 句柄——未 publish 析构自动 abandon，水位不可能被单次预留永久卡死（公开 reserve() 的"要么 publish 要么 abandon"由类型强制） | 独立验证 |
+| CR-105 | `WorkerHandle` 经 `ExecutorManager::liveness()` 生命周期令牌（no-op 删除器自持 shared_ptr）作 weak 失效检测；facade 析构后句柄操作退化为无操作而非悬垂解引用。残余窗口（析构与检测并发）属对象生命周期 UB，已注释 | 独立验证 |
+| CR-113 | resize 事务化：扩容先在本地向量建满全部新线程再一次性发布（创建失败经 exit 集合回收未发布线程并返回 false，不再留下 id↔worker 错位）；缩容的 `exit_threads_` 容量预留前移到首个不可逆变更之前——标记/发布/join 全程无抛点 | 独立验证 |
+| CR-114 | worker 线程内缩容 resize 显式拒绝（返回 false，头文件契约注明）；扩容不 join、维持可用 | 独立验证 |
+| CR-115 | **契约文档化**（改名/真正有界均属破坏性或需 worker 侧协议改造，超出 0.7.2 允许面）：shutdown 头文件 @warning 明示 join 无超时、`wait_for_tasks` 不提供时间上界；有界关停记后续版本 | 文档 |
+| CR-023 | worker dispatch 屏障此前已落（catch-all + 计数）；本轮补齐 push 拷贝抛出的 Task 泄漏（copy/move 抛出时归还内存后重抛） | 独立验证 |
+| CR-043/129 | 扇出结果 `TopicPublishResult` 此前已落；本轮补异常契约注释：T 拷贝/移动或分配中途抛出时异常原样传播、已完成投递保留（部分扇出终态） | 文档 |
+| NN-09 | **KeepLatest 语义修正为滚动窗口**：饱和置换只逐出最旧一条（计一次 overwrite），保留最新 capacity 条含新值；此前 `recycle_all_for_write` 丢弃整个队列内容（"保留最新 capacity 条"退化成 1 条且 overwrite 少计）。mailbox 式"坍缩为最新 1 条"由 LatestMailbox（PhaseGate 双缓冲，不依赖本语义）承担。两个钉死旧行为的测试同步更新 | 独立验证 |
+| CR-154 | **`gpu::GpuStopMode{Drain, Cancel}` 显式化**：`IGpuExecutor::stop(mode)`（默认实现 = stop()，第三方实现不变）；CUDA Drain=既有排空/Cancel=未取出任务以 ExecutorStopping 落终态后收尾；OpenCL Cancel=既有取消/Drain=跳过取消等待排空。无参 stop() 保持各后端 0.7.1 默认（CUDA=Drain、OpenCL=Cancel） | 独立验证 |
+| CR-136 | **修复**：`request_cancel`/`reschedule` 的 noexcept catch 兜底改返回新增 `TimerOperationResult::InternalError`（additive）——内部异常（bad_alloc 等）不再伪装成 NotFound；真实未命中仍在 try 内返回 | 独立验证 |
+
+### 首轮独立验证发现的三处实现缺陷与复验修正（2026-10-19）
+
+首轮独立验证（Independent-Verification-Agent）结论为"未通过（存在实现缺陷）"，
+三处经可执行复现实证，均在主循环修复后复验：
+
+1. **CR-057 自析构 UAF**：初版 ~Shared 防护（移走自线程句柄 detach）没有覆盖
+   "对象在 run() 栈帧活跃期间析构"——任务闭包是 run() 的局部变量，其析构发生在
+   循环体内；更早一版的 `shared_ptr(this, no-op deleter)` keep-alive 是独立控制
+   块，与真实控制块无关（根本没有续命）。终版方案：`Shared` 继承
+   `enable_shared_from_this` + 私有构造 + `Shared::create()` 工厂（worker 线程
+   按值持有真实控制块引用）+ `run()` 开头 `shared_from_this()` 自持引用贯穿循环；
+   ~Shared 的 detach 防护承接 run() 返回后的 worker 栈上析构。白盒测试构造同步
+   适配 `Shared::create()`。
+2. **CR-055 重入 stop 死锁**：用户 `wakeup()` 回调链在 finalizer 线程内重入
+   `stop()` 时进入栅栏 cv 等待，而栅栏只能由正被自己阻塞的 finalizer 清除——
+   循环等待。修复：新增 `stop_finalizer_id_`，fence 等待分支对 finalizer 线程
+   与 worker 线程的重入立即返回（收尾由进行中的 stop() 兑现）。
+3. **CR-113 回滚 join 死锁**：扩容回滚在持有 `mutex_` 时 join 未发布线程，而
+   worker 启动门需要同一把锁。修复：三段化——mutex_ 内仅状态校验 + 容量预留；
+   线程创建与回滚 join 全程无锁；发布前重取锁复核 stop_/initialized_（创建窗口
+   内 shutdown 早期可翻 stop_，按失败同一语义回滚）。
+
+复验由同一验证代理执行（用例去掉 DISABLED_ 前缀后复跑），**结论：通过**——
+三个原缺陷场景（独立探针 + gtest + ASAN/TSAN）全部通过，回归面无新增失败
+（v072full 全量 184/188，4 失败照旧定性为已知 flaky/环境项；TSAN/ASAN 子集
+零报告；三个直接涉及套件各连续 5 轮稳定）。复验的两点非阻塞观察均已处置：
+①~Shared 的 detach 防护在新设计下实际不可达（防御性保留）；②扩容本地向量
+的 reserve 移入 try 块——极端 OOM 与创建失败同一语义（回滚 + 返回 false），
+不以异常逃出 resize。
+
+### P2 定性（契约已文档化 / 补注释，避免长期悬挂）
+
+| 项 | 定性 | 落点 |
+|---|---|---|
+| CR-116 | 契约已文档化（不改行为）：`WorkerLocalQueue::clear()` 丢弃不做任务级结算（broken_promise）与 `LockFreeWorkerQueue::discard_task`（on_timeout runtime_error 结算）的终态差异在两处源码注明；统一队列抽象时再收敛 | worker_local_queue.cpp / lockfree_worker_queue.hpp |
+| CR-123 | 契约已文档化：worker 自停路径静默丢弃剩余任务（不执行、不重投）在丢弃点注明，并与外部停机排空区分 | lockfree_task_executor.cpp |
+| CR-125 | 契约已文档化：CallbackSlot::set 的 entries_ 单调增长是有意的配置面空间换安全（旧条目不可释放），禁止热路径反复调用已在注释写明 | comm/lockfree_core.hpp |
+| CR-126 | 契约已文档化：acquire_node 单遍扫描的满判断是 best-effort 而非线性一致，瞬时竞争下 try_send 可能 false 而队列实际未满（按"此刻不可入队"重试） | comm/bounded_queue.hpp |
+| CR-134 | 契约已文档化：stop() 粗粒度关停不向在途 active tick 传播任务取消（与 request_cancel 不对称）；需逐 tick 协作取消的场景 stop 前 request_cancel | timer.hpp |
+| CR-152 | **复核确认已修复**：现行 `destroy_stream` 已有 `stream_id <= 0` 守卫，默认流不可经公共 API 销毁 | cuda_executor.cpp |
+

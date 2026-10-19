@@ -591,6 +591,22 @@ struct GpuTaskConfig {
 };
 
 /**
+ * @brief GPU 执行器 stop 语义（0.7.2 §4.3，CR-154）。
+ *
+ * 0.7.1 及之前 CUDA 与 OpenCL 的 stop() 语义不一致（CUDA 排空已入队
+ * kernel、OpenCL 取消未开始的 kernel）且不可显式选择；GpuStopMode 使
+ * 跨后端调用方获得一致的 future 契约：
+ * - Drain：已入队 kernel 继续执行至完成（原 CUDA 行为）；
+ * - Cancel：未开始的 kernel 以 ExecutorStopping 落终态（原 OpenCL
+ *   行为）；正在执行的 kernel 不被中断。
+ * 各后端的 stop() 默认值保持 0.7.1 行为（CUDA=Drain、OpenCL=Cancel）。
+ */
+enum class GpuStopMode : uint8_t {
+    Drain,
+    Cancel,
+};
+
+/**
  * @brief 一次 GPU kernel 提交的完成计时记录（0.7.2 §4.2 stream 完成回调计时）。
  *
  * 全部时点取 steady 时钟（纳秒）。completion_ns 由 stream 完成回调在驱动

@@ -100,6 +100,9 @@ enum class DropPolicy {
     // 队列内部对在途消费者/并发生产者的竞争窗口做有界自旋重试，重试耗尽
     // 时仍会按满队丢弃新值（事件为 Dropped）。需要强"最新值"语义的场景
     // 应使用 SnapshotStore/Mailbox。
+    // NN-09（0.7.2 §4.3）：KeepLatest 是滚动窗口——饱和时只逐出最旧
+    // 一条（计一次 overwrite），保留最新 capacity 条含新值；"坍缩为
+    // 最新 1 条"的 mailbox 语义由 LatestMailbox 承担。
     KeepLatest
 };
 

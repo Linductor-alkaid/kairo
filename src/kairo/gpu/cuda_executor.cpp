@@ -468,7 +468,55 @@ void CudaExecutor::stop() {
     (void)stop_and_join();
 }
 
+void CudaExecutor::stop(gpu::GpuStopMode mode) {
+    // CR-154：Drain = 既有排空路径；Cancel = 未取出任务以 ExecutorStopping
+    // 落终态后收尾（正在执行的 kernel 不中断）。自停（worker 内调用）经
+    // stop_and_join 的自停分支只请求停止——模式由后续外部收尾调用兑现，
+    // 见 stop_and_join 文档。
+    (void)stop_and_join(mode == gpu::GpuStopMode::Cancel);
+}
+
+void CudaExecutor::cancel_queued_tasks() {
+    std::vector<std::unique_ptr<TimingContext>> failed_timings;
+    size_t cancelled = 0;
+    const auto stopping = std::make_exception_ptr(ExecutorStopping(
+        "CudaExecutor stopped before queued kernel execution (GpuStopMode::Cancel)"));
+    {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+        while (!task_queue_.empty()) {
+            auto& top = const_cast<GpuQueuedTask&>(task_queue_.top());
+            GpuQueuedTask task = std::move(top);
+            task_queue_.pop();
+            if (task.promise) {
+                task.promise->set_exception(stopping);
+            }
+            if (task.timing_ctx) {
+                // 每提交恰一条计时记录：取消路径交付 success == false。
+                task.timing_ctx->record.success = false;
+                task.timing_ctx->record.completed_on_stream = false;
+                task.timing_ctx->record.completion_ns = steady_now_ns();
+                failed_timings.push_back(std::move(task.timing_ctx));
+            }
+            ++cancelled;
+        }
+    }
+    for (auto& timing : failed_timings) {
+        deliver_timing_record(std::move(timing));
+    }
+    if (cancelled > 0) {
+        failed_kernels_.fetch_add(cancelled, std::memory_order_relaxed);
+        set_last_error("CudaExecutor stopped: cancelled " +
+                       std::to_string(cancelled) + " queued kernel task(s)");
+    }
+    queue_not_full_cv_.notify_all();
+    queue_drained_cv_.notify_all();
+}
+
 bool CudaExecutor::stop_and_join() {
+    return stop_and_join(false);
+}
+
+bool CudaExecutor::stop_and_join(bool cancel_queued) {
     std::thread joiner;
     {
         std::lock_guard<std::mutex> stop_lock(stop_mutex_);
@@ -502,6 +550,12 @@ bool CudaExecutor::stop_and_join() {
     // a failed future instead of deadlocking.
     queue_not_empty_cv_.notify_all();
     queue_not_full_cv_.notify_all();
+
+    // CR-154：Cancel 模式在等待排空前取消未取出的任务——worker 随后
+    // 看到空队列 + !is_running_ 即退出。
+    if (cancel_queued) {
+        cancel_queued_tasks();
+    }
 
     wait_for_completion();
 

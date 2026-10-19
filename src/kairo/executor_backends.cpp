@@ -179,20 +179,27 @@ WorkerHandle Executor::start_worker(BlockingWorkerSpec spec) {
     return WorkerHandle(manager_, name, std::move(result));
 }
 
+WorkerHandle::WorkerHandle(ExecutorManager* manager, std::string name,
+                           ExecutorResult start_result)
+    : manager_(manager),
+      manager_liveness_(manager ? manager->liveness() : std::weak_ptr<void>{}),
+      name_(std::move(name)), start_result_(std::move(start_result)) {}
+
 void WorkerHandle::request_stop() noexcept {
-    if (manager_) {
+    // CR-105：令牌失效（facade 已析构）时退化为无操作，不悬垂解引用。
+    if (manager_ && !manager_liveness_.expired()) {
         manager_->request_stop_blocking_io_executor(name_);
     }
 }
 
 void WorkerHandle::stop() {
-    if (manager_) {
+    if (manager_ && !manager_liveness_.expired()) {
         manager_->stop_blocking_io_executor(name_);
     }
 }
 
 BlockingIoExecutorStatus WorkerHandle::status() const {
-    if (manager_) {
+    if (manager_ && !manager_liveness_.expired()) {
         return manager_->get_blocking_io_executor_status(name_);
     }
     BlockingIoExecutorStatus status;
