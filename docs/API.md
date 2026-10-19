@@ -98,14 +98,23 @@ auto submit(F&& f, Args&&... args)
 
 ### 3.2 优先级提交
 
+> **0.7.2 起弃用**：优先级是调度策略维度而非提交协议，统一经
+> `submit_auto(TaskBuilder)` 表达。`submit_priority` 在 0.7.2-rc1 标记
+> `[[deprecated]]`，正式版移除；迁移指南见 `docs/MIGRATION.md` 0.7.2 节，
+> 自动迁移脚本 `scripts/migrate_submit_priority.sh`。
+
 ```cpp
-template<typename F, typename... Args>
-auto submit_priority(int priority, F&& f, Args&&... args)
-    -> std::future<typename std::invoke_result<F, Args...>::type>;
+// 0.7.2+ 推荐写法
+auto fut = executor.submit_auto(
+    kairo::TaskBuilder([]{ work(); }).priority(kairo::TaskPriority::HIGH));
 ```
 
-- `priority`：`0`=LOW，`1`=NORMAL，`2`=HIGH，`3`=CRITICAL（对应 `TaskPriority`）。
-- 高优先级任务优先被调度。
+- `TaskBuilder::priority()` 接受 `TaskPriority`（`LOW`/`NORMAL`/`HIGH`/`CRITICAL`，
+  整数值 0-3 与旧 API 一致）；显式 priority 永不被调度器覆盖。
+- 调度语义与旧 `submit_priority` 逐位一致：priority → EDF → FIFO，
+  经 `IScheduler::effective_priority_for()` 协议（QoS 默认映射、aging、
+  AdaptiveScheduler 动态映射在同一协议层生效）。
+- `submit_batch_priority(P, v)` 保留，内部改走共享实现，行为不变。
 
 ### 3.3 批量提交
 
@@ -637,7 +646,9 @@ size_t closure_graveyard_size() const;
 - **幂等与过期**：重复运行中取消返回 `AlreadyRequested`；终态句柄返回
   `AlreadyCompleted`；未知/失效句柄返回 `NotFound`。成功取消不产生
   `ExecutorFailureEvent`，也不计入 `ExecutorFailureStatus`。
-- **既有 API 不变**：`submit()` / `submit_priority()` 无句柄、不可取消；
+- **既有 API 不变**：`submit()` 与优先级提交（0.7.2 起
+  `submit_auto(TaskBuilder(...).priority(p))`，`submit_priority` 已弃用）
+  均无句柄、不可取消；
   `submit_with_handle()` / `submit_after_with_handle()` 建立共享取消状态，
   天然支持排队取消（callable 不接收 token 时运行中取消只记录"已请求"）。
 - **registry 容量**：按句柄取消索引默认容量 65536（active 与终态 tombstone
@@ -658,7 +669,8 @@ size_t closure_graveyard_size() const;
 `ExecutorConfig::max_in_flight_tasks` 为 facade 默认异步提交提供总量上限：
 `0`（默认）不启用、零热路径开销；正值 N 表示该 Executor 实例已接纳未结算的
 提交（scheduler 全局队列 + worker 本地队列 + 执行中）至多 N 个。覆盖
-`submit`、`submit_with_handle`、`submit_priority`、`submit_after*`、
+`submit`、`submit_with_handle`、`submit_auto`（含弃用的
+`submit_priority`）、`submit_after*`、
 `submit_cancellable*`、`submit_batch*`、`submit_on*`；`submit_delayed*` /
 `submit_periodic*`（timer 派发）与 realtime / GPU / Blocking I/O / lockfree
 不在覆盖范围。直接使用 `ThreadPool` / `PriorityScheduler` 的调用方不受保护。
@@ -1938,7 +1950,9 @@ latest-wins 覆盖；需要逐条消息时继续使用 `RealtimeChannel<T>`，�
 enum class TaskPriority { LOW = 0, NORMAL = 1, HIGH = 2, CRITICAL = 3 };
 ```
 
-与 `submit_priority(int priority, ...)` 的整型对应。
+整型值与 0.7.1 及之前 `submit_priority(int priority, ...)` 的参数对应；
+0.7.2 起优先级经 `TaskBuilder::priority()`（接受本枚举）表达，
+`submit_priority` 已弃用（见 §3.2）。
 
 ---
 

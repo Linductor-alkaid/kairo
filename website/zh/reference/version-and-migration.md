@@ -16,6 +16,24 @@ description: 发布版本和 API 迁移的入口。
 | 选项、编译器与后端前置 | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | 当前完整签名 | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
+## 0.7.2（开发快照）：优先级语义转移到调度器
+
+按 `docs/design/roadmap_v0.7.md` §4.0 推进中（分支 `feat/v072-priority-transfer`）。
+这是 0.7.x **唯一的破坏性变更**，当前处于 rc1 阶段：
+
+- `Executor::submit_priority` 标记 `[[deprecated]]`，优先级统一经
+  `submit_auto(kairo::TaskBuilder(fn).priority(p))` 表达，与 QoS/deadline
+  共享同一 `IScheduler` 协议；调度顺序（priority → EDF → FIFO）与 0.7.1
+  逐位一致，内部实现（PriorityScheduler、`effective_priority_for()`、aging）
+  不变。
+- `submit_batch_priority` 保留，内部改走同一共享实现，行为不变。
+- 迁移支持：`scripts/migrate_submit_priority.sh` 自动改写 + `docs/MIGRATION.md`
+  0.7.2 节（语义等价性说明与排查清单）。教程页与示例已全部迁移。
+- 0.7.2 正式版将移除 `submit_priority` 声明（内部
+  `submit_priority_scheduled` 与 `ThreadPool` 层 API 保留）。
+
+未发布内容不构成版本承诺；以正式发布与 CHANGELOG 为准。
+
 ## 0.7.1：submit_auto 路由智能化 + deadline policy + 资源预留
 
 0.7.1（2026-10-14 发布）按 `docs/design/roadmap_v0.7.md` §3 全部落地；全部为 additive，无必需迁移：

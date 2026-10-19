@@ -46,7 +46,8 @@ namespace monitor { class ExecutorMonitor; }
  * 支持单例模式和实例化模式。
  * 
  * 功能：
- * - 任务提交（submit, submit_priority, submit_delayed, submit_periodic）
+ * - 任务提交（submit, submit_auto, submit_delayed, submit_periodic；
+ *   0.7.2 起优先级经 submit_auto(TaskBuilder) 的 priority() 表达）
  * - 实时任务管理（register_realtime_task, start_realtime_task, stop_realtime_task）
  * - 监控查询（get_async_executor_status, get_realtime_executor_status）
  */
@@ -264,8 +265,15 @@ public:
     size_t get_in_flight_submissions() const;
 
     /**
-     * @brief 提交优先级任务
-     * 
+     * @brief 提交优先级任务（0.7.2 起弃用）
+     *
+     * @deprecated 优先级是调度策略维度而非提交协议。请改用
+     *             submit_auto(TaskBuilder(f).priority(p))——经 IScheduler
+     *             的 effective_priority_for() 咨询，与 QoS/deadline 共享
+     *             同一调度协议；调度语义（priority → EDF → FIFO）与
+     *             0.7.1 逐位一致。见 docs/MIGRATION.md 0.7.2 节与
+     *             scripts/migrate_submit_priority.sh。
+     *
      * @tparam F 可调用对象类型
      * @tparam Args 参数类型
      * @param priority 优先级（0=LOW, 1=NORMAL, 2=HIGH, 3=CRITICAL）
@@ -274,6 +282,9 @@ public:
      * @return std::future 任务执行结果的 future
      */
     template<typename F, typename... Args>
+    [[deprecated("Use submit_auto(TaskBuilder(f).priority(p)) instead. "
+                 "Priority is a scheduling dimension, not a submission protocol. "
+                 "See docs/MIGRATION.md v0.7.2.")]]
     auto submit_priority(int priority, F&& f, Args&&... args)
         -> std::future<typename std::invoke_result<F, Args...>::type>;
 
@@ -3173,7 +3184,10 @@ std::vector<std::future<void>> Executor::submit_batch_priority(
     futures.reserve(tasks.size());
 
     for (const auto& task : tasks) {
-        futures.push_back(submit_priority(priority, task));
+        // 0.7.2 起直接走共享实现：submit_priority 已弃用，batch 变体
+        // 经同一 submit_priority_scheduled 路径，行为不变、无弃用警告。
+        futures.push_back(submit_priority_scheduled(
+            priority, std::nullopt, nullptr, task));
     }
 
     return futures;

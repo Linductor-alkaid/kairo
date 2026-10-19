@@ -21,6 +21,10 @@
 > §13）——**§3 全部落地**；0.7.1 剩发布收尾（定版 + §5.2 稳定化）。
 > 输入：`docs/design/scheduling_runtime.md` §5/§6、`docs/CODE_REVIEW_2026-09-30.md`
 > 未结项、`CHANGELOG.md` 0.6.x 边界声明。
+> **0.7.2 §4.0 rc1 已落地**（submit_priority 标记 deprecated + facade 层
+> 测试/示例迁移 + 迁移脚本与文档，2026-10-19，
+> 分支 feat/v072-priority-transfer）；0.7.2 余项：§4.0 正式移除、
+> §4.1 堆分配优化阶段一、§4.2 反馈覆盖扩展、§4.3 可靠性收尾。
 
 ## 0. 系列主题与原则
 
@@ -418,13 +422,21 @@ submit_priority(p, [&]{ ... })  →  submit_auto(TaskBuilder([&]{ ... }).priorit
 
 #### 4.0.4 验收
 
-- [ ] 256 处测试代码迁移完成，零 deprecated 警告
-- [ ] 4 处示例代码更新，文档同步
+> 计数勘误（2026-10-19 实施时复查）：规划阶段估计的"256 处测试代码"
+> 与代码库现状不符——facade 层实际调用点为 **8 处**（分布于
+> test_executor_facade / test_performance / test_task_cancellation /
+> test_executor_failure_observability 四个测试），示例 **4 处**
+> （basic_submit ×2、tutorial/02_priority ×2）。测试中的
+> `ThreadPool::submit_priority`（test_thread_pool*）属内部层，按计划
+> 保留。验收项按实际计数更新。
+
+- [x] facade 层 8 处测试调用迁移完成，零 deprecated 警告（rc1，2026-10-19）
+- [x] 4 处示例代码更新，文档同步（rc1，2026-10-19）
 - [ ] 配对 A/B 基准：迁移前后端到端吞吐 ±2% 内
 - [ ] 契约测试：优先级 + EDF 排序、aging、effective_priority_for 咨询逻辑不变
-- [ ] `docs/API.md` §3.2 移除 submit_priority，§3.7 TaskBuilder 补充优先级示例
-- [ ] website 教程页（priority.md）全面改写
-- [ ] `scripts/check_docs_drift.sh` 通过
+- [x] `docs/API.md` §3.2 改写为弃用注记 + TaskBuilder 优先级示例（rc1）
+- [x] website 教程页（priority.md）全面改写，中英版本页新增 0.7.2 开发快照（rc1）
+- [ ] `scripts/check_docs_drift.sh` 通过（随 rc1 提交验证）
 
 **风险与边界**：
 - 这是 0.7.x **唯一的破坏性变更**（与 roadmap §1 "0.7.2 additive + 修复"

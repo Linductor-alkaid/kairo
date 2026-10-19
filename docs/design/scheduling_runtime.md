@@ -665,14 +665,15 @@ submit_after(dep, TaskBuilder(fn).priority(p))
 - **这是 0.7.x 唯一破坏性变更**：roadmap §1 原计划"0.7.2 additive +
   修复"被此项打破，但延后至 0.8.0 会让 0.7.x 内部调度语义不一致，
   造成更大的迁移负担。
-- **影响面可控**：256 处测试代码 + 4 处示例，迁移模式清晰，
+- **影响面可控**：facade 层测试调用 8 处（规划阶段高估为 256 处，
+  2026-10-19 实施复查勘误）+ 4 处示例，迁移模式清晰，
   自动化脚本覆盖主要场景。
 - **文档同步**：`docs/API.md` §3.2 移除 submit_priority，
   website 教程页（priority.md）全面改写为 TaskBuilder 示例。
 
 ### 14.5 验收
 
-- 256 处测试代码迁移完成，零 deprecated 警告
+- facade 层测试调用全部迁移（实际 8 处），零 deprecated 警告
 - 配对 A/B 基准：迁移前后端到端吞吐 ±2% 内
 - 契约测试：优先级 + EDF 排序、aging、effective_priority_for 咨询逻辑不变
 - `scripts/check_docs_drift.sh` 通过

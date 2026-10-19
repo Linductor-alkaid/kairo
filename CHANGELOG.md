@@ -4,6 +4,44 @@
 
 ---
 
+## [0.7.2] - Unreleased（rc1 阶段）
+
+优先级语义转移到调度器（roadmap §4.0，0.7.x 唯一破坏性变更；
+设计记录见 `docs/design/scheduling_runtime.md` §14 与
+`docs/design/priority_refactoring_decision.md`）。
+
+### 变更（Breaking，仅此一项）
+
+- **`Executor::submit_priority` 标记 `[[deprecated]]`**（正式版移除
+  声明）：优先级是调度策略维度而非提交协议，统一经
+  `submit_auto(kairo::TaskBuilder(fn).priority(p))` 表达——与
+  QoS/deadline 共享同一 `IScheduler` 协议（`effective_priority_for()`
+  咨询、显式 priority 永不被覆盖）。调度顺序（priority → EDF → FIFO）
+  与 0.7.1 逐位一致：两条路径最终调用同一内部实现
+  `submit_priority_scheduled`（保留，供 facade 复用），admission 与
+  `task_id`（`facade_submit_priority`）不变。
+- **`submit_batch_priority` 行为不变、内部改走共享实现**：不再经由
+  已弃用的 `submit_priority`，无弃用警告泄漏。
+- 内部层 `ThreadPool::submit_priority` / `try_submit_priority*` 不变。
+
+### 新增
+
+- **迁移脚本 `scripts/migrate_submit_priority.sh`**：自动改写
+  `submit_priority(P, callable)` 两参模式（整数字面量映射
+  `TaskPriority` 枚举，变量经 `static_cast`）；带额外绑定参数的调用
+  保留原样并逐条报告。`--dry-run` 预览。
+
+### 文档
+
+- `docs/MIGRATION.md` 新增 0.7.2 节（语义等价性说明、迁移模式表、
+  排查清单）；`docs/API.md` §3.2 改写为弃用注记 + TaskBuilder 示例；
+  website priority 教程（中英）全面改写，choosing-submit-api /
+  what-is-kairo / decisions / concurrency-antipatterns 同步新表达；
+  版本与迁移页（中英）新增 0.7.2 开发快照。示例（basic_submit、
+  tutorial/02_priority）与 facade 层测试调用（8 处）全部迁移。
+
+---
+
 ## [0.7.1] - 2026-10-14
 
 v0.7.1 全部四个阶段：submit_auto 路由智能化（roadmap §3.0.1 含

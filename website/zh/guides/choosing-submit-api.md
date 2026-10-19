@@ -56,7 +56,7 @@ auto decoded = future.get();
 
 ## 何时使用显式 future API
 
-`submit_priority()`、`submit_delayed()`、`submit_periodic()`、`submit_batch()` 和任务依赖 API 不应被自动路由猜测，因为它们表达的是业务调度语义：
+优先级（`submit_auto(TaskBuilder.priority())`，0.7.2 起；`submit_priority()` 已弃用）、`submit_delayed()`、`submit_periodic()`、`submit_batch()` 和任务依赖 API 不应被自动路由猜测，因为它们表达的是业务调度语义：
 
 - priority 只改变等待队列，不提供抢占、deadline 或完成顺序；
 - delayed 表示最早运行时机，periodic 是普通线程池上的软周期维护；

@@ -146,8 +146,8 @@ bool test_submit_exception_observable_without_future_get() {
     return true;
 }
 
-bool test_submit_priority_exception_observable() {
-    std::cout << "Testing submit_priority exception observable..." << std::endl;
+bool test_priority_exception_observable() {
+    std::cout << "Testing priority task exception observable..." << std::endl;
 
     Executor executor;
     ExecutorConfig config;
@@ -155,9 +155,9 @@ bool test_submit_priority_exception_observable() {
     config.max_threads = 1;
     TEST_ASSERT(executor.initialize(config), "executor should initialize");
 
-    auto future = executor.submit_priority(3, []() {
+    auto future = executor.submit_auto(TaskBuilder([]() {
         throw std::runtime_error("priority boom");
-    });
+    }).priority(TaskPriority::CRITICAL));
     (void)future;
 
     (void)executor.wait_for_completion(std::chrono::seconds{300});
@@ -301,7 +301,7 @@ int main() {
     all_passed &= test_failure_status_recent_events_and_callback();
     all_passed &= test_recent_failure_capacity_zero_keeps_counters();
     all_passed &= test_submit_exception_observable_without_future_get();
-    all_passed &= test_submit_priority_exception_observable();
+    all_passed &= test_priority_exception_observable();
     all_passed &= test_submit_batch_partial_exception_observable();
     all_passed &= test_submit_batch_no_future_exception_observable();
     all_passed &= test_submit_rejections_observable();

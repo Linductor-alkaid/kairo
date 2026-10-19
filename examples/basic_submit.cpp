@@ -59,20 +59,20 @@ int main() {
         std::vector<int> execution_order;
         std::mutex order_mutex;
 
-        // 提交低优先级任务
-        executor.submit_priority(0, [&execution_order, &order_mutex]() {
+        // 提交低优先级任务（0.7.2：优先级经 TaskBuilder 表达）
+        executor.submit_auto(kairo::TaskBuilder([&execution_order, &order_mutex]() {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             std::lock_guard<std::mutex> lock(order_mutex);
             execution_order.push_back(0);
             std::cout << "  Low priority task executed" << std::endl;
-        });
+        }).priority(kairo::TaskPriority::LOW));
 
         // 提交高优先级任务
-        executor.submit_priority(2, [&execution_order, &order_mutex]() {
+        executor.submit_auto(kairo::TaskBuilder([&execution_order, &order_mutex]() {
             std::lock_guard<std::mutex> lock(order_mutex);
             execution_order.push_back(2);
             std::cout << "  High priority task executed" << std::endl;
-        });
+        }).priority(kairo::TaskPriority::HIGH));
 
         // 等待任务完成
         std::this_thread::sleep_for(std::chrono::milliseconds(50));

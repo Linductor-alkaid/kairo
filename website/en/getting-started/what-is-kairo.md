@@ -35,7 +35,7 @@ Kairo deliberately keeps the following boundaries:
 - It is not a hard realtime operating system. End-to-end jitter still depends on task bodies, the OS, privileges, CPU isolation, resident memory, and target hardware.
 - It cannot safely force arbitrary running C++ functions to terminate. Long-lived work must cooperate with stop requests or deadlines.
 - `submit_periodic()` is soft periodic work on the ordinary thread pool, not a dedicated realtime thread.
-- `submit_priority()` changes ordinary queue order; it does not provide deadlines or preempt work already running.
+- Priority submission (`submit_auto(TaskBuilder.priority())`) changes ordinary queue order; it does not provide deadlines or preempt work already running.
 
 Since 0.4.0, key communication synchronization paths use fixed storage and atomic implementations. “Synchronization lock-free” does not cover payload operations, callbacks, page faults, or OS scheduling. `Topic<T>` belongs to the ordinary control plane and is not a realtime primitive. See the [0.4.0 migration notes](/en/reference/version-and-migration) for exact guarantees.
 

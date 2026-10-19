@@ -16,6 +16,26 @@ The latest release record is `v0.7.1`. This site uses that stable version as its
 | Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | Complete current signatures | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
+## 0.7.2 (development snapshot): priority semantics move to the scheduler
+
+In progress per `docs/design/roadmap_v0.7.md` §4.0 (branch `feat/v072-priority-transfer`).
+This is the **only breaking change in the 0.7.x series**, currently at the rc1 stage:
+
+- `Executor::submit_priority` is marked `[[deprecated]]`; priority is now
+  expressed via `submit_auto(kairo::TaskBuilder(fn).priority(p))`, sharing the
+  same `IScheduler` protocol as QoS/deadline. Scheduling order
+  (priority → EDF → FIFO) is bit-for-bit identical to 0.7.1; internal
+  machinery (PriorityScheduler, `effective_priority_for()`, aging) is unchanged.
+- `submit_batch_priority` remains, internally routed through the same shared
+  implementation; behavior is unchanged.
+- Migration support: `scripts/migrate_submit_priority.sh` plus the 0.7.2
+  section of `docs/MIGRATION.md` (semantic-equivalence notes and a checklist).
+  Tutorials and examples are fully migrated.
+- The 0.7.2 release will remove the `submit_priority` declaration (the internal
+  `submit_priority_scheduled` and ThreadPool-layer APIs remain).
+
+Unreleased content is not a version commitment; rely on the official release and CHANGELOG.
+
 ## 0.7.1: smarter submit_auto routing + deadline policy + resource reservation
 
 0.7.1 (released 2026-10-14) fully lands `docs/design/roadmap_v0.7.md` §3. Everything is additive, no migration required:

@@ -53,7 +53,7 @@ New navigable pages must identify a fact source, example where applicable, and a
 The tutorial sequence shares a robot data pipeline: `SensorFrame`, `ParsedFrame`, `Plan`, `ControlCommand`, `ControlConfig`, and `SystemState`.
 
 1. Parse `SensorFrame` in the background with `submit_auto(lambda)`.
-2. Let `ControlCommand` queue before ordinary analysis with `submit_priority()`.
+2. Let `ControlCommand` queue before ordinary analysis with `submit_auto(TaskBuilder.priority(CRITICAL))`.
 3. Retry an unavailable device and run health checks with `submit_delayed()` / `submit_periodic()`.
 4. Process frames in parallel and combine `Plan` using batch, `TaskHandle`, and `when_all()`.
 5. Transfer `ControlConfig`, commands, and `SystemState` to periodic control through communication Facade components.
