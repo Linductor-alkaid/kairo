@@ -7,7 +7,7 @@ description: Entry points for releases and API migration.
 
 ## Current scope
 
-The latest release record is `v0.7.1`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
+The latest release record is `v0.7.2`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
 
 | What to check | Source of truth |
 | --- | --- |
@@ -15,6 +15,38 @@ The latest release record is `v0.7.1`. This site uses that stable version as its
 | Recommended migrations from older APIs | [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) |
 | Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | Complete current signatures | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
+
+## 0.7.2 (released 2026-10-19): priority semantics move to the scheduler + allocation optimization + feedback coverage + reliability closeout
+
+0.7.2 is the only release in the 0.7.x series with a **breaking change**:
+
+- **`Executor::submit_priority` removed** (breaking): priority is now
+  expressed via `submit_auto(kairo::TaskBuilder(fn).priority(p))`, sharing the
+  same `IScheduler` protocol as QoS/deadline. Scheduling order
+  (priority → EDF → FIFO) is bit-for-bit identical to 0.7.1; internal
+  machinery (PriorityScheduler, `effective_priority_for()`, aging) is
+  unchanged. `submit_batch_priority` remains with unchanged behavior.
+  Migration support: `scripts/migrate_submit_priority.sh` plus the 0.7.2
+  section of `docs/MIGRATION.md`. The internal `submit_priority_scheduled`
+  and ThreadPool-layer APIs remain and are not a public submission protocol.
+- **Heap-allocation optimization phase one (roadmap §4.1, additive and
+  automatic)**: the submit path drops from 9 to 7 allocs/task and 768 to
+  512 bytes/task (task scheduler-node pool + facade single-control-block
+  consolidation; scheduling semantics unchanged). New observability APIs:
+  `get_allocation_metrics()` / `get_task_pool_hit_rate()`.
+- **Feedback coverage expansion (roadmap §4.2, additive)**: aggregate
+  execution feedback `AggregateExecutionStats` (lockfree/realtime) with
+  facade snapshot APIs; GPU stream-completion timing
+  (`GpuKernelTimingRecord` + `submit_kernel_with_timing`; async kernel
+  latency now observed to stream completion); the realtime allocation
+  guard joins the CI matrix.
+- **Lifecycle reliability closeout (roadmap §4.3)**: interruptible RT-loop
+  stop, BlockingIO wakeup outside the lifecycle lock + stop fence,
+  `SerialExecutionContext::reserve_guarded()`, WorkerHandle invalidation
+  detection, transactional resize, KeepLatest rolling-window semantics
+  (behavior change), explicit `gpu::GpuStopMode`,
+  `TimerOperationResult::InternalError`, and more — ten fix groups plus
+  P2 qualification.
 
 ## 0.7.1: smarter submit_auto routing + deadline policy + resource reservation
 

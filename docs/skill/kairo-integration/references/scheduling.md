@@ -7,7 +7,8 @@ Priority, delayed retry, periodic maintenance, batches, dependencies between fin
 ## Minimal Usage
 
 ```cpp
-auto urgent = executor.submit_priority(3, [] { apply_command(); });
+auto urgent = executor.submit_auto(
+    kairo::TaskBuilder([] { apply_command(); }).priority(kairo::TaskPriority::CRITICAL));
 auto retry = executor.submit_delayed(250, [] { retry_request(); });
 auto health = executor.submit_periodic(1000, [] { check_health(); });
 

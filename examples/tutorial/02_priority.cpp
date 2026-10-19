@@ -1,7 +1,10 @@
+// 0.7.2：优先级是调度策略维度，经 submit_auto(TaskBuilder) 的 priority()
+// 表达（submit_priority 已在 0.7.2 移除）。见 docs/MIGRATION.md 0.7.2 节。
 #include <iostream>
 #include <string>
 
 #include <kairo/executor.hpp>
+#include <kairo/task_options.hpp>
 
 int main() {
     kairo::Executor executor;
@@ -13,8 +16,12 @@ int main() {
         return 1;
     }
 
-    auto analysis = executor.submit_priority(0, [] { return std::string{"analysis"}; });
-    auto control = executor.submit_priority(2, [] { return std::string{"control"}; });
+    auto analysis = executor.submit_auto(
+        kairo::TaskBuilder([] { return std::string{"analysis"}; })
+            .priority(kairo::TaskPriority::LOW));
+    auto control = executor.submit_auto(
+        kairo::TaskBuilder([] { return std::string{"control"}; })
+            .priority(kairo::TaskPriority::HIGH));
     const auto analysis_result = analysis.get();
     const auto control_result = control.get();
 

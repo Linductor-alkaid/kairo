@@ -103,19 +103,19 @@ bool test_priority_performance() {
     // 提交不同优先级的任务
     // 低优先级任务（会 sleep，模拟慢任务）
     for (int i = 0; i < tasks_per_priority; ++i) {
-        executor.submit_priority(0, [i, &execution_order, &order_mutex]() {
+        executor.submit_auto(TaskBuilder([i, &execution_order, &order_mutex]() {
             std::this_thread::sleep_for(std::chrono::microseconds(100));
             std::lock_guard<std::mutex> lock(order_mutex);
             execution_order.push_back(0);
-        });
+        }).priority(TaskPriority::LOW));
     }
     
     // 高优先级任务（立即完成）
     for (int i = 0; i < tasks_per_priority; ++i) {
-        executor.submit_priority(2, [i, &execution_order, &order_mutex]() {
+        executor.submit_auto(TaskBuilder([i, &execution_order, &order_mutex]() {
             std::lock_guard<std::mutex> lock(order_mutex);
             execution_order.push_back(2);
-        });
+        }).priority(TaskPriority::HIGH));
     }
     
     // 等待所有任务完成

@@ -46,7 +46,8 @@ namespace monitor { class ExecutorMonitor; }
  * 支持单例模式和实例化模式。
  * 
  * 功能：
- * - 任务提交（submit, submit_priority, submit_delayed, submit_periodic）
+ * - 任务提交（submit, submit_auto, submit_delayed, submit_periodic；
+ *   0.7.2 起优先级经 submit_auto(TaskBuilder) 的 priority() 表达）
  * - 实时任务管理（register_realtime_task, start_realtime_task, stop_realtime_task）
  * - 监控查询（get_async_executor_status, get_realtime_executor_status）
  */
@@ -264,21 +265,25 @@ public:
     size_t get_in_flight_submissions() const;
 
     /**
-     * @brief 提交优先级任务
-     * 
-     * @tparam F 可调用对象类型
-     * @tparam Args 参数类型
-     * @param priority 优先级（0=LOW, 1=NORMAL, 2=HIGH, 3=CRITICAL）
-     * @param f 可调用对象
-     * @param args 参数
-     * @return std::future 任务执行结果的 future
+     * @brief 堆分配优化观测快照（0.7.2 §4.1）
+     *
+     * 返回默认异步池 Task 节点池的累计命中/未命中计数（诊断用途，
+     * relaxed 语义，无同步保证）。未初始化或默认池不可用时全零。
      */
-    template<typename F, typename... Args>
-    auto submit_priority(int priority, F&& f, Args&&... args)
-        -> std::future<typename std::invoke_result<F, Args...>::type>;
+    AllocationMetrics get_allocation_metrics() const;
 
-    // submit_priority 的共享实现（meta 非空时经协议传递调度元数据；
-    // terminal_release 非空时随终态释放链归还资源租约，0.7.1 §3.1）
+    /**
+     * @brief Task 节点池命中率（0.0-1.0）
+     *
+     * 未有任何提交时返回 0.0。验收线：稳态 > 95%（roadmap §4.1）。
+     */
+    double get_task_pool_hit_rate() const;
+
+    // 优先级提交的唯一入口（0.7.2 §4.0 起 submit_priority 已移除）：
+    // submit_auto(TaskBuilder(f).priority(p))。本方法是共享实现（meta
+    // 非空时经协议传递调度元数据；terminal_release 非空时随终态释放链
+    // 归还资源租约，0.7.1 §3.1），由 submit_auto(TaskBuilder) 与
+    // submit_batch_priority 复用，非公共提交协议。
     template<typename F, typename... Args>
     auto submit_priority_scheduled(
         int priority, std::optional<TaskSchedulingMeta> meta,
@@ -585,11 +590,25 @@ public:
 
     /**
      * @brief 获取实时执行器状态
-     * 
+     *
      * @param name 执行器名称
      * @return 实时执行器状态
      */
     RealtimeExecutorStatus get_realtime_executor_status(const std::string& name) const;
+
+    /**
+     * @brief 聚合级执行反馈快照（0.7.2 §4.2）。
+     *
+     * 按名称解析 realtime / lockfree 后端并返回其累计执行计数；未知
+     * 名称返回零值（"未知即宽容"）。任意线程可调用，不触碰执行线程。
+     */
+    AggregateExecutionStats get_aggregate_execution_stats(
+        const std::string& executor_name) const;
+
+    /**
+     * @brief 全部 realtime / lockfree 后端的聚合级执行反馈（0.7.2 §4.2）。
+     */
+    std::map<std::string, AggregateExecutionStats> get_all_aggregate_execution_stats() const;
 
     /**
      * @brief 设置 facade 失败事件回调
@@ -755,7 +774,7 @@ public:
 
     /**
      * @brief 提交 GPU kernel 任务
-     * 
+     *
      * @tparam KernelFunc GPU kernel 函数类型
      * @param executor_name GPU 执行器名称
      * @param kernel GPU kernel 函数
@@ -766,6 +785,28 @@ public:
     auto submit_gpu(const std::string& executor_name,
                    KernelFunc&& kernel,
                    const gpu::GpuTaskConfig& config)
+        -> std::future<void>;
+
+    /**
+     * @brief 提交 GPU kernel 并逐提交交付 stream 完成计时（0.7.2 §4.2）。
+     *
+     * 与 submit_gpu 等价，另以 timing_sink 交付一条 GpuKernelTimingRecord
+     * （async 任务完成点由 stream 完成回调观测——回调内不做任何 CUDA
+     * 调用，计时数据转交到执行器线程后 sink 才被调用；CR-153）。建议
+     * 仅对 supports_completion_timing() == true 的执行器使用。
+     *
+     * @tparam KernelFunc GPU kernel 函数类型
+     * @param executor_name GPU 执行器名称
+     * @param kernel GPU kernel 函数
+     * @param config GPU 任务配置
+     * @param timing_sink 完成计时回调（执行器线程调用，异常被隔离）
+     * @return std::future<void> 任务执行结果的 future
+     */
+    template<typename KernelFunc>
+    auto submit_gpu(const std::string& executor_name,
+                   KernelFunc&& kernel,
+                   const gpu::GpuTaskConfig& config,
+                   IGpuExecutor::KernelTimingSink timing_sink)
         -> std::future<void>;
 
     /**
@@ -1769,7 +1810,34 @@ auto Executor::submit_with_rejection_observer(
     }
 
     // CR-107：promise 与 ready 标志合并为单控制块（原两个 make_shared）。
-    auto cell = std::make_shared<detail::PromiseCell<return_type>>();
+    // 0.7.2 §4.1：提交上下文（executor 名、task id、admission 释放、
+    // move-only bind 结果与类型擦除调用）一并并入该控制块——task/
+    // on_timeout 包装只捕获一个 shared_ptr（恰落入 std::function 的小
+    // 对象缓冲，16B ≤ 各标准库 SBO），消除包装层的两次堆分配。语义与
+    // 逐字段捕获逐位一致：结算时序、admission 释放点、异常观测路径不变。
+    struct SubmitCell {
+        std::promise<return_type> promise;
+        std::atomic_bool ready{false};
+        Executor* self = nullptr;
+        std::string executor_name;
+        std::string task_id;
+        std::shared_ptr<AdmissionReleaser> releaser;  // 可空（admission 未启用）
+        // bound_task 经 shared_ptr 持有：支持 move-only 可调用（如
+        // unique_ptr 捕获的 lambda）——wrapper 转 std::function 要求可
+        // 拷贝目标，间接层在此擦除该约束。改动此结构须保证 tutorial 11
+        // 的 move-only 用例。
+        std::shared_ptr<void> bound;
+        return_type (*invoke_bound)(SubmitCell&) = nullptr;
+
+        void release_admission() {
+            if (releaser) releaser->release();
+        }
+    };
+
+    auto cell = std::make_shared<SubmitCell>();
+    cell->self = this;
+    cell->executor_name = executor_name;
+    cell->task_id = task_id;
     auto future = cell->promise.get_future();
 
     if constexpr (sizeof...(Args) == 0) {
@@ -1789,12 +1857,14 @@ auto Executor::submit_with_rejection_observer(
         }
     }
 
-    // bound_task 经 shared_ptr 持有：支持 move-only 可调用（如 unique_ptr
-    // 捕获的 lambda）——wrapper 转 std::function 要求可拷贝目标，间接层
-    // 在此擦除该约束。改动此结构须保证 tutorial 11 的 move-only 用例。
-    auto bound_task = std::make_shared<decltype(std::bind(std::forward<F>(f), std::forward<Args>(args)...))>(
-        std::bind(std::forward<F>(f), std::forward<Args>(args)...)
-    );
+    using BoundTask =
+        decltype(std::bind(std::forward<F>(f), std::forward<Args>(args)...));
+    cell->bound =
+        std::make_shared<BoundTask>(std::bind(std::forward<F>(f),
+                                              std::forward<Args>(args)...));
+    cell->invoke_bound = [](SubmitCell& c) -> return_type {
+        return std::invoke(*std::static_pointer_cast<BoundTask>(c.bound));
+    };
 
     // 总量有界 admission：拒绝时 future 立即以 CapacityExhaustedException
     // 就绪（不抛出），failure 事件已由 try_admit_submission 记录。
@@ -1806,46 +1876,49 @@ auto Executor::submit_with_rejection_observer(
         cell->promise.set_exception(exception);
         return future;
     }
-    auto release_admission = [releaser = std::move(admission.releaser)]() {
-        if (releaser) releaser->release();
-    };
+    cell->releaser = std::move(admission.releaser);
 
-    auto task_wrapper = [this, executor_name, task_id, cell, bound_task,
-                         release_admission]() mutable {
+    // 包装层捕获策略（0.7.2 §4.1）：libstdc++ 的 std::function 小对象
+    // 缓冲只收 <16B 的 functor——task_wrapper 捕获 shared_ptr（16B，堆
+    // 分配一次），on_timeout 捕获裸指针（8B，零分配）。裸指针的安全性
+    // 依据：两者同批移入同一 Task 节点（move_task_fields 字段级整体
+    // 搬运），节点析构时两个成员同生共死——on_timeout 的全部触发点
+    // （execute_task 软超时 / 拒绝路径前）Task 节点均完整存活，不存在
+    // on_timeout 单独存活的窗口。
+    auto task_wrapper = [cell]() mutable {
         try {
             if constexpr (std::is_void_v<return_type>) {
-                std::invoke(*bound_task);
-                release_admission();
+                cell->invoke_bound(*cell);
+                cell->release_admission();
                 cell->promise.set_value();
             } else {
-                auto result = std::invoke(*bound_task);
-                release_admission();
+                auto result = cell->invoke_bound(*cell);
+                cell->release_admission();
                 cell->promise.set_value(std::move(result));
             }
             cell->ready.store(true, std::memory_order_release);
         } catch (...) {
             auto exception = std::current_exception();
-            release_admission();
+            cell->release_admission();
             cell->promise.set_exception(exception);
             cell->ready.store(true, std::memory_order_release);
-            record_task_exception(
-                executor_name,
-                task_id,
+            cell->self->record_task_exception(
+                cell->executor_name,
+                cell->task_id,
                 "Async task threw an exception",
                 exception);
             throw;
         }
     };
 
-    auto on_timeout = [this, executor_name, task_id, cell,
-                       release_admission](std::exception_ptr exception) {
+    auto on_timeout = [keep_alive = cell.get()](std::exception_ptr exception) {
         bool expected = false;
-        if (cell->ready.compare_exchange_strong(expected, true)) {
-            release_admission();
-            cell->promise.set_exception(exception);
-            record_task_timeout(
-                executor_name,
-                task_id,
+        if (keep_alive->ready.compare_exchange_strong(expected, true)) {
+            keep_alive->release_admission();
+            keep_alive->promise.set_exception(exception);
+            keep_alive->self->record_task_timeout(
+                keep_alive->executor_name,
+                keep_alive->task_id,
                 "Async task timed out before execution",
                 exception);
         }
@@ -1856,7 +1929,7 @@ auto Executor::submit_with_rejection_observer(
             std::runtime_error("Async executor rejected task submission"));
         bool expected = false;
         if (cell->ready.compare_exchange_strong(expected, true)) {
-            release_admission();
+            cell->release_admission();
             cell->promise.set_exception(exception);
             record_submit_rejected(
                 executor_name,
@@ -2611,14 +2684,7 @@ auto Executor::submit_tracked_with_hook(
     return submission;
 }
 
-template<typename F, typename... Args>
-auto Executor::submit_priority(int priority, F&& f, Args&&... args)
-    -> std::future<typename std::invoke_result<F, Args...>::type> {
-    return submit_priority_scheduled(priority, std::nullopt, nullptr,
-                                     std::forward<F>(f), std::forward<Args>(args)...);
-}
-
-// submit_priority 的共享实现；meta 存在时经调度协议写入 Task
+// 优先级提交的共享实现；meta 存在时经调度协议写入 Task
 //（EDF 排序 + QoS 观测，0.6.0 Scheduling Runtime）。terminal_release
 // 非空时（0.7.1 §3.1 资源预留）在所有终态路径与 admission 同步释放
 //（成功/异常/软超时/提交拒绝；析构兜底 shutdown 排空丢弃路径）。
@@ -2641,15 +2707,42 @@ auto Executor::submit_priority_scheduled(
         throw std::runtime_error("Async executor not initialized. Call initialize() first.");
     }
 
-    auto promise = std::make_shared<std::promise<return_type>>();
-    auto promise_ready = std::make_shared<std::atomic_bool>(false);
-    auto future = promise->get_future();
+    // 0.7.2 §4.1：与 submit 同款单控制块整合——promise/ready（原两个
+    // make_shared）、admission 释放链、0.7.1 资源租约、move-only bind
+    // 结果并入 PrioritySubmitCell；task_wrapper 捕获 shared_ptr（16B，
+    // 堆分配一次），on_timeout 捕获裸指针（8B，零分配，生命周期依据
+    // 同 submit 注释：两者同批移入同一 Task 节点，同生共死）。原 5 次
+    // 包装层分配降为 2 次；结算时序与释放点逐位一致。
+    struct PrioritySubmitCell {
+        std::promise<return_type> promise;
+        std::atomic_bool ready{false};
+        Executor* self = nullptr;
+        std::string executor_name;
+        std::string task_id;
+        std::shared_ptr<AdmissionReleaser> releaser;
+        std::shared_ptr<detail::TerminalReleaser> terminal;
+        // move-only bind 结果经 shared_ptr 持有（同 submit 的 tutorial 11
+        // 约束），调用经类型擦除 thunk。
+        std::shared_ptr<void> bound;
+        return_type (*invoke_bound)(PrioritySubmitCell&) = nullptr;
+
+        void release_terminal() noexcept {
+            if (releaser) releaser->release();
+            if (terminal) terminal->release();
+        }
+    };
+
+    auto cell = std::make_shared<PrioritySubmitCell>();
+    cell->self = this;
+    cell->executor_name = executor_name;
+    cell->task_id = task_id;
+    auto future = cell->promise.get_future();
 
     if constexpr (sizeof...(Args) == 0) {
         if (detail::is_empty_std_function(f)) {
             auto exception = std::make_exception_ptr(std::invalid_argument("empty task"));
-            promise_ready->store(true, std::memory_order_release);
-            promise->set_exception(exception);
+            cell->ready.store(true, std::memory_order_release);
+            cell->promise.set_exception(exception);
             record_submit_rejected(
                 executor_name,
                 task_id,
@@ -2659,52 +2752,53 @@ auto Executor::submit_priority_scheduled(
         }
     }
 
-    auto bound_task = std::make_shared<decltype(std::bind(std::forward<F>(f), std::forward<Args>(args)...))>(
-        std::bind(std::forward<F>(f), std::forward<Args>(args)...)
-    );
+    using BoundTask =
+        decltype(std::bind(std::forward<F>(f), std::forward<Args>(args)...));
+    cell->bound =
+        std::make_shared<BoundTask>(std::bind(std::forward<F>(f),
+                                              std::forward<Args>(args)...));
+    cell->invoke_bound = [](PrioritySubmitCell& c) -> return_type {
+        return std::invoke(*std::static_pointer_cast<BoundTask>(c.bound));
+    };
 
     // 总量有界 admission（与 submit 相同语义：拒绝不抛出，future 立即就绪）。
     auto admission = try_admit_submission(executor_name, task_id, "submit_priority");
     if (!admission.accepted) {
         auto exception = std::make_exception_ptr(CapacityExhaustedException(
             "In-flight submission capacity exhausted"));
-        promise_ready->store(true, std::memory_order_release);
-        promise->set_exception(exception);
+        cell->ready.store(true, std::memory_order_release);
+        cell->promise.set_exception(exception);
         return future;
     }
     // 终态释放链：admission 计数 + 资源租约（如有）。被任务包装与
     // 软超时结算闭包共享（各自持 shared_ptr 副本），TerminalReleaser
     // 的 CAS 保证恰好一次、析构兜底池丢弃路径。
-    auto release_terminal = [releaser = std::move(admission.releaser),
-                             lease = std::move(terminal_release)]() noexcept {
-        if (releaser) releaser->release();
-        if (lease) lease->release();
-    };
+    cell->releaser = std::move(admission.releaser);
+    cell->terminal = std::move(terminal_release);
 
-    auto task_wrapper = [this, executor_name, task_id, promise, promise_ready, bound_task,
-                         release_terminal]() mutable {
+    auto task_wrapper = [cell]() mutable {
         try {
             if constexpr (std::is_void_v<return_type>) {
-                std::invoke(*bound_task);
-                release_terminal();
-                promise->set_value();
+                cell->invoke_bound(*cell);
+                cell->release_terminal();
+                cell->promise.set_value();
             } else {
-                auto result = std::invoke(*bound_task);
-                release_terminal();
-                promise->set_value(std::move(result));
+                auto result = cell->invoke_bound(*cell);
+                cell->release_terminal();
+                cell->promise.set_value(std::move(result));
             }
-            promise_ready->store(true, std::memory_order_release);
+            cell->ready.store(true, std::memory_order_release);
         } catch (...) {
             auto exception = std::current_exception();
-            release_terminal();
-            promise->set_exception(exception);
-            promise_ready->store(true, std::memory_order_release);
+            cell->release_terminal();
+            cell->promise.set_exception(exception);
+            cell->ready.store(true, std::memory_order_release);
             // DropIfLate 的结构化终态遵循取消类约定：不计 task-exception
             // failure（可观测性由 deadline_dropped_count 与 future 终态承载）。
             if (!is_deadline_drop_exception(exception)) {
-                record_task_exception(
-                    executor_name,
-                    task_id,
+                cell->self->record_task_exception(
+                    cell->executor_name,
+                    cell->task_id,
                     "Priority async task threw an exception",
                     exception);
             }
@@ -2712,15 +2806,14 @@ auto Executor::submit_priority_scheduled(
         }
     };
 
-    auto on_timeout = [this, executor_name, task_id, promise, promise_ready,
-                       release_terminal](std::exception_ptr exception) {
+    auto on_timeout = [keep_alive = cell.get()](std::exception_ptr exception) {
         bool expected = false;
-        if (promise_ready->compare_exchange_strong(expected, true)) {
-            release_terminal();
-            promise->set_exception(exception);
-            record_task_timeout(
-                executor_name,
-                task_id,
+        if (keep_alive->ready.compare_exchange_strong(expected, true)) {
+            keep_alive->release_terminal();
+            keep_alive->promise.set_exception(exception);
+            keep_alive->self->record_task_timeout(
+                keep_alive->executor_name,
+                keep_alive->task_id,
                 "Priority async task timed out before execution",
                 exception);
         }
@@ -2740,9 +2833,9 @@ auto Executor::submit_priority_scheduled(
         auto exception = std::make_exception_ptr(
             std::runtime_error("Async executor rejected priority task submission"));
         bool expected = false;
-        if (promise_ready->compare_exchange_strong(expected, true)) {
-            release_terminal();
-            promise->set_exception(exception);
+        if (cell->ready.compare_exchange_strong(expected, true)) {
+            cell->release_terminal();
+            cell->promise.set_exception(exception);
             record_submit_rejected(
                 executor_name,
                 task_id,
@@ -3173,7 +3266,10 @@ std::vector<std::future<void>> Executor::submit_batch_priority(
     futures.reserve(tasks.size());
 
     for (const auto& task : tasks) {
-        futures.push_back(submit_priority(priority, task));
+        // 0.7.2 起直接走共享实现：submit_priority 已移除，batch 变体
+        // 经同一 submit_priority_scheduled 路径，行为不变。
+        futures.push_back(submit_priority_scheduled(
+            priority, std::nullopt, nullptr, task));
     }
 
     return futures;
@@ -3256,6 +3352,38 @@ auto Executor::submit_gpu(const std::string& executor_name,
         throw std::runtime_error("GPU executor '" + executor_name + "' not found. Call register_gpu_executor() first.");
     }
     return executor->submit_kernel(std::forward<KernelFunc>(kernel), config);
+}
+
+// 0.7.2 §4.2：带 stream 完成计时的 GPU 提交。仅对
+// supports_completion_timing() == true 的执行器有意义（否则照常提交、
+// sink 不被调用——调用方应先查询能力）；每提交恰好交付一条
+// GpuKernelTimingRecord（提交侧失败也交付 success == false）。
+template<typename KernelFunc>
+auto Executor::submit_gpu(const std::string& executor_name,
+                         KernelFunc&& kernel,
+                         const gpu::GpuTaskConfig& config,
+                         IGpuExecutor::KernelTimingSink timing_sink)
+    -> std::future<void> {
+    auto executor = manager_->get_gpu_executor_snapshot(executor_name);
+    if (!executor) {
+        const std::string message =
+            "submit_gpu: no GPU executor registered with name " + executor_name;
+        record_submit_rejected(executor_name, "facade_submit_gpu", message);
+        throw std::runtime_error("GPU executor '" + executor_name + "' not found. Call register_gpu_executor() first.");
+    }
+    std::function<void(void*)> kernel_func;
+    if constexpr (std::is_invocable_v<KernelFunc, void*>) {
+        kernel_func = [kernel = std::forward<KernelFunc>(kernel)](void* stream) mutable {
+            kernel(stream);
+        };
+    } else {
+        kernel_func = [kernel = std::forward<KernelFunc>(kernel)](void* stream) mutable {
+            (void)stream;
+            kernel();
+        };
+    }
+    return executor->submit_kernel_with_timing(std::move(kernel_func), config,
+                                               std::move(timing_sink));
 }
 
 template<typename F, typename... Args>
@@ -3530,6 +3658,63 @@ std::future<void> Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction> tas
     try {
         auto gpu_config = task.gpu_config();
         if (feedback_enabled) {
+            // 0.7.2 §4.2：执行器支持 stream 完成回调计时时走计时提交——
+            // execution_duration 观测至 stream 完成点（async kernel 不再
+            // 只测到 launch 为止），queue_wait 含执行器内部队列等待。
+            // 不支持的执行器回落到既有 host 侧包装（sync 任务仍精确）。
+            const bool stream_timing = [this, &gpu_name]() {
+                auto gpu_executor = manager_->get_gpu_executor_snapshot(gpu_name);
+                return gpu_executor && gpu_executor->supports_completion_timing();
+            }();
+            if (stream_timing) {
+                struct GpuTimingFeedbackState {
+                    std::string task_id;
+                    std::string executor_name;
+                    QosClass qos;
+                    int64_t submit_ns;
+                    int64_t deadline_ns;
+                };
+                auto timing_state = std::make_shared<GpuTimingFeedbackState>(
+                    GpuTimingFeedbackState{task_name, gpu_name, options.qos,
+                                           submit_ns, deadline_ns});
+                IGpuExecutor::KernelTimingSink timing_sink =
+                    [this, timing_state](const gpu::GpuKernelTimingRecord& record) {
+                        SchedulingFeedback feedback;
+                        feedback.task_id = timing_state->task_id;
+                        feedback.qos = timing_state->qos;
+                        feedback.backend = ExecutionBackend::Gpu;
+                        feedback.executor_name = timing_state->executor_name;
+                        feedback.queue_wait_ns =
+                            record.start_ns > 0
+                                ? record.start_ns - timing_state->submit_ns
+                                : 0;
+                        feedback.had_deadline = timing_state->deadline_ns > 0;
+                        feedback.deadline_missed =
+                            timing_state->deadline_ns > 0 &&
+                            record.start_ns > timing_state->deadline_ns;
+                        feedback.success = record.success;
+                        feedback.failure_kind =
+                            record.success ? FailureKind::None
+                                           : FailureKind::GpuFailure;
+                        // execution_duration 至 stream 完成点；completion
+                        // 未知（0，转交通道异常/执行器停止）或提交失败时
+                        // 按聚合口径记 0——"未知"，不是"快"。
+                        feedback.execution_duration_ns =
+                            (record.success && record.completion_ns > 0 &&
+                             record.start_ns > 0)
+                                ? record.completion_ns - record.start_ns
+                                : 0;
+                        report_scheduling_feedback(feedback);
+                    };
+                // 泛型转发包装：GPU callable 可为 (void* stream) 或无参
+                // 形态，包装按执行器的调用形态原样转发。
+                return submit_gpu(
+                    gpu_name,
+                    [inner = std::move(task).take_gpu()](auto&&... args) mutable {
+                        inner(std::forward<decltype(args)>(args)...);
+                    },
+                    gpu_config, std::move(timing_sink));
+            }
             // 泛型转发包装：GPU callable 可为 (void* stream) 或无参形态，
             // 包装按执行器的调用形态原样转发。
             return submit_gpu(

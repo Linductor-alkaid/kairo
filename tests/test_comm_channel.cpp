@@ -251,6 +251,9 @@ TEST(CommChannelTest, DropOldestKeepsNewerValuesAndCountsDrop) {
     EXPECT_EQ(channel.stats().dropped_count, 1U);
 }
 
+// NN-09（0.7.2 §4.3）：KeepLatest 饱和置换修正为滚动窗口——只逐出最旧
+// 一条，保留最新 capacity 条（含新值）；每逐出一条计一次 overwrite。
+// 旧行为（丢弃整个队列内容、坍缩为最新 1 条）由 LatestMailbox 承担。
 TEST(CommChannelTest, KeepLatestOverwritesBufferedValues) {
     MpscChannel<int> channel(options(2, DropPolicy::KeepLatest));
 
@@ -259,6 +262,8 @@ TEST(CommChannelTest, KeepLatestOverwritesBufferedValues) {
     EXPECT_TRUE(channel.try_send(3));
 
     int value = 0;
+    EXPECT_TRUE(channel.try_receive(value));
+    EXPECT_EQ(value, 2);
     EXPECT_TRUE(channel.try_receive(value));
     EXPECT_EQ(value, 3);
     EXPECT_FALSE(channel.try_receive(value));

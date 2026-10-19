@@ -24,6 +24,13 @@ std::string invalid_stream_message(int stream_id) {
     return "CudaExecutor: stream_id " + std::to_string(stream_id) + " is invalid or destroyed";
 }
 
+// 0.7.2 §4.2：steady 时钟纳秒时点（GPU 计时统一口径）。
+int64_t steady_now_ns() noexcept {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
 struct StreamCallbackContext {
     std::function<void()> callback;
 };
@@ -59,6 +66,10 @@ CudaExecutor::CudaExecutor(const std::string& name, const GpuExecutorConfig& con
     , default_stream_(nullptr)
 #endif
 {
+    // 0.7.2 §4.2：计时转交状态接线（回调经 alive 门控触碰这些成员，
+    // alive 在 finalize_timing 先于析构翻 false）。
+    timing_state_->worker_cv = &queue_not_empty_cv_;
+    timing_state_->worker_queue_mutex = &queue_mutex_;
     if (!validate_config()) {
         return;
     }
@@ -427,6 +438,7 @@ void CudaExecutor::fail_all_queued_tasks(const std::string& message) {
     // 任务永远无人消费——逐个 set_exception 落终态并唤醒排空等待者，
     // 否则 stop() → wait_for_completion() 在 queue_drained_cv_ 上永久挂死。
     std::exception_ptr eptr = std::make_exception_ptr(std::runtime_error(message));
+    std::vector<std::unique_ptr<TimingContext>> failed_timings;
     {
         std::lock_guard<std::mutex> lock(queue_mutex_);
         while (!task_queue_.empty()) {
@@ -436,7 +448,18 @@ void CudaExecutor::fail_all_queued_tasks(const std::string& message) {
             if (task.promise) {
                 task.promise->set_exception(eptr);
             }
+            if (task.timing_ctx) {
+                // 0.7.2 §4.2：未执行的计时提交也交付一条失败记录（锁外
+                // 交付，sink 不得持有 queue_mutex_）。
+                task.timing_ctx->record.success = false;
+                task.timing_ctx->record.completed_on_stream = false;
+                task.timing_ctx->record.completion_ns = steady_now_ns();
+                failed_timings.push_back(std::move(task.timing_ctx));
+            }
         }
+    }
+    for (auto& timing : failed_timings) {
+        deliver_timing_record(std::move(timing));
     }
     queue_drained_cv_.notify_all();
 }
@@ -445,7 +468,55 @@ void CudaExecutor::stop() {
     (void)stop_and_join();
 }
 
+void CudaExecutor::stop(gpu::GpuStopMode mode) {
+    // CR-154：Drain = 既有排空路径；Cancel = 未取出任务以 ExecutorStopping
+    // 落终态后收尾（正在执行的 kernel 不中断）。自停（worker 内调用）经
+    // stop_and_join 的自停分支只请求停止——模式由后续外部收尾调用兑现，
+    // 见 stop_and_join 文档。
+    (void)stop_and_join(mode == gpu::GpuStopMode::Cancel);
+}
+
+void CudaExecutor::cancel_queued_tasks() {
+    std::vector<std::unique_ptr<TimingContext>> failed_timings;
+    size_t cancelled = 0;
+    const auto stopping = std::make_exception_ptr(ExecutorStopping(
+        "CudaExecutor stopped before queued kernel execution (GpuStopMode::Cancel)"));
+    {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+        while (!task_queue_.empty()) {
+            auto& top = const_cast<GpuQueuedTask&>(task_queue_.top());
+            GpuQueuedTask task = std::move(top);
+            task_queue_.pop();
+            if (task.promise) {
+                task.promise->set_exception(stopping);
+            }
+            if (task.timing_ctx) {
+                // 每提交恰一条计时记录：取消路径交付 success == false。
+                task.timing_ctx->record.success = false;
+                task.timing_ctx->record.completed_on_stream = false;
+                task.timing_ctx->record.completion_ns = steady_now_ns();
+                failed_timings.push_back(std::move(task.timing_ctx));
+            }
+            ++cancelled;
+        }
+    }
+    for (auto& timing : failed_timings) {
+        deliver_timing_record(std::move(timing));
+    }
+    if (cancelled > 0) {
+        failed_kernels_.fetch_add(cancelled, std::memory_order_relaxed);
+        set_last_error("CudaExecutor stopped: cancelled " +
+                       std::to_string(cancelled) + " queued kernel task(s)");
+    }
+    queue_not_full_cv_.notify_all();
+    queue_drained_cv_.notify_all();
+}
+
 bool CudaExecutor::stop_and_join() {
+    return stop_and_join(false);
+}
+
+bool CudaExecutor::stop_and_join(bool cancel_queued) {
     std::thread joiner;
     {
         std::lock_guard<std::mutex> stop_lock(stop_mutex_);
@@ -480,6 +551,12 @@ bool CudaExecutor::stop_and_join() {
     queue_not_empty_cv_.notify_all();
     queue_not_full_cv_.notify_all();
 
+    // CR-154：Cancel 模式在等待排空前取消未取出的任务——worker 随后
+    // 看到空队列 + !is_running_ 即退出。
+    if (cancel_queued) {
+        cancel_queued_tasks();
+    }
+
     wait_for_completion();
 
     queue_not_empty_cv_.notify_all();
@@ -489,6 +566,10 @@ bool CudaExecutor::stop_and_join() {
         worker_joined_ = true;
         worker_id_ = std::thread::id{};
         worker_started_.store(false, std::memory_order_release);
+        // 0.7.2 §4.2：worker 已退出，先于析构关停计时转交通道并排空
+        // 残余上下文（逐条交付 completion_ns == 0 记录）。此后晚到的
+        // 驱动回调读 alive == false 自弃，不再触碰执行器成员。
+        finalize_timing();
     }
     return true;
 }
@@ -1427,24 +1508,44 @@ void CudaExecutor::worker_thread_func() {
 
 #ifdef KAIRO_ENABLE_CUDA
     while (true) {
+        // 计时模式下等待谓词须覆盖转交队列：完成记录由驱动回调经
+        // TimingHandoffState 抵达并 notify queue_not_empty_cv_（仅当
+        // alive==true 时通知，见 timing_host_callback——alive 在
+        // stop_and_join 的 finalize_timing 内先于析构翻 false，晚到
+        // 回调不会触碰执行器成员）。锁序恒为 queue_mutex_ → 转交
+        // mutex（回调/finalize 只取后者），无反向。
+        const auto timing_pending = [this]() {
+            if (!timing_armed_.load(std::memory_order_acquire)) {
+                return false;
+            }
+            std::lock_guard<std::mutex> tlock(timing_state_->mutex);
+            return !timing_state_->pending.empty();
+        };
         GpuQueuedTask task;
         {
             std::unique_lock<std::mutex> lock(queue_mutex_);
-            while (task_queue_.empty() && is_running_.load()) {
+            while (task_queue_.empty() && is_running_.load() && !timing_pending()) {
                 queue_not_empty_cv_.wait(lock);
             }
             if (!is_running_.load() && task_queue_.empty()) {
                 break;
             }
             if (task_queue_.empty()) {
-                continue;
+                continue;  // 无任务但有计时记录待交付 → 本轮顶部排空
             }
-            task = task_queue_.top();
+            // timing_ctx（unique_ptr）使 GpuQueuedTask move-only：top()
+            // 返回 const 引用，须经 const_cast 移走（与
+            // fail_all_queued_tasks 同款）。
+            auto& top = const_cast<GpuQueuedTask&>(task_queue_.top());
+            task = std::move(top);
             task_queue_.pop();
             active_kernels_++;
             queue_not_full_cv_.notify_one();
         }
+        // 计时交付在锁外：sink（用户反馈回调）不得持有 queue_mutex_。
+        drain_timing_records();
         run_one_task(task);
+        drain_timing_records();
         active_kernels_--;
         {
             std::lock_guard<std::mutex> lock(queue_mutex_);
@@ -1453,6 +1554,9 @@ void CudaExecutor::worker_thread_func() {
             }
         }
     }
+    // worker 退出前最后排空一次；alive 置 false 由 stop_and_join 的
+    // finalize_timing() 负责（外部 join 之后）。
+    drain_timing_records();
 #else
     (void)0;
 #endif
@@ -1462,6 +1566,26 @@ void CudaExecutor::run_one_task(GpuQueuedTask& task) {
 #ifdef KAIRO_ENABLE_CUDA
     auto start_time = std::chrono::high_resolution_clock::now();
     void* stream_ptr = nullptr;
+    // 0.7.2 §4.2：计时上下文随任务进入执行路径。失败守卫保证任何未成功
+    // 发起 kernel 的退出路径都以 success == false 交付记录；成功路径由
+    // stream 回调（async）或下方的显式交付（sync）负责。
+    std::unique_ptr<TimingContext> timing_ctx = std::move(task.timing_ctx);
+    struct TimingFailureGuard {
+        CudaExecutor& self;
+        std::unique_ptr<TimingContext> ctx;
+        bool handled = false;
+
+        ~TimingFailureGuard() {
+            if (ctx && !handled) {
+                // 未成功发起 kernel 的退出路径（含异常展开——deliver 为
+                // noexcept，展开期安全）：失败记录，完成时点取宿主时点。
+                ctx->record.success = false;
+                ctx->record.completed_on_stream = false;
+                ctx->record.completion_ns = steady_now_ns();
+                self.deliver_timing_record(std::move(ctx));
+            }
+        }
+    } timing_guard{*this, std::move(timing_ctx)};
     try {
         if (!ensure_device_context()) {
             set_last_error("CudaExecutor: ensure_device_context failed");
@@ -1476,6 +1600,9 @@ void CudaExecutor::run_one_task(GpuQueuedTask& task) {
         auto funcs = loader_->get_functions();
         auto execute_kernel = [&](cudaStream_t stream) {
             stream_ptr = static_cast<void*>(stream);
+            if (timing_guard.ctx) {
+                timing_guard.ctx->record.start_ns = steady_now_ns();
+            }
             task.kernel_func(stream_ptr);
             if (funcs.cudaGetLastError != nullptr) {
                 cudaError_t err = funcs.cudaGetLastError();
@@ -1488,6 +1615,29 @@ void CudaExecutor::run_one_task(GpuQueuedTask& task) {
                     return false;
                 }
             }
+            if (timing_guard.ctx && task.config.async) {
+                // async kernel：launch 已成功，装载 stream 完成探针。
+                // CR-153：回调只做时间戳 + 转交（见 timing_host_callback），
+                // 不在此等待完成。探针失败不影响 kernel 本身——降级为
+                // 宿主时点近似完成时点。
+                if (funcs.cudaLaunchHostFunc != nullptr) {
+                    const cudaError_t probe_err = funcs.cudaLaunchHostFunc(
+                        stream, &CudaExecutor::timing_host_callback,
+                        timing_guard.ctx.get());
+                    if (probe_err == cudaSuccess) {
+                        timing_guard.ctx.release();  // 所有权移交回调/转交链
+                        return true;
+                    }
+                    check_cuda_error(probe_err, "cudaLaunchHostFunc (timing probe)");
+                }
+                // 探针不可用/失败：以宿主时点近似（async launch 返回不
+                // 代表完成，记录 completed_on_stream == false 语义）。
+                timing_guard.ctx->record.completion_ns = steady_now_ns();
+                timing_guard.ctx->record.success = true;
+                deliver_timing_record(std::move(timing_guard.ctx));
+                timing_guard.handled = true;
+                return true;
+            }
             if (!task.config.async && funcs.cudaStreamSynchronize != nullptr && stream != nullptr) {
                 cudaError_t err = funcs.cudaStreamSynchronize(stream);
                 if (!check_cuda_error(err, "cudaStreamSynchronize")) {
@@ -1499,6 +1649,13 @@ void CudaExecutor::run_one_task(GpuQueuedTask& task) {
                 }
             } else if (!task.config.async && stream == nullptr) {
                 synchronize();
+            }
+            if (timing_guard.ctx) {
+                // 同步任务：cudaStreamSynchronize/synchronize 返回即完成。
+                timing_guard.ctx->record.completion_ns = steady_now_ns();
+                timing_guard.ctx->record.success = true;
+                deliver_timing_record(std::move(timing_guard.ctx));
+                timing_guard.handled = true;
             }
             return true;
         };
@@ -1554,22 +1711,161 @@ void CudaExecutor::run_one_task(GpuQueuedTask& task) {
 std::future<void> CudaExecutor::submit_kernel_impl(
     std::function<void(void*)> kernel_func,
     const GpuTaskConfig& config) {
-    
+    return enqueue_kernel(std::move(kernel_func), config, nullptr);
+}
+
+bool CudaExecutor::supports_completion_timing() const noexcept {
+#ifdef KAIRO_ENABLE_CUDA
+    return true;
+#else
+    return false;
+#endif
+}
+
+std::future<void> CudaExecutor::submit_kernel_with_timing(
+    std::function<void(void*)> kernel_func,
+    const GpuTaskConfig& config,
+    KernelTimingSink timing_sink) {
+    auto ctx = std::make_unique<TimingContext>();
+    ctx->sink = std::move(timing_sink);
+    ctx->record.submit_ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    ctx->record.stream_id = config.stream_id;
+    ctx->state = timing_state_;
+    return enqueue_kernel(std::move(kernel_func), config, std::move(ctx));
+}
+
+void CudaExecutor::deliver_timing_record(
+    std::unique_ptr<TimingContext> timing_ctx) noexcept {
+    if (!timing_ctx) {
+        return;
+    }
+    // sink 异常必须被隔离：反馈交付不得影响执行器线程（与
+    // report_scheduling_feedback 的异常隔离契约同型）。
+    try {
+        if (timing_ctx->sink) {
+            timing_ctx->sink(timing_ctx->record);
+        }
+    } catch (...) {
+    }
+}
+
+void CudaExecutor::drain_timing_records() {
+    if (!timing_state_) {
+        return;
+    }
+    while (true) {
+        TimingContext* raw = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(timing_state_->mutex);
+            if (timing_state_->pending.empty()) {
+                break;
+            }
+            raw = timing_state_->pending.front();
+            timing_state_->pending.pop_front();
+        }
+        // sink 在锁外执行：用户反馈回调不得持有转交队列的锁。
+        deliver_timing_record(std::unique_ptr<TimingContext>(raw));
+    }
+}
+
+void CudaExecutor::finalize_timing() noexcept {
+    if (!timing_state_) {
+        return;
+    }
+    std::deque<TimingContext*> leftover;
+    {
+        std::lock_guard<std::mutex> lock(timing_state_->mutex);
+        timing_state_->alive.store(false, std::memory_order_release);
+        leftover.swap(timing_state_->pending);
+    }
+    // 队列残余：完成时点不可得（completion_ns == 0 语义），仍逐条交付
+    // 以维持"每提交恰一条记录"。alive 已 false：并发回调只会自弃，不
+    // 会再入队；sink 在锁外执行。
+    while (!leftover.empty()) {
+        std::unique_ptr<TimingContext> dropped(leftover.front());
+        leftover.pop_front();
+        deliver_timing_record(std::move(dropped));
+    }
+}
+
+void CudaExecutor::timing_host_callback(void* user_data) noexcept {
+    // CR-153（roadmap §4.2）：本函数经 cudaLaunchHostFunc 在 CUDA 驱动
+    // 线程执行——回调内调用任何 CUDA API 都可能驱动级死锁。因此这里
+    // 只允许纯宿主操作：记录完成时点 + 把上下文转交给执行器 worker；
+    // 计时数据的消费（sink/用户反馈回调）一律不在本线程进行。
+    TimingContext* ctx = static_cast<TimingContext*>(user_data);
+    if (ctx == nullptr) {
+        return;
+    }
+    ctx->record.completion_ns = steady_now_ns();
+    ctx->record.completed_on_stream = true;
+    ctx->record.success = true;
+
+    const auto state = ctx->state;
+    bool handed_off = false;
+    if (state) {
+        bool notify_worker = false;
+        {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            // 双检在锁内完成：finalizer 同锁置 alive=false 并排空队列，
+            // 二者全序——要么本回调先入队（worker 稍后排空），要么
+            // alive 已 false（本回调自弃），不存在推入后无人认领的窗口。
+            if (state->alive.load(std::memory_order_relaxed)) {
+                state->pending.push_back(ctx);
+                handed_off = true;
+                notify_worker = true;
+            }
+        }
+        if (notify_worker) {
+            // 防丢失唤醒：notify 必须与 worker 等待谓词同锁（queue
+            // mutex）。alive==true 蕴含执行器成员仍有效（alive 在
+            // finalize_timing 翻 false，先于析构）；此处不持 timing
+            // 锁，与 worker 的 queue→timing 锁序无反向。
+            std::lock_guard<std::mutex> qlock(*state->worker_queue_mutex);
+            state->worker_cv->notify_all();
+        }
+    }
+    if (!handed_off) {
+        delete ctx;
+    }
+}
+
+std::future<void> CudaExecutor::enqueue_kernel(
+    std::function<void(void*)> kernel_func,
+    const GpuTaskConfig& config,
+    std::unique_ptr<TimingContext> timing_ctx) {
+
     auto promise = std::make_shared<std::promise<void>>();
     auto future = promise->get_future();
+
+    const auto fail_submission = [&](const std::string& message) {
+        if (timing_ctx) {
+            // 提交侧失败也交付一条记录（success == false），维持
+            // "每提交恰一条"的 sink 交付契约。
+            timing_ctx->record.success = false;
+            timing_ctx->record.completed_on_stream = false;
+            timing_ctx->record.completion_ns =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch())
+                    .count();
+            deliver_timing_record(std::move(timing_ctx));
+        }
+        promise->set_exception(std::make_exception_ptr(std::runtime_error(message)));
+    };
 
     if (!validate_gpu_config(config_)) {
         const auto message = gpu_config_validation_error(config_);
         set_last_error(message);
-        promise->set_exception(std::make_exception_ptr(
-            std::runtime_error("CudaExecutor invalid configuration: " + message)));
+        fail_submission("CudaExecutor invalid configuration: " + message);
         return future;
     }
 
     if (!is_available_ || !is_running_.load()) {
         set_last_error("CudaExecutor is not available or not running");
-        promise->set_exception(std::make_exception_ptr(
-            std::runtime_error("CudaExecutor is not available or not running")));
+        fail_submission("CudaExecutor is not available or not running");
         return future;
     }
 
@@ -1580,11 +1876,27 @@ std::future<void> CudaExecutor::submit_kernel_impl(
     if (task.config.priority < 0) task.config.priority = 0;
     if (task.config.priority > 3) task.config.priority = 3;
     task.promise = promise;
+    task.timing_ctx = std::move(timing_ctx);
+    if (task.timing_ctx) {
+        // 首次计时提交置位：worker 等待谓词据此覆盖转交队列（队列
+        // notify 已随本提交发生，无丢失唤醒窗口）。
+        timing_armed_.store(true, std::memory_order_release);
+    }
     task.submit_time_ns = std::chrono::steady_clock::now().time_since_epoch().count();
     if (task.config.stream_id != 0) {
         task.stream = get_stream(task.config.stream_id);
         if (!task.stream || !validate_stream(task.stream)) {
-            promise->set_exception(make_invalid_stream_exception_ptr(task.config.stream_id));
+            if (task.timing_ctx) {
+                task.timing_ctx->record.success = false;
+                task.timing_ctx->record.completed_on_stream = false;
+                task.timing_ctx->record.completion_ns =
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch())
+                        .count();
+                deliver_timing_record(std::move(task.timing_ctx));
+            }
+            promise->set_exception(
+                make_invalid_stream_exception_ptr(task.config.stream_id));
             return future;
         }
     }
@@ -1601,8 +1913,7 @@ std::future<void> CudaExecutor::submit_kernel_impl(
             // Shutdown happened while we were waiting for room. Return a
             // failed future without enqueuing.
             set_last_error("CudaExecutor: submit aborted because executor is stopping");
-            promise->set_exception(std::make_exception_ptr(
-                std::runtime_error("CudaExecutor: submit aborted because executor is stopping")));
+            fail_submission("CudaExecutor: submit aborted because executor is stopping");
             return future;
         }
         task_queue_.push(std::move(task));
@@ -1610,8 +1921,9 @@ std::future<void> CudaExecutor::submit_kernel_impl(
     queue_not_empty_cv_.notify_one();
     return future;
 #else
-    promise->set_exception(std::make_exception_ptr(
-        std::runtime_error("CudaExecutor: CUDA not enabled")));
+    (void)kernel_func;
+    (void)config;
+    fail_submission("CudaExecutor: CUDA not enabled");
     return future;
 #endif
 }

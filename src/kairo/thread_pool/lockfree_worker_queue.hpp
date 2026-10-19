@@ -34,7 +34,14 @@ public:
 
     bool push(const Task& task) {
         auto* task_ptr = new Task();
-        copy_task(*task_ptr, task);
+        // CR-023：字段拷贝（std::function）抛出时归还内存——调用方
+        // （dispatch 链路）有 catch-all 屏障，泄漏不应叠加在本队列上。
+        try {
+            copy_task(*task_ptr, task);
+        } catch (...) {
+            delete task_ptr;
+            throw;
+        }
         uintptr_t ptr = reinterpret_cast<uintptr_t>(task_ptr);
         if (!main_queue_.push(ptr)) {
             delete task_ptr;
@@ -45,7 +52,13 @@ public:
 
     bool push(Task&& task) {
         auto* task_ptr = new Task();
-        move_task(*task_ptr, std::move(task));
+        // CR-023：同上（move_task 的 std::function 移动赋值理论可抛）。
+        try {
+            move_task(*task_ptr, std::move(task));
+        } catch (...) {
+            delete task_ptr;
+            throw;
+        }
         uintptr_t ptr = reinterpret_cast<uintptr_t>(task_ptr);
         if (!main_queue_.push(ptr)) {
             delete task_ptr;
@@ -175,6 +188,10 @@ private:
                            std::memory_order_release);
     }
 
+    // CR-116（0.7.2 §4.3 P2 定性，契约注释）：本队列的丢弃经 on_timeout
+    // 以 runtime_error("Task discarded before execution") 逐任务结算；
+    // WorkerLocalQueue::clear() 则不做任务级结算（broken_promise）——
+    // 两种内部队列的丢弃终态契约不同，调用方各自按契约使用。
     static void discard_task(Task& task) noexcept {
         if (!task.on_timeout) {
             return;

@@ -7,11 +7,11 @@ aside: false
 
 # Content Maintenance
 
-This guide is complete when users can finish work and handle failure, not merely when every public API appears. The current baseline is `v0.7.1` plus the later `master` development; pending features are not stable-release commitments.
+This guide is complete when users can finish work and handle failure, not merely when every public API appears. The current baseline is `v0.7.2` plus the later `master` development; pending features are not stable-release commitments.
 
 <div class="maintenance-hero">
   <p class="maintenance-eyebrow">CURRENT BASELINE</p>
-  <p class="maintenance-version">v0.7.1 + master development</p>
+  <p class="maintenance-version">v0.7.2 + master development</p>
   <p>Recheck the responsible area whenever a stable tag, public API behavior, or tutorial example changes.</p>
 </div>
 

@@ -219,14 +219,28 @@ public:
     ThreadPoolStatus get_status() const;
 
     /**
+     * @brief 堆分配优化观测快照（0.7.2 §4.1：Task 节点池命中/未命中）
+     */
+    AllocationMetrics get_allocation_metrics() const;
+
+    /**
      * @brief 调整工作线程数量。
      *
      * 新数量必须位于初始化配置的 [min_threads, max_threads] 范围内。
      * 扩容会先发布新的本地队列，再启动新 worker；缩容会先迁移待执行任务，
      * 请求被移除的 worker 退出并完成 join，保证返回时状态已稳定。
      *
+     * 事务性（0.7.2 §4.3，CR-113）：全部可抛步骤（容量预留、线程创建）
+     * 先于首个不可逆变更完成；任一线程创建失败即整体回滚（回收未发布
+     * 线程）并返回 false，不留下"队列数 != worker 数"的半更新状态。
+     *
+     * 线程约束（CR-114）：worker 线程内的缩容返回 false——缩容需要 join
+     * 被移除的 worker，调用者自身可能就是被移除者（自 join 即
+     * system_error）。resize 是控制面操作，不得在 worker 任务内调用。
+     *
      * @param new_size 目标工作线程数量
-     * @return 成功完成调整返回 true；线程池未运行、超出范围或无调整返回 false
+     * @return 成功完成调整返回 true；线程池未运行、超出范围、无调整或
+     *         worker 线程内缩容返回 false
      */
     bool resize(size_t new_size);
 
@@ -236,6 +250,14 @@ public:
      * @param wait_for_tasks 是否等待所有任务完成（默认true）
      * @return Completed 表示外部调用者已完成关闭；RequestedFromWorker 表示
      *         当前 worker 仅请求关闭，未等待也未 join。
+     *
+     * @warning 无界阻塞（CR-115，0.7.2 §4.3 契约文档化）：本方法 join
+     *          所有 worker 线程且没有超时——存在永不返回的任务（无界
+     *          阻塞 I/O、死循环）时 shutdown() 与随后的析构都会无限期
+     *          阻塞。wait_for_tasks 只控制是否等待已接受任务执行完成，
+     *          不提供任何时间上界。提交方需自行保证任务可终结；"真正
+     *          有界的关停"（放弃 join + 诊断）需要 worker 侧协议改造，
+     *          属后续版本。
      */
     ShutdownResult shutdown(bool wait_for_tasks = true);
 

@@ -257,6 +257,12 @@ bool RealtimeThreadExecutor::stop_and_join() {
         util::admission_close(push_gate_);
         stopping_.store(true, std::memory_order_release);
         running_.store(false, std::memory_order_release);
+        // CR-054：打断周期等待线程的 sleep——持 cycle_wait_mutex_ 存标志
+        // 后 notify，wait_until 谓词复核无丢失唤醒，stop 延迟与周期解耦。
+        {
+            std::lock_guard<std::mutex> wait_lock(cycle_wait_mutex_);
+            cycle_cv_.notify_all();
+        }
         stop_cycle = config_.cycle_manager &&
                      cycle_manager_active_.load(std::memory_order_acquire);
         if (thread_.joinable()) {
@@ -427,8 +433,9 @@ void RealtimeThreadExecutor::simple_cycle_loop() {
         // 记录周期开始时间
         auto cycle_start = std::chrono::steady_clock::now();
 
-        // 执行周期回调函数
-        if (config_.cycle_callback) {
+        // 执行周期回调函数（CR-054：调用前复核 running_，自停止请求后
+        // 不再发起新一轮用户回调）
+        if (config_.cycle_callback && running_.load(std::memory_order_acquire)) {
             comm::RealtimeAllocationGuard allocation_guard(
                 name_, "cycle_callback", comm::RealtimeAllocationViolationPolicy::RecordOnly,
                 config_.enable_allocation_guard);
@@ -471,8 +478,16 @@ void RealtimeThreadExecutor::simple_cycle_loop() {
             }
         }
 
-        // 等待下一个周期（使用 sleep_until 实现精确周期控制）
-        std::this_thread::sleep_until(next_cycle_time);
+        // 等待下一个周期。CR-054：sleep_until 换成可中断的 cv 绝对等待
+        // ——stop 置 running_=false 后 notify，等待立即退出，stop 延迟
+        // 不再随周期线性增长（此前一个 500ms 周期的 stop 实测延迟约
+        // 80% 周期）。wait_until 与 sleep_until 同为绝对超时，周期相位
+        // 精度不变；谓词读取 running_（原子），stopper 在停机路径持
+        // cycle_wait_mutex_ 存标志后 notify，无丢失唤醒。
+        std::unique_lock<std::mutex> wait_lock(cycle_wait_mutex_);
+        cycle_cv_.wait_until(wait_lock, next_cycle_time, [this] {
+            return !running_.load(std::memory_order_acquire);
+        });
     }
 }
 
@@ -480,8 +495,9 @@ void RealtimeThreadExecutor::cycle_loop() {
     // 记录周期开始时间
     auto cycle_start = std::chrono::steady_clock::now();
 
-    // 执行周期回调函数
-    if (config_.cycle_callback) {
+    // 执行周期回调函数（CR-054：外部周期管理器可能在 stop 请求后仍投递
+    // 一次 tick——调用前复核 running_，自停止请求后不再发起用户回调）
+    if (config_.cycle_callback && running_.load(std::memory_order_acquire)) {
         comm::RealtimeAllocationGuard allocation_guard(
             name_, "cycle_callback", comm::RealtimeAllocationViolationPolicy::RecordOnly,
             config_.enable_allocation_guard);
@@ -527,6 +543,9 @@ void RealtimeThreadExecutor::process_tasks() {
             } catch (...) {
                 exception_handler_.handle_task_exception(name_, std::current_exception());
             }
+            // 0.7.2 §4.2 聚合反馈：已执行任务计数（含异常终态；relaxed，
+            // RT 线程内唯一写者，无分配）。
+            executed_task_count_.fetch_add(1, std::memory_order_relaxed);
         }
 
         // 释放回对象池
@@ -535,6 +554,18 @@ void RealtimeThreadExecutor::process_tasks() {
             break;
         }
     }
+}
+
+AggregateExecutionStats RealtimeThreadExecutor::get_aggregate_execution_stats() const {
+    AggregateExecutionStats stats;
+    stats.executed_count = executed_task_count_.load(std::memory_order_relaxed);
+    // 超预算口径 = 周期执行时间超过 cycle_period_ns 的次数（与
+    // get_status().cycle_timeout_count 同源）。
+    stats.over_budget_count =
+        static_cast<uint64_t>(cycle_timeout_count_.load(std::memory_order_relaxed));
+    stats.period_count =
+        static_cast<uint64_t>(cycle_count_.load(std::memory_order_relaxed));
+    return stats;
 }
 
 void RealtimeThreadExecutor::update_statistics(int64_t cycle_time_ns) {

@@ -76,7 +76,7 @@ Permanent listeners, blocking reads, polls, and protocol loops must not occupy t
 
 ## Priority, delay, and periodic work
 
-`submit_priority()` only changes selection among waiting work. It cannot preempt running low-priority work, guarantee a deadline or completion order, or prevent starvation caused by blocking work. Use a project-wide LOW/NORMAL/HIGH/CRITICAL mapping; if every caller uses critical, priority has no meaning.
+Priority (`submit_auto(TaskBuilder.priority())` as of 0.7.2; `submit_priority()` was removed) only changes selection among waiting work. It cannot preempt running low-priority work, guarantee a deadline or completion order, or prevent starvation caused by blocking work. Use a project-wide LOW/NORMAL/HIGH/CRITICAL mapping; if every caller uses critical, priority has no meaning.
 
 `submit_delayed(delay_ms, ...)` means “submit to the ordinary executor no earlier than this relative delay.” It suits retry backoff, deferred cleanup, and debouncing, not precise timing. A busy pool can delay it further. Its future remains the result/exception boundary.
 

@@ -120,6 +120,15 @@ public:
      */
     RealtimeExecutorStatus get_status() const override;
 
+    /**
+     * @brief 聚合级执行反馈快照（0.7.2 §4.2）
+     *
+     * executed_count = 累计已执行任务数；over_budget_count = 周期执行
+     * 超过 cycle_period_ns 的次数（同 get_status().cycle_timeout_count）；
+     * period_count = 已完成周期数。relaxed 原子快照，任意线程可调用。
+     */
+    AggregateExecutionStats get_aggregate_execution_stats() const override;
+
 private:
     /**
      * @brief 简单周期循环（内置默认实现）
@@ -194,6 +203,12 @@ private:
     // invoke a callback that calls stop_and_join().
     std::mutex stop_mutex_;
     std::condition_variable stop_completion_cv_;
+    // CR-054（0.7.2 §4.3）：内置周期循环的可中断等待。stop 路径持本锁
+    // 置 running_=false 后 notify，cycle 线程的 wait_until 立即退出——
+    // stop 延迟不再受一个完整周期约束。锁序：stop_mutex_ → cycle_wait_mutex_
+    //（cycle 线程只取后者，无反向）。
+    std::mutex cycle_wait_mutex_;
+    std::condition_variable cycle_cv_;
     std::atomic<bool> stopping_{false};
     bool stop_finalization_in_progress_{false};
     std::atomic<bool> cycle_manager_active_{false};
@@ -241,6 +256,9 @@ private:
     std::atomic<uint64_t> pool_exhausted_count_{0};
     std::atomic<uint64_t> queue_full_count_{0};
     std::atomic<uint64_t> cycle_manager_error_count_{0};
+    // 0.7.2 §4.2 聚合反馈：累计已执行任务数（RT 线程内 relaxed 计数，
+    // 无分配无回调；读侧经 get_aggregate_execution_stats()）。
+    std::atomic<uint64_t> executed_task_count_{0};
     // P-001 (260615): 构造时指定的统计开关, push_task() 路径不依赖此开关.
     const bool enable_stats_;
     

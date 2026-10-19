@@ -13,6 +13,7 @@
 
 // 包含 RealtimeThreadExecutor 的头文件
 #include <kairo/config.hpp>
+#include <kairo/comm/realtime_memory.hpp>
 #include <kairo/types.hpp>
 #include <kairo/interfaces.hpp>
 #define private public
@@ -791,7 +792,9 @@ bool test_realtime_atomic_stats_lock_free() {
 
     RealtimeThreadExecutor executor("test_executor", config);
     constexpr int kIterations = 10000;
-    constexpr int64_t kUpdateBudgetNs = 500;
+    // 500ns 预算仅在常规构建下断言（guard-ON 见下方 is_enabled 分支）。
+    const int64_t kUpdateBudgetNs =
+        kairo::comm::RealtimeAllocationGuard::is_enabled() ? -1 : 500;
     std::atomic<bool> writer_done(false);
     std::atomic<int64_t> elapsed_ns(0);
 
@@ -831,11 +834,20 @@ bool test_realtime_atomic_stats_lock_free() {
                 "Average cycle time should be recorded");
     TEST_ASSERT(status.max_cycle_time_ns == static_cast<double>(1000 + kIterations - 1),
                 "Max cycle time should track the largest integer sample");
-    TEST_ASSERT(per_update_ns < kUpdateBudgetNs,
-                "Average update_statistics time should stay below 500ns");
-
-    std::cout << "  Atomic stats lock-free path: PASSED (avg update "
-              << per_update_ns << "ns)" << std::endl;
+    if (kairo::comm::RealtimeAllocationGuard::is_enabled()) {
+        // NN-03（0.7.2 §4.2）：guard-ON 构建下全进程 operator new 走
+        // guard 记账（并发 get_status() 的 status 构造放大影响），
+        // 500ns 纯时延预算不再有意义——本测试的目的是无锁结构正确性
+        // （上方三个断言），时延断言仅在常规构建执行。
+        std::cout << "  Atomic stats lock-free path: PASSED (budget check "
+                     "skipped under realtime-allocation-guard build)"
+                  << std::endl;
+    } else {
+        TEST_ASSERT(per_update_ns < kUpdateBudgetNs,
+                    "Average update_statistics time should stay below 500ns");
+        std::cout << "  Atomic stats lock-free path: PASSED (avg update "
+                  << per_update_ns << "ns)" << std::endl;
+    }
     return true;
 }
 

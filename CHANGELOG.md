@@ -4,6 +4,115 @@
 
 ---
 
+## [0.7.2] - 2026-10-19
+
+优先级语义转移到调度器（roadmap §4.0，0.7.x 唯一破坏性变更）+
+堆分配优化阶段一（§4.1）+ 反馈覆盖扩展（§4.2）+ 生命周期可靠性
+收尾（§4.3）。设计记录见 `docs/design/scheduling_runtime.md`
+§14/§15 与 `docs/design/priority_refactoring_decision.md`。
+
+### 变更（Breaking，仅此一项）
+
+- **`Executor::submit_priority` 已移除**（0.7.2-rc1 曾标记
+  `[[deprecated]]`）：优先级是调度策略维度而非提交协议，统一经
+  `submit_auto(kairo::TaskBuilder(fn).priority(p))` 表达——与
+  QoS/deadline 共享同一 `IScheduler` 协议（`effective_priority_for()`
+  咨询、显式 priority 永不被覆盖）。调度顺序（priority → EDF → FIFO）
+  与 0.7.1 逐位一致：共享内部实现
+  `submit_priority_scheduled` 保留（供 facade 复用，非公共协议），
+  admission 与 `task_id`（`facade_submit_priority`）不变。
+- **`submit_batch_priority` 行为不变、内部改走共享实现**：不再经由
+  `submit_priority`（已移除），无弃用警告路径。
+- 内部层 `ThreadPool::submit_priority` / `try_submit_priority*` 不变。
+
+### 新增
+
+- **迁移脚本 `scripts/migrate_submit_priority.sh`**：自动改写
+  `submit_priority(P, callable)` 两参模式（整数字面量映射
+  `TaskPriority` 枚举，变量经 `static_cast`）；带额外绑定参数的调用
+  保留原样并逐条报告。`--dry-run` 预览。
+- **堆分配优化阶段一（roadmap §4.1）**：submit 主路径
+  **9 → 7 allocs/task（-22%）**、768 → **512 bytes/task（-33%）**。
+  ① Task 调度节点对象池（PriorityScheduler 内定容 256 Vyukov MPMC
+  空闲表，单元序号防 ABA，析构-重建严格重置协议；命中率实测串行
+  100%、并发 99.1%~100%，池满/池空自动回退堆分配，语义零变化）；
+  ② facade 提交路径单控制块整合（submit 与
+  submit_priority/submit_auto(TaskBuilder) 共享路径的 promise/ready、
+  提交上下文、admission 释放链、资源租约、move-only bind 结果并入
+  单次分配；包装层捕获从多字段降为单 shared_ptr/裸指针，包装层分配
+  5 → 2 次）。自动生效、用户无感知、无行为变化。独立验证：hotpath
+  吞吐 10 轮交错 p=1 +22.6%、p=2..16 容差内，TSAN 15/15 与 ASAN 6/6
+  零报告。实施记录与草案偏差清单见
+  `docs/design/allocation_optimization_proposal.md` §9。
+- **可观测性 API**：`AllocationMetrics`（types.hpp，Task 节点池命中/
+  未命中累计）；`Executor::get_allocation_metrics()` 与
+  `Executor::get_task_pool_hit_rate()`（默认池快照，未初始化返回零）；
+  `IAsyncExecutor::get_allocation_metrics()` 虚方法（additive，默认零）。
+- **反馈覆盖扩展（roadmap §4.2）**：measurement contract 扩展到
+  GPU / lockfree / realtime。① 聚合级执行反馈：`AggregateExecutionStats`
+  （executed/over_budget/period 累计计数）+
+  `IRealtimeExecutor::get_aggregate_execution_stats()`（默认零）+
+  `Executor::get_aggregate_execution_stats(name)` /
+  `get_all_aggregate_execution_stats()`；realtime 执行线程内仅
+  relaxed 原子计数（无逐任务回调、RT 无分配约束不破坏），lockfree
+  超预算计数经 opt-in `LockFreeTaskExecutor::set_execution_budget_ns()`
+  （默认 0 = 关闭计时）。② GPU stream 完成回调计时：`IGpuExecutor`
+  新增 `supports_completion_timing()` / `submit_kernel_with_timing()`
+  与 `gpu::GpuKernelTimingRecord`（每提交恰一条，completion_ns==0
+  语义为"未知"）；CudaExecutor async kernel 经 `cudaLaunchHostFunc`
+  探针观测完成点，回调内不做任何 CUDA 调用、计时数据转交执行器线程
+  后才调用 sink（CR-153 结构性履行）；`submit_gpu` 新增带 sink
+  overload，`submit_auto(CpuGpuTask)` 在 wants_feedback() 且执行器
+  支持时自动走计时路径（execution_duration 观测至 stream 完成点，
+  queue_wait 含执行器内部队列等待），不支持时回落既有 host 侧包装。
+  独立验证：新测试 19/19，全量回归 178/182（4 失败为预存 flaky，
+  A/B 定性），TSAN 零告警。实施记录见
+  `docs/design/scheduling_runtime.md` §15。
+
+### 修复（roadmap §4.3 生命周期可靠性收尾）
+
+- **CR-054**：实时线程内置循环的 stop 改为可中断等待（cv 绝对等待 +
+  stop 通知），stop 延迟不再随周期线性增长；自停止请求后不再发起新
+  一轮用户周期回调。
+- **CR-055**：BlockingIO 的用户 `wakeup()` 移出生命周期锁（重入不自
+  死锁）；并发 stop 新增终结栅栏，不再提前返回观测到未终结状态。
+- **CR-057**：SerialExecutionContext 新增 `reserve_guarded()` RAII 预留
+  句柄——未 publish 析构自动 abandon，预留永不 publish 不再能卡死整
+  个上下文的 FIFO 水位；修复 worker 线程内自析构的 terminate 隐患与
+  shutdown join 判定的数据竞争。
+- **CR-105**：`WorkerHandle` 经生命周期令牌作失效检测，facade 析构后
+  操作退化为无操作而非悬垂解引用。
+- **CR-113 / CR-114**：`ThreadPool::resize` 事务化（线程创建失败整体
+  回滚，不再留下队列数 ≠ worker 数的半更新状态）；worker 线程内缩容
+  显式拒绝（防自 join）。
+- **NN-09**：`DropPolicy::KeepLatest` 饱和语义修正为**滚动窗口**——
+  只逐出最旧一条（计一次 overwrite），保留最新 capacity 条含新值；
+  此前会丢弃整个队列内容。"坍缩为最新 1 条"的 mailbox 语义由
+  LatestMailbox 承担（行为变更，钉死旧行为的测试已同步更新）。
+- **CR-154**：GPU stop 语义显式化——`gpu::GpuStopMode{Drain, Cancel}`
+  + `IGpuExecutor::stop(mode)`；CUDA/OpenCL 的无参 `stop()` 保持各自
+  0.7.1 默认（排空 / 取消）。
+- **CR-023**：worker 队列 push 的字段拷贝抛出时归还 Task 内存（不再
+  泄漏）。
+- **CR-136**：`TimerOperationResult` 新增 `InternalError`（additive）——
+  定时器 request_cancel/reschedule 的内部异常不再伪装成 NotFound。
+- **CR-115 / CR-043/129 / CR-116/123/125/126/134**：契约文档化——
+  shutdown join 无超时明示（@warning）；Topic::publish 异常契约；
+  其余 P2 项定性注释落源码，结果回写评审文档。
+
+### 文档
+
+- `docs/MIGRATION.md` 新增 0.7.2 节（语义等价性说明、迁移模式表、
+  排查清单）；`docs/API.md` §3.2 改写为弃用注记 + TaskBuilder 示例；
+  website priority 教程（中英）全面改写，choosing-submit-api /
+  what-is-kairo / decisions / concurrency-antipatterns 同步新表达；
+  版本与迁移页（中英）新增 0.7.2 开发快照。示例（basic_submit、
+  tutorial/02_priority）与 facade 层测试调用（8 处）全部迁移。
+- **CI（NN-03）**：realtime-allocation-guard job 扩为 guard-ON 全量
+  构建 + realtime/lockfree/object_pool 套件（此前仅 guard 自身测试）。
+
+---
+
 ## [0.7.1] - 2026-10-14
 
 v0.7.1 全部四个阶段：submit_auto 路由智能化（roadmap §3.0.1 含

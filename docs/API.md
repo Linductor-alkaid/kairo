@@ -1,4 +1,4 @@
-# Kairo API 使用说明（v0.7.1）
+# Kairo API 使用说明（v0.7.2）
 
 本文档说明 `kairo` 库的主要 API、配置与类型，便于集成与扩展。完整接口定义见头文件 `include/kairo/`。
 
@@ -75,7 +75,10 @@ auto tracked = ex.submit_on_with_handle(context, [] { /* FIFO */ });
 ```
 
 `SerialExecutionContext` 使用单线程 FIFO 执行回调；任务仍先进入 facade admission，
-因此提交拒绝、异常和取消可在 kairo 状态中观察。`submit_on_with_handle` 返回的
+因此提交拒绝、异常和取消可在 kairo 状态中观察。预留侧提供 RAII 句柄
+`reserve_guarded()`（0.7.2 §4.3，CR-057）：未 `publish` 时析构自动 `abandon`，
+强制"要么 publish 要么 abandon"——裸 `reserve()` 的预留若永不发布/放弃会
+永久卡死 FIFO 水位，应优先使用 RAII 形态。`submit_on_with_handle` 返回的
 句柄可用于 `request_task_cancel()`。上下文关闭后新提交会以 `ExecutorStopping` 完成。
 
 派发与结算分离：池 worker 只执行有界非阻塞的 ticket 发布，不等待串行回调完成，
@@ -96,16 +99,41 @@ auto submit(F&& f, Args&&... args)
 - 提交到默认线程池，返回 `std::future`。
 - 支持任意可调用对象及参数，`future.get()` 获取返回值或异常。
 
-### 3.2 优先级提交
+#### 堆分配观测（0.7.2 §4.1）
 
 ```cpp
-template<typename F, typename... Args>
-auto submit_priority(int priority, F&& f, Args&&... args)
-    -> std::future<typename std::invoke_result<F, Args...>::type>;
+AllocationMetrics get_allocation_metrics() const;
+double get_task_pool_hit_rate() const;
 ```
 
-- `priority`：`0`=LOW，`1`=NORMAL，`2`=HIGH，`3`=CRITICAL（对应 `TaskPriority`）。
-- 高优先级任务优先被调度。
+- `AllocationMetrics{task_pool_hit_count, task_pool_miss_count}`：默认
+  池 Task 调度节点对象池（0.7.2 阶段一，submit 主路径
+  9 → 7 allocs/task、768 → 512 bytes/task）的累计命中/未命中计数。
+  诊断用途，relaxed 语义，无同步保证；未初始化或默认池不可用时为 0。
+- `get_task_pool_hit_rate()`：命中率 0.0-1.0（无提交历史时 0.0）。
+  稳态验收线 > 95%；实测约 99.96%。
+- 对象池自动生效、无需配置；池空/池满自动回退堆分配，行为与 0.7.1
+  逐位一致。自定义 `IAsyncExecutor` 后端可覆写
+  `get_allocation_metrics()`（默认返回零）接入观测。
+
+### 3.2 优先级提交
+
+> **0.7.2 起 `submit_priority` 已移除**（0.7.x 唯一破坏性变更）：优先级是
+> 调度策略维度而非提交协议，唯一入口是 `submit_auto(TaskBuilder)`。
+> 0.7.1 及之前的迁移见 `docs/MIGRATION.md` 0.7.2 节与
+> `scripts/migrate_submit_priority.sh`（自动改写脚本随库发布）。
+
+```cpp
+auto fut = executor.submit_auto(
+    kairo::TaskBuilder([]{ work(); }).priority(kairo::TaskPriority::HIGH));
+```
+
+- `TaskBuilder::priority()` 接受 `TaskPriority`（`LOW`/`NORMAL`/`HIGH`/`CRITICAL`，
+  整数值 0-3 与旧 API 一致）；显式 priority 永不被调度器覆盖。
+- 调度语义与 0.7.1 的 `submit_priority` 逐位一致：priority → EDF → FIFO，
+  经 `IScheduler::effective_priority_for()` 协议（QoS 默认映射、aging、
+  AdaptiveScheduler 动态映射在同一协议层生效）。
+- `submit_batch_priority(P, v)` 保留，内部改走共享实现，行为不变。
 
 ### 3.3 批量提交
 
@@ -576,7 +604,9 @@ TimerHandle submit_periodic_cancellable(int64_t period_ms,
   `TaskCancelled(Explicit)` 就绪）；到期派发后返回
   `CancellationRequestedAfterDispatch`，继续向排队/运行中的任务传播取消；
   重复取消幂等（`AlreadyCancelled`）；句柄过期或 Executor 已销毁返回 `NotFound`。
-  取消是生命周期事件，**不产生 failure 事件**。
+  取消是生命周期事件，**不产生 failure 事件**。操作内部的异常（如
+  bad_alloc）以新增的 `InternalError` 报告（0.7.2 §4.3，CR-136），不再
+  与 `NotFound` 混淆。
 - `reschedule_after(delay_ms)`：仅对 `Scheduled` 状态生效；一次性 timer 重排
   下一次到期，周期 timer 只改下一次到期时间、不改 `period_ms`。`delay_ms <= 0`
   返回 `InvalidDuration`。
@@ -637,7 +667,9 @@ size_t closure_graveyard_size() const;
 - **幂等与过期**：重复运行中取消返回 `AlreadyRequested`；终态句柄返回
   `AlreadyCompleted`；未知/失效句柄返回 `NotFound`。成功取消不产生
   `ExecutorFailureEvent`，也不计入 `ExecutorFailureStatus`。
-- **既有 API 不变**：`submit()` / `submit_priority()` 无句柄、不可取消；
+- **既有 API 不变**：`submit()` 与优先级提交（0.7.2 起
+  `submit_auto(TaskBuilder(...).priority(p))`，`submit_priority` 已移除）
+  均无句柄、不可取消；
   `submit_with_handle()` / `submit_after_with_handle()` 建立共享取消状态，
   天然支持排队取消（callable 不接收 token 时运行中取消只记录"已请求"）。
 - **registry 容量**：按句柄取消索引默认容量 65536（active 与终态 tombstone
@@ -658,7 +690,8 @@ size_t closure_graveyard_size() const;
 `ExecutorConfig::max_in_flight_tasks` 为 facade 默认异步提交提供总量上限：
 `0`（默认）不启用、零热路径开销；正值 N 表示该 Executor 实例已接纳未结算的
 提交（scheduler 全局队列 + worker 本地队列 + 执行中）至多 N 个。覆盖
-`submit`、`submit_with_handle`、`submit_priority`、`submit_after*`、
+`submit`、`submit_with_handle`、`submit_auto`（含
+`TaskBuilder::priority()` 优先级形态）、`submit_after*`、
 `submit_cancellable*`、`submit_batch*`、`submit_on*`；`submit_delayed*` /
 `submit_periodic*`（timer 派发）与 realtime / GPU / Blocking I/O / lockfree
 不在覆盖范围。直接使用 `ThreadPool` / `PriorityScheduler` 的调用方不受保护。
@@ -924,6 +957,10 @@ public:
     uint64_t exception_count() const;
     uint64_t rejected_empty_count() const;            // 空任务提交拒绝次数
     void set_exception_handler(std::function<void(std::exception_ptr)> handler);
+
+    // 0.7.2 §4.2 聚合级执行反馈
+    void set_execution_budget_ns(int64_t budget_ns) noexcept;  // opt-in 单任务执行预算；0=关闭（默认），负值按 0
+    AggregateExecutionStats get_aggregate_execution_stats() const; // {executed, over_budget, period=0}
 };
 ```
 
@@ -1372,6 +1409,10 @@ ExecutorSnapshot get_snapshot() const;
 std::string get_snapshot_text() const;
 void set_snapshot_diagnostic_callback(ExecutorSnapshotCallback callback);
 
+// 0.7.2 §4.2 聚合级执行反馈（lockfree / realtime 后端）
+AggregateExecutionStats get_aggregate_execution_stats(const std::string& executor_name) const;
+std::map<std::string, AggregateExecutionStats> get_all_aggregate_execution_stats() const;
+
 TaskStatistics get_task_statistics(const std::string& task_type) const;
 std::map<std::string, TaskStatistics> get_all_task_statistics() const;
 ```
@@ -1390,6 +1431,7 @@ std::map<std::string, TaskStatistics> get_all_task_statistics() const;
 - `get_cancellation_status`：取消生命周期独立计数（`request_count`、`queued_cancelled_count`、`running_request_count`、`completed_after_request_count`），不并入 `ExecutorFailureStatus`。
 - `closure_graveyard_size`：parked 超时闭包转入的延迟析构墓地当前规模（诊断观测）。规模以"parked 超时触发 + 竞争输家"次数为界，`shutdown()` 终局清空、facade 析构释放；长期高频超时的进程可借此观测常驻内存累积。
 - `get_timer_status_summary`：定时任务计数（`pending_count`、`executed_count`、`cancelled_count`），同样独立于 failure 体系。
+- `get_aggregate_execution_stats(name)` / `get_all_aggregate_execution_stats()`（0.7.2 §4.2）：lockfree / realtime 后端的聚合级执行反馈快照——`AggregateExecutionStats{executed_count, over_budget_count, period_count}`，全部为累计值，按自己的采样周期取差分即"周期内执行数 / 超预算次数"。relaxed 原子快照，任意线程可调用，不触碰执行线程、不产生逐任务回调；未知名称返回零值（"未知即宽容"）。realtime 的 over_budget/period 与 `get_realtime_executor_status` 的 cycle_timeout_count/cycle_count 同源；lockfree 的超预算计数需先 `set_execution_budget_ns()` 声明预算（见 §5.4）。
 
 ### 6.1 完整生命周期快照
 
@@ -1938,7 +1980,9 @@ latest-wins 覆盖；需要逐条消息时继续使用 `RealtimeChannel<T>`，�
 enum class TaskPriority { LOW = 0, NORMAL = 1, HIGH = 2, CRITICAL = 3 };
 ```
 
-与 `submit_priority(int priority, ...)` 的整型对应。
+整型值与 0.7.1 及之前 `submit_priority(int priority, ...)` 的参数对应
+（该 API 已在 0.7.2 移除）；0.7.2 起优先级经 `TaskBuilder::priority()`
+（接受本枚举）表达（见 §3.2）。
 
 ---
 
@@ -1957,11 +2001,20 @@ auto submit_gpu(const std::string& executor_name,
                KernelFunc&& kernel,
                const gpu::GpuTaskConfig& config)
     -> std::future<void>;
+
+// 0.7.2 §4.2：带 stream 完成回调计时的提交（见 §8.3）
+template<typename KernelFunc>
+auto submit_gpu(const std::string& executor_name,
+               KernelFunc&& kernel,
+               const gpu::GpuTaskConfig& config,
+               IGpuExecutor::KernelTimingSink timing_sink)
+    -> std::future<void>;
 ```
 
 - `register_gpu_executor`：按 `config.backend` 创建并注册 GPU 执行器；当前支持 `GpuBackend::CUDA` 和 `GpuBackend::OPENCL`。对应后端还需在编译时启用 `KAIRO_ENABLE_CUDA` / `KAIRO_ENABLE_OPENCL`，并且运行时设备、驱动和平台可用；否则创建或启动失败。
 - `register_gpu_executor` 返回可诊断结果，可区分 `InvalidConfig`、`DuplicateName`、`BackendUnavailable` 和 `StartFailed`。例如未编译对应后端、SYCL/HIP 尚未实现、运行时创建失败都会返回 `BackendUnavailable` 或更具体的启动失败信息。
 - `submit_gpu`：向指定 GPU 执行器提交 kernel；kernel 可为 `void()` 或 `void(void*)`（流句柄，CUDA 下为 `cudaStream_t`，OpenCL 下为 `cl_command_queue`）。
+- `submit_gpu(..., timing_sink)`（0.7.2 §4.2）：与 `submit_gpu` 等价，另以 `timing_sink` 逐提交交付一条 `gpu::GpuKernelTimingRecord`（提交侧失败也交付 `success == false` 的记录）。仅对 `supports_completion_timing() == true` 的执行器有意义（当前为 CUDA）；不支持的执行器照常提交、不调用 sink——建议先经 `IGpuExecutor*` 查询能力再选择路径。注入 `wants_feedback()` 的调度器后，`submit_auto(CpuGpuTask)` 的 GPU 分支会自动使用该通道产出 `SchedulingFeedback`（execution_duration 观测至 stream 完成点）。
 
 ### 8.2 查询与状态
 
@@ -1981,11 +2034,12 @@ gpu::GpuExecutorStatus get_gpu_executor_status(const std::string& name) const;
 - **批量执行**：`submit_kernels_batch`（一次性提交一组 kernel+config，返回等长 `std::vector<std::future<void>>`；关停时每个输入均保证返回一个 future——CUDA 侧已入队的 kernel 继续排空，OpenCL 侧未被 worker 取出的以 `ExecutorStopping` 就绪，见上文 stop() 队列契约）
 - **流**：`create_stream`、`destroy_stream`、`synchronize_stream`、`add_stream_callback`。`add_stream_callback` 当前仅支持 CUDA；调用前使用 `supports_stream_callback()` 查询，OpenCL 会返回 `false`，并在 `get_status().last_error_message` 中说明该能力尚未实现（计划通过 `cl_event` 轮询跟进）。
 - **执行**：`submit_kernel(kernel, config)`（返回 `std::future<void>`）、`synchronize`、`wait_for_completion`
+- **完成计时（0.7.2 §4.2）**：`supports_completion_timing()`（默认 `false`，CUDA 为 `true`）与 `submit_kernel_with_timing(kernel_func, config, sink)`。async kernel 的完成时点由 stream 完成回调观测——回调内不做任何 CUDA 调用（CR-153：驱动线程调 CUDA API 会死锁），计时数据转交到执行器线程后才调用 `sink`；sync（`async=false`）任务在 `cudaStreamSynchronize` 返回点交付。每提交恰好一条 `gpu::GpuKernelTimingRecord{submit_ns, start_ns, completion_ns, stream_id, success, completed_on_stream}`（全 steady 时钟纳秒）：launch 失败/执行异常/停止排空交付 `success == false` 或 `completion_ns == 0`；`completion_ns == 0` 语义为"完成时点不可得"，消费方不得按"耗时 0"解读。`sink` 在执行器线程调用且异常被隔离，应快速返回。
 - **状态**：`get_name`、`get_device_info`、`get_status`、`start`、`stop`
 
 CUDA 的 `stop()` 可被多个外部线程并发调用：其中一个调用方接管并等待 worker 线程，其余调用方安全返回。需要区分调用方时可直接使用 `CudaExecutor::stop_and_join()`；它在外部线程返回 `true`，在 CUDA worker 内调用时只请求停止并返回 `false`，外部线程随后必须调用一次 `stop_and_join()` 完成线程回收。自停止后的重新 `start()` 会在 worker 句柄被外部回收前被拒绝。
 
-`stop()` 的队列契约因后端而异：CUDA 会继续排空已入队的 kernel；OpenCL 会取消 `stop()` 开始时尚未被 worker 取出的 kernel。每个被取消的 OpenCL `std::future<void>` 都会就绪，`get()` 抛出 `kairo::ExecutorStopping`，而不会抛出 `std::future_error(broken_promise)`。取消会计入 OpenCL `GpuExecutorStatus::failed_kernels`，并将 `last_error_message` 更新为取消原因；已经由 worker 开始执行的 OpenCL kernel 正常完成或报告其自身执行错误。
+`stop()` 的队列契约因后端而异：CUDA 会继续排空已入队的 kernel；OpenCL 会取消 `stop()` 开始时尚未被 worker 取出的 kernel。0.7.2 §4.3（CR-154）起可用 `stop(gpu::GpuStopMode mode)` 显式选择语义：`Drain` = 已入队 kernel 执行至完成（原 CUDA 行为）；`Cancel` = 未开始的 kernel 以 `ExecutorStopping` 落终态（原 OpenCL 行为；正在执行的不中断）。无参 `stop()` 保持各后端历史默认（CUDA=Drain、OpenCL=Cancel）；接口默认实现等价 `stop()`，第三方实现不受影响。每个被取消的 OpenCL `std::future<void>` 都会就绪，`get()` 抛出 `kairo::ExecutorStopping`，而不会抛出 `std::future_error(broken_promise)`。取消会计入 OpenCL `GpuExecutorStatus::failed_kernels`，并将 `last_error_message` 更新为取消原因；已经由 worker 开始执行的 OpenCL kernel 正常完成或报告其自身执行错误。
 
 ### 8.4 配置与类型
 

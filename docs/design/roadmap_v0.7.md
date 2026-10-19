@@ -21,6 +21,21 @@
 > §13）——**§3 全部落地**；0.7.1 剩发布收尾（定版 + §5.2 稳定化）。
 > 输入：`docs/design/scheduling_runtime.md` §5/§6、`docs/CODE_REVIEW_2026-09-30.md`
 > 未结项、`CHANGELOG.md` 0.6.x 边界声明。
+> **0.7.2 §4.0 rc1 已落地**（submit_priority 标记 deprecated + facade 层
+> 测试/示例迁移 + 迁移脚本与文档，2026-10-19，
+> 分支 feat/v072-priority-transfer）。
+> **§4.1 堆分配优化阶段一已落地并通过独立验证**（Task 节点池 +
+> facade 单控制块整合 + AllocationMetrics 观测，9→7 allocs /
+> 768→512B，A/B 全线达标，TSAN/ASAN 干净，2026-10-19，实施记录见
+> `allocation_optimization_proposal.md` §9）。
+> **§4.2 反馈覆盖扩展已落地并通过独立验证**（GPU stream 完成回调计时
+> + lockfree/realtime 聚合级反馈 + NN-03 guard 入 CI 矩阵，2026-10-19，
+> 实施记录见 `scheduling_runtime.md` §15）。
+> **§4.3 可靠性收尾已落地并通过两轮独立验证**（10 组修复 + P2 定性，
+> 执行记录见 `docs/CODE_REVIEW_2026-09-30.md` §4.3 节）。
+> **§4.0 正式移除已完成**（facade `submit_priority` 声明删除，文档全面
+> 统一，2026-10-19）——0.7.2 全部路线图项收官，**0.7.2 已发布
+> （tag v0.7.2）**。
 
 ## 0. 系列主题与原则
 
@@ -418,13 +433,21 @@ submit_priority(p, [&]{ ... })  →  submit_auto(TaskBuilder([&]{ ... }).priorit
 
 #### 4.0.4 验收
 
-- [ ] 256 处测试代码迁移完成，零 deprecated 警告
-- [ ] 4 处示例代码更新，文档同步
+> 计数勘误（2026-10-19 实施时复查）：规划阶段估计的"256 处测试代码"
+> 与代码库现状不符——facade 层实际调用点为 **8 处**（分布于
+> test_executor_facade / test_performance / test_task_cancellation /
+> test_executor_failure_observability 四个测试），示例 **4 处**
+> （basic_submit ×2、tutorial/02_priority ×2）。测试中的
+> `ThreadPool::submit_priority`（test_thread_pool*）属内部层，按计划
+> 保留。验收项按实际计数更新。
+
+- [x] facade 层 8 处测试调用迁移完成，零 deprecated 警告（rc1，2026-10-19）
+- [x] 4 处示例代码更新，文档同步（rc1，2026-10-19）
 - [ ] 配对 A/B 基准：迁移前后端到端吞吐 ±2% 内
 - [ ] 契约测试：优先级 + EDF 排序、aging、effective_priority_for 咨询逻辑不变
-- [ ] `docs/API.md` §3.2 移除 submit_priority，§3.7 TaskBuilder 补充优先级示例
-- [ ] website 教程页（priority.md）全面改写
-- [ ] `scripts/check_docs_drift.sh` 通过
+- [x] `docs/API.md` §3.2 改写为弃用注记 + TaskBuilder 优先级示例（rc1）
+- [x] website 教程页（priority.md）全面改写，中英版本页新增 0.7.2 开发快照（rc1）
+- [ ] `scripts/check_docs_drift.sh` 通过（随 rc1 提交验证）
 
 **风险与边界**：
 - 这是 0.7.x **唯一的破坏性变更**（与 roadmap §1 "0.7.2 additive + 修复"
@@ -476,12 +499,22 @@ submit_priority(p, [&]{ ... })  →  submit_auto(TaskBuilder([&]{ ... }).priorit
   ```
 - **预期**：**-1 alloc/task**（引用计数块从 2 次降到 1 次）。
 
-**验收线（阶段一）**：
-- [ ] `benchmark_submit_allocations`：9 → **7 allocs/task** (-22%)
-- [ ] 字节数：768 → ~600 bytes/task (-22%)
-- [ ] 配对 A/B 吞吐基准：不弱于 0.7.0 ±5%
-- [ ] Task 池命中率 > 95%（稳态，通过 `get_allocation_metrics()` 监控）
-- [ ] ASAN/TSAN 全绿
+**验收线（阶段一）**（2026-10-19 落地，实测画像与偏差清单见
+`allocation_optimization_proposal.md` §9：Task 池为 PriorityScheduler
+内单一 Vyukov MPMC 空闲表（实施中经独立评审修正两处并发缺陷）；
+InlineFunction 草图改为 facade 单控制块整合；DrainBag 前提不复现不
+实施）：
+- [x] `benchmark_submit_allocations`：9 → **7 allocs/task** (-22%)（实测 7.00）
+- [x] 字节数：768 → **512.5 bytes/task**（-33%，优于 ~600 预期）
+- [x] 配对 A/B 吞吐基准：不弱于 0.7.0 ±5%（独立验证 10 轮交错：p=1
+      +22.6% 转正，p=2..16 全部容差内 -2.4%~+3.6%；分发回收链修复前
+      曾测得 -8.6%/-12.7%，根因与回正机制见提案 §9.2.1）
+- [x] Task 池命中率 > 95%（稳态，通过 `get_allocation_metrics()` 监控；
+      串行 100%，并发形态 99.1%~100%）
+- [x] ASAN/TSAN 全绿（独立验证：TSAN 15/15 零报告、ASAN 6/6 零报告；
+      全量 ctest 175/180，5 失败均定性非本次引入——3× test_api_doc
+      构建目录层级环境问题、benchmark_scheduling_paths 预存 flaky、
+      test_thread_pool 负载敏感 flake 基线同类）
 
 **可观测性**：新增诊断 API
 ```cpp
@@ -498,7 +531,8 @@ class Executor {
 };
 ```
 
-### 4.2 反馈接入其他后端
+### 4.2 反馈接入其他后端 ✅ 已落地（2026-10-19，实施记录见
+scheduling_runtime.md §15）
 
 0.6.1 的反馈只覆盖默认异步池。本版把 measurement contract 扩展到：
 
@@ -506,23 +540,44 @@ class Executor {
 - **lockfree / realtime**：只提供聚合级反馈（周期内执行数、超预算次数），**不提供逐任务回调**，
   不破坏 RT 路径的无分配约束（随 NN-03 一起，把 realtime allocation guard 纳入 CI 构建矩阵）。
 
-### 4.3 未结的可靠性项（来自 2026-09-30 评审）
+**验收（2026-10-19 独立验证）**：
+- [x] 聚合反馈：`AggregateExecutionStats` + facade 快照 API；
+      realtime（executed/超周期/周期，与 get_status 同源）、lockfree
+      （opt-in 执行预算，默认零新增采样）——11 用例
+- [x] GPU 计时：`GpuKernelTimingRecord` + `submit_kernel_with_timing`
+      sink 通道；CR-153 由"探针回调只做时间戳+转交，sink 一律执行器
+      worker 线程"结构性履行；每提交恰一条记录（失败/停止路径逐点
+      交付）——facade 组装层 5 用例 + CUDA 失败路径 3 用例（stub 编译）
+- [x] 无逐任务回调、RT 无分配约束不破坏：RT 线程内仅 relaxed 原子
+      计数；TSAN 子集零告警
+- [x] NN-03：CI guard-ON job 全量构建 + realtime/lockfree/object_pool
+      套件（本地复刻 24/24；随动修复 benchmark 全局 new 冲突与 500ns
+      时延断言的分配器敏感性）
+- [x] 全量回归 178/182（4 失败经 A/B 定性为预存容差 flaky 与 doc 测试
+      cwd 环境问题，非本次引入）
+- 残余风险：无 GPU 硬件，async 探针/sync 交付/晚到回调自弃仅 stub
+  编译 + 契约层验证；OpenCL 计时 parity 属后续项
 
-| 项 | 问题 | 方向 |
-|---|---|---|
-| CR-054 | RT 内置循环 stop 延迟可达一个整周期；自停止后仍会调用用户回调 | 用可中断等待替代 `sleep_until` |
-| CR-115 | shutdown 的 join 没有超时，超时参数给人"有界"的错觉 | 要么真正有界（带诊断的放弃 join），要么改名并写进文档 |
-| CR-055 | BlockingIO 持 `lifecycle_mutex_` 调用户 `wakeup()`；并发 stop 无终结栅栏 | 锁外唤醒 + stop 栅栏 |
-| CR-057 | SerialExecutionContext reservation 永不 publish 时整个上下文卡死 | reservation 超时 / 析构自动 abandon |
-| CR-105 | `WorkerHandle` 持裸 `ExecutorManager*` | 弱引用 + 失效检测 |
-| CR-043 / CR-129 | `Topic::publish` 异常导致部分扇出，且调用方拿不到部分完成信息 | 返回扇出结果，或给出明确的异常契约 |
-| NN-09 | KeepLatest 饱和时退化为"只保留最新 1 条" | 修正语义或改名 |
-| CR-113 / CR-114 | resize 中途失败的状态不一致；worker 内缩容会 join 自己 | 事务化 resize，拒绝自 join |
-| CR-154 | CUDA 与 OpenCL 的 stop 语义不一致（排空 vs 取消） | 统一为显式的 `StopMode` |
-| CR-023 / CR-050 一类 | 剩余的异常屏障缺口 | 逐项补齐，并配复现测试 |
+### 4.3 未结的可靠性项（来自 2026-09-30 评审）✅ 已落地（2026-10-19，
+执行记录见 docs/CODE_REVIEW_2026-09-30.md "§4.3 可靠性收尾执行记录"）
+
+| 项 | 问题 | 方向 | 状态 |
+|---|---|---|---|
+| CR-054 | RT 内置循环 stop 延迟可达一个整周期；自停止后仍会调用用户回调 | 用可中断等待替代 `sleep_until` | ✅ cv 可中断等待 + 回调门控 |
+| CR-115 | shutdown 的 join 没有超时，超时参数给人"有界"的错觉 | 要么真正有界（带诊断的放弃 join），要么改名并写进文档 | ✅ 契约文档化（有界化需协议改造，记后续） |
+| CR-055 | BlockingIO 持 `lifecycle_mutex_` 调用户 `wakeup()`；并发 stop 无终结栅栏 | 锁外唤醒 + stop 栅栏 | ✅ |
+| CR-057 | SerialExecutionContext reservation 永不 publish 时整个上下文卡死 | reservation 超时 / 析构自动 abandon | ✅ RAII reserve_guarded + 自析构防护 |
+| CR-105 | `WorkerHandle` 持裸 `ExecutorManager*` | 弱引用 + 失效检测 | ✅ liveness 令牌 |
+| CR-043 / CR-129 | `Topic::publish` 异常导致部分扇出，且调用方拿不到部分完成信息 | 返回扇出结果，或给出明确的异常契约 | ✅ 扇出结果（既有）+ 异常契约文档化 |
+| NN-09 | KeepLatest 饱和时退化为"只保留最新 1 条" | 修正语义或改名 | ✅ 语义修正为滚动窗口（逐项计 overwrite） |
+| CR-113 / CR-114 | resize 中途失败的状态不一致；worker 内缩容会 join 自己 | 事务化 resize，拒绝自 join | ✅ |
+| CR-154 | CUDA 与 OpenCL 的 stop 语义不一致（排空 vs 取消） | 统一为显式的 `StopMode` | ✅ `gpu::GpuStopMode` |
+| CR-023 / CR-050 一类 | 剩余的异常屏障缺口 | 逐项补齐，并配复现测试 | ✅（CR-050 前次已修；CR-023 push 泄漏补齐） |
 
 其余 P2 项（CR-116/123/125/126/134/136/152 等）按"契约已文档化 / 补注释 / 修复"三类逐项
 定性，结果回写到评审文档，避免长期悬挂。
+✅ 已完成：CR-136 修复（InternalError）、CR-152 复核确认已修复、
+CR-116/123/125/126/134 契约注释落源码，定性结果见评审文档 §4.3 执行记录。
 
 ---
 

@@ -166,6 +166,16 @@ public:
     }
 
     /**
+     * @brief 堆分配优化观测快照（0.7.2 §4.1，additive）
+     *
+     * 默认实现返回全零（未实现节点池/未接入观测的后端）。计数为
+     * 进程累计值；诊断用途，无同步语义。
+     */
+    virtual AllocationMetrics get_allocation_metrics() const {
+        return AllocationMetrics{};
+    }
+
+    /**
      * @brief 等待所有任务完成
      */
     virtual void wait_for_completion() = 0;
@@ -579,6 +589,16 @@ public:
      * @return 实时执行器状态
      */
     virtual RealtimeExecutorStatus get_status() const = 0;
+
+    /**
+     * @brief 聚合级执行反馈快照（0.7.2 §4.2）。
+     *
+     * 累计计数的 relaxed 原子快照，任意线程可调用，RT 线程无感知。
+     * 默认实现返回零值（后端未接入聚合反馈时"未知即宽容"）。
+     */
+    virtual AggregateExecutionStats get_aggregate_execution_stats() const {
+        return AggregateExecutionStats{};
+    }
 };
 
 /**
@@ -645,7 +665,7 @@ public:
 
     /**
      * @brief 提交 GPU kernel 任务
-     * 
+     *
      * @tparam KernelFunc GPU kernel 函数类型
      * @param kernel GPU kernel 函数（类型擦除，通过回调执行）
      * @param config GPU 任务配置
@@ -654,6 +674,34 @@ public:
     template<typename KernelFunc>
     auto submit_kernel(KernelFunc&& kernel, const gpu::GpuTaskConfig& config)
         -> std::future<void>;
+
+    /** @brief stream 完成计时回调（0.7.2 §4.2）。在执行器线程被调用
+     *  （完成时点数据一律经转交通道离开驱动回调线程，见
+     *  CudaExecutor 的 CR-153 注释）；实现方负责隔离回调异常，回调自身
+     *  应快速返回。每提交恰好交付一条记录（不可得时 completion_ns == 0）。 */
+    using KernelTimingSink =
+        std::function<void(const gpu::GpuKernelTimingRecord&)>;
+
+    /**
+     * @brief 是否支持 stream 完成回调计时（0.7.2 §4.2）。
+     *
+     * 仅返回 true 的执行器保证 submit_kernel_with_timing 的 sink 会被
+     * 逐提交交付；调用方应先查询本方法再选择计时提交路径。
+     */
+    virtual bool supports_completion_timing() const noexcept { return false; }
+
+    /**
+     * @brief 提交 GPU kernel 并逐提交交付完成计时（0.7.2 §4.2）。
+     *
+     * 与 submit_kernel 等价，另以 timing_sink 交付 GpuKernelTimingRecord
+     * （每提交恰好一条；提交侧失败也交付 success == false 的记录）。
+     * 默认实现不支持计时：照常提交、不调用 sink——调用方经
+     * supports_completion_timing() 区分，不依赖此回退。
+     */
+    virtual std::future<void> submit_kernel_with_timing(
+        std::function<void(void*)> kernel_func,
+        const gpu::GpuTaskConfig& config,
+        KernelTimingSink timing_sink);
 
     /**
      * @brief 批量提交 GPU kernel 任务
@@ -887,6 +935,20 @@ public:
     virtual void stop() = 0;
 
     /**
+     * @brief 以显式模式停止（0.7.2 §4.3，CR-154）
+     *
+     * Drain：已入队 kernel 执行至完成；Cancel：未开始的 kernel 以
+     * ExecutorStopping 落终态（正在执行的不中断）。默认实现忽略模式、
+     * 等价 stop()——保持第三方实现与 0.7.1 行为不变；库内 CUDA/OpenCL
+     * 执行器各自覆写。无参 stop() 的默认语义 = 各后端历史行为
+     * （CUDA=Drain，OpenCL=Cancel）。
+     */
+    virtual void stop(gpu::GpuStopMode mode) {
+        (void)mode;
+        stop();
+    }
+
+    /**
      * @brief 等待所有任务完成
      */
     virtual void wait_for_completion() = 0;
@@ -1063,6 +1125,15 @@ inline std::vector<std::future<void>> IGpuExecutor::submit_kernels_batch(
         result.push_back(submit_kernel_impl(p.first, p.second));
     }
     return result;
+}
+
+// 0.7.2 §4.2：默认不支持计时的后端照常提交，不调用 sink。
+inline std::future<void> IGpuExecutor::submit_kernel_with_timing(
+    std::function<void(void*)> kernel_func,
+    const gpu::GpuTaskConfig& config,
+    KernelTimingSink timing_sink) {
+    (void)timing_sink;
+    return submit_kernel_impl(std::move(kernel_func), config);
 }
 
 template<typename KernelFunc>

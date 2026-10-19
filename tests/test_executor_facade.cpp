@@ -178,7 +178,7 @@ bool test_singleton_instance();
 bool test_instance_mode();
 bool test_initialize();
 bool test_submit();
-bool test_submit_priority();
+bool test_submit_priority_via_task_builder();
 bool test_submit_delayed();
 bool test_delayed_timer_thread_creation_failure_rolls_back();
 bool test_submit_periodic();
@@ -306,31 +306,31 @@ bool test_submit() {
 
 // ========== 优先级任务提交测试 ==========
 
-bool test_submit_priority() {
-    std::cout << "Testing Executor::submit_priority()..." << std::endl;
-    
+bool test_submit_priority_via_task_builder() {
+    std::cout << "Testing Executor::submit_auto(TaskBuilder.priority())..." << std::endl;
+
     Executor executor;
     ExecutorConfig config;
     config.min_threads = 2;
     config.max_threads = 4;
     executor.initialize(config);
-    
-    // 测试不同优先级的任务
+
+    // 测试不同优先级的任务（0.7.2：优先级经 TaskBuilder 表达）
     std::vector<int> execution_order;
     std::mutex order_mutex;
-    
+
     // 提交低优先级任务
-    executor.submit_priority(0, [&execution_order, &order_mutex]() {
+    executor.submit_auto(TaskBuilder([&execution_order, &order_mutex]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         std::lock_guard<std::mutex> lock(order_mutex);
         execution_order.push_back(0);
-    });
-    
+    }).priority(TaskPriority::LOW));
+
     // 提交高优先级任务
-    executor.submit_priority(2, [&execution_order, &order_mutex]() {
+    executor.submit_auto(TaskBuilder([&execution_order, &order_mutex]() {
         std::lock_guard<std::mutex> lock(order_mutex);
         execution_order.push_back(2);
-    });
+    }).priority(TaskPriority::HIGH));
     
     // 等待任务完成
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -344,7 +344,7 @@ bool test_submit_priority() {
     
     executor.shutdown();
     
-    std::cout << "  Submit priority: PASSED" << std::endl;
+    std::cout << "  Submit priority via TaskBuilder: PASSED" << std::endl;
     return true;
 }
 
@@ -1033,7 +1033,7 @@ int main() {
     all_passed &= test_instance_mode();
     all_passed &= test_initialize();
     all_passed &= test_submit();
-    all_passed &= test_submit_priority();
+    all_passed &= test_submit_priority_via_task_builder();
     all_passed &= test_submit_delayed();
     all_passed &= test_delayed_timer_thread_creation_failure_rolls_back();
     all_passed &= test_submit_periodic();

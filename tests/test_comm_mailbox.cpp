@@ -258,6 +258,7 @@ TEST(CommRealtimeChannelTest, DropOldestKeepsNewerMessages) {
     EXPECT_EQ(channel.stats().dropped_count, 1U);
 }
 
+// NN-09：滚动窗口语义——capacity 2、发送 1/2/3 后积压为 [2,3]。
 TEST(CommRealtimeChannelTest, KeepLatestOverwritesBacklog) {
     RealtimeChannel<int> channel(realtime_options(2, 64, DropPolicy::KeepLatest));
 
@@ -265,9 +266,13 @@ TEST(CommRealtimeChannelTest, KeepLatestOverwritesBacklog) {
     EXPECT_TRUE(channel.try_send(2));
     EXPECT_TRUE(channel.try_send(3));
 
-    int value = 0;
-    EXPECT_EQ(channel.drain_for_cycle([&](int item) { value = item; }), 1U);
-    EXPECT_EQ(value, 3);
+    std::vector<int> drained;
+    const uint64_t count = channel.drain_for_cycle(
+        [&](int item) { drained.push_back(item); });
+    EXPECT_EQ(count, 2U);
+    ASSERT_EQ(drained.size(), 2U);
+    EXPECT_EQ(drained[0], 2);
+    EXPECT_EQ(drained[1], 3);
     EXPECT_EQ(channel.stats().overwritten_count, 1U);
 }
 

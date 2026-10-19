@@ -4,6 +4,86 @@
 
 ---
 
+## 从 0.7.1 升级到 0.7.2：优先级语义转移到调度器（唯一破坏性变更）
+
+0.7.2 **移除了 `Executor::submit_priority`**（0.7.x 唯一破坏性变更；
+0.7.2-rc1 曾标记 `[[deprecated]]`，正式版起声明已删除，调用处直接编译
+失败。内部实现 `submit_priority_scheduled` 与 `ThreadPool` 层
+`submit_priority` / `try_submit_priority*` **不变**，仍供 facade 与内部
+层复用，不属于公共提交协议）。优先级作为调度策略维度，统一经
+`IScheduler` 协议表达：
+
+```cpp
+// 旧 API（0.7.1 及之前）
+executor.submit_priority(TaskPriority::HIGH, []{ work(); });
+executor.submit_priority(2, []{ work(); });            // 整数重载等价
+
+// 新 API（0.7.2+）
+executor.submit_auto(
+    kairo::TaskBuilder([]{ work(); }).priority(kairo::TaskPriority::HIGH));
+```
+
+### 语义等价性
+
+迁移前后**任务执行顺序逐位一致**，无需调整任何依赖优先级的断言：
+
+- 两条路径最终都调用同一个内部实现
+  `submit_priority_scheduled(priority, meta, terminal_release, fn)`；
+  显式 `priority()` 时 `effective_priority` 就是传入的枚举值
+  （`priority_set` 短路 `effective_priority_for()` 咨询），与
+  `submit_priority` 的整型一一对应（`TaskPriority` 枚举值 0-3 未变）。
+- PriorityScheduler 内部不变：四队列结构、EDF 排序、aging 机制、
+  `effective_priority_for()` 咨询（显式 priority 永不被调度器覆盖）。
+- admission 行为与 `task_id`（`facade_submit_priority`）不变，监控与
+  诊断输出一致。
+- 差异仅在提交路径的额外开销：`submit_auto` 产出一条路由决策记录
+  （`route_task` + 决策日志，裸 builder 处于
+  `scheduling_runtime.md` §10.3 验收线内）。
+  0.7.2 验收基准为端到端吞吐配对 A/B ±2%。
+
+### 迁移模式
+
+| 旧写法 | 新写法 |
+|---|---|
+| `submit_priority(P, fn)` | `submit_auto(kairo::TaskBuilder(fn).priority(P'))` |
+| `submit_priority(P, [&]{ ... })` | `submit_auto(kairo::TaskBuilder([&]{ ... }).priority(P'))` |
+| `submit_priority(P, fn, args...)` | 把参数捕获进 lambda 或 `std::bind`：`submit_auto(kairo::TaskBuilder([=]{ return fn(args...); }).priority(P'))` |
+| `submit_batch_priority(P, v)` | 0.7.2 保留且内部改走共享实现，行为不变、无弃用警告；无需迁移 |
+| tracked 依赖图中的优先级 | 0.7.1 起已支持 `submit_after(dep, TaskBuilder(fn).priority(P'))` |
+
+`P'` 的映射：`TaskPriority` 枚举值直接可用；整数字面量
+0/1/2/3 对应 `LOW`/`NORMAL`/`HIGH`/`CRITICAL`，其他整型表达式用
+`static_cast<kairo::TaskPriority>(expr)`。
+
+**自动化迁移**：`scripts/migrate_submit_priority.sh [--dry-run] FILE|DIR...`
+覆盖上表前两行模式；带额外绑定参数的调用会保留原样并逐条报告，
+需按第三行模式人工迁移。
+
+### 排查清单
+
+1. 编译出现 `-Wdeprecated-declarations` 即为待迁移调用点
+   （CI 建议加 `-Werror=deprecated-declarations` 提前拦截）。
+2. `TaskBuilder` / `TaskPriority` 位于 `<kairo/task_options.hpp>`
+   （`<kairo/executor.hpp>` 已传递包含）。
+3. 依赖 `submit_priority` 返回 `std::future` 的代码不受影响——
+   新 API 返回类型相同。
+4. 对提交路径做纳秒级吞吐断言的代码需重新标定（决策记录开销，
+   见上"语义等价性"末条）。
+
+### 同版 additive：堆分配优化阶段一（roadmap §4.1，无迁移需求）
+
+- submit 主路径自动生效 **9 → 7 allocs/task（-22%）**、768 →
+  512 bytes/task：Task 调度节点对象池 + facade 提交路径单控制块整合，
+  行为与调度语义零变化（实施记录与草案偏差见
+  `docs/design/allocation_optimization_proposal.md` §9）。
+- 新增 additive 观测 API：`AllocationMetrics`、
+  `Executor::get_allocation_metrics()` /
+  `Executor::get_task_pool_hit_rate()`（默认池节点池命中率，稳态
+  >95%）、`IAsyncExecutor::get_allocation_metrics()`（自定义后端
+  默认继承返回零，无需改动）。
+
+---
+
 ## 从 0.7.0 升级到 0.7.1（无必需迁移）
 
 0.7.1（2026-10-14 发布）落地 roadmap §3 全部内容（§3.0.1 submit_auto 路由智能化、§3.2 deadline policy、§3.1 资源预留 ResourceLease、§3.0.2/§3.0.3 自动推断与执行器自动选择）。全部为 additive（资源预留与自动推断默认关闭），**不迁移任何代码即可升级**。

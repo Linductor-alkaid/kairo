@@ -4,11 +4,178 @@
 #include "../task/task.hpp"
 #include <vector>
 #include <algorithm>
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <cstddef>
+#include <new>
 
 namespace kairo {
+
+namespace detail {
+
+/**
+ * @brief Task 节点对象池（0.7.2 §4.1，roadmap §4.1 堆分配优化阶段一）
+ *
+ * 定容 MPMC 无锁空闲表，结构为 Vyukov 有界 MPMC 队列（每单元独立序号，
+ * 无 ABA 依赖）：入队（生产者）经 acquire 取预分配内存块，出队/分发
+ * （worker）在字段级移出后归还。设计要点：
+ *
+ * - **严格重置协议**：归还侧先跑 ~Task() 再入池，取得侧 placement-new
+ *   重建——新字段加入 Task 无需维护重置清单，不存在陈旧状态残留面
+ *   （roadmap 风险表"Task 对象池未正确重置状态导致泄漏"的结构性封堵）。
+ * - **槽位独占裁决**：写入权由 enqueue_pos CAS 声明（归还侧：单元序号
+ *   seq == pos 时写入块并发布 seq = pos + 1）；取用权由 dequeue_pos CAS
+ *   声明（消费侧：seq == pos + 1 时读块并置 seq = pos + kCapacity 推迟
+ *   该单元下一轮可写时机）。两侧条件严格交替，从结构上排除"输家槽写
+ *   覆盖赢家已发布槽位"的双重所有权窗口（初版版本化 head + 先写槽后
+ *   CAS 的实现存在该逻辑竞态，独立评审发现后整体替换为 Vyukov 结构；
+ *   消费侧条件按标准 Vyukov 修正——初版 Vyukov 适配误用生产侧条件，
+ *   独立评审发现确定性死锁后修正）。序号 64 位，单元内 acquire/release
+ *   配对传递块指针的可见性。
+ * - **内存安全**：块一律以对齐 operator new 分配；归还仅在池满时
+ *   operator delete，池析构排空——每块恰好释放一次，池只是缓存层。
+ */
+class TaskNodePool {
+public:
+    static constexpr size_t kCapacity = 256;
+    static_assert((kCapacity & (kCapacity - 1)) == 0,
+                  "capacity must be a power of two (index mask)");
+
+    TaskNodePool() {
+        for (size_t i = 0; i < kCapacity; ++i) {
+            cells_[i].seq.store(static_cast<uint64_t>(i),
+                                std::memory_order_relaxed);
+        }
+    }
+    TaskNodePool(const TaskNodePool&) = delete;
+    TaskNodePool& operator=(const TaskNodePool&) = delete;
+    ~TaskNodePool() { drain(); }
+
+    /**
+     * @brief 构造新 Task：命中池时零堆分配，池空回退堆分配。
+     *
+     * @return 拥有默认构造 Task 的 unique_ptr（默认删除器——块本身
+     *         以对齐 operator new 分配，直接 delete 亦正确）。
+     */
+    std::unique_ptr<Task> acquire() {
+        if (Task* block = try_take_block()) {
+            hits_.fetch_add(1, std::memory_order_relaxed);
+            return make_task(block);
+        }
+        misses_.fetch_add(1, std::memory_order_relaxed);
+        return make_task(allocate_block());
+    }
+
+    /**
+     * @brief 回收节点：析构字段，内存块回池（池满则释放回堆）。
+     */
+    void release(std::unique_ptr<Task> node) noexcept {
+        if (!node) return;
+        Task* block = node.get();
+        block->~Task();
+        node.release();
+        if (!try_return_block(block)) {
+            free_block(block);
+        }
+    }
+
+    uint64_t hits() const noexcept {
+        return hits_.load(std::memory_order_relaxed);
+    }
+
+    uint64_t misses() const noexcept {
+        return misses_.load(std::memory_order_relaxed);
+    }
+
+private:
+    // 64B 对齐抑制相邻单元的伪共享（burst 下不同线程操作相邻单元）。
+    struct alignas(64) Cell {
+        std::atomic<uint64_t> seq;    // 轮次序号（Vyukov 语义）
+        std::atomic<Task*> block;
+    };
+
+    // 普通（非对齐）形式：alignof(Task)=8 ≤ __STDCPP_DEFAULT_NEW_ALIGNMENT__，
+    // 且池化块会经 unique_ptr 默认删除器（plain delete）流入多种消费终态
+    // （本地队列 move+reset、lockfree 接管、shutdown 排空）——分配/去分配
+    // 形式必须全程配对（对齐 new 配 plain delete 是 ASAN
+    // new-delete-type-mismatch）。
+    static Task* allocate_block() {
+        return static_cast<Task*>(::operator new(sizeof(Task)));
+    }
+
+    static void free_block(Task* block) noexcept {
+        ::operator delete(block);
+    }
+
+    static std::unique_ptr<Task> make_task(Task* block) {
+        return std::unique_ptr<Task>(new (block) Task());
+    }
+
+    // 消费侧（标准 Vyukov）：就绪条件 seq == pos + 1（归还侧已发布块
+    // 指针），声明所有权后 seq = pos + kCapacity——把该单元的"可写"轮次
+    // 推迟到 pos 再绕缓冲一圈，与归还侧的 seq == pos 就绪条件在环绕下
+    // 依然严格交替，不会撞轮。dif < 0 即池空（块未被归还过）。
+    Task* try_take_block() noexcept {
+        uint64_t pos = dequeue_pos_.load(std::memory_order_relaxed);
+        for (;;) {
+            Cell& cell = cells_[pos & (kCapacity - 1)];
+            const uint64_t seq = cell.seq.load(std::memory_order_acquire);
+            const auto dif = static_cast<intptr_t>(seq) -
+                             static_cast<intptr_t>(pos);
+            if (dif == 1) {
+                if (dequeue_pos_.compare_exchange_weak(
+                        pos, pos + 1, std::memory_order_relaxed)) {
+                    Task* block = cell.block.load(std::memory_order_relaxed);
+                    cell.seq.store(pos + kCapacity, std::memory_order_release);
+                    return block;
+                }
+            } else if (dif < 1) {
+                return nullptr;  // 池空（dif <= 0：块未就绪）
+            } else {
+                pos = dequeue_pos_.load(std::memory_order_relaxed);
+            }
+        }
+    }
+
+    bool try_return_block(Task* block) noexcept {
+        uint64_t pos = enqueue_pos_.load(std::memory_order_relaxed);
+        for (;;) {
+            Cell& cell = cells_[pos & (kCapacity - 1)];
+            const uint64_t seq = cell.seq.load(std::memory_order_acquire);
+            const auto dif = static_cast<intptr_t>(seq) -
+                             static_cast<intptr_t>(pos);
+            if (dif == 0) {
+                if (enqueue_pos_.compare_exchange_weak(
+                        pos, pos + 1, std::memory_order_relaxed)) {
+                    cell.block.store(block, std::memory_order_relaxed);
+                    cell.seq.store(pos + 1, std::memory_order_release);
+                    return true;
+                }
+            } else if (dif < 0) {
+                return false;  // 池满
+            } else {
+                pos = enqueue_pos_.load(std::memory_order_relaxed);
+            }
+        }
+    }
+
+    void drain() noexcept {
+        while (Task* block = try_take_block()) {
+            free_block(block);
+        }
+    }
+
+    Cell cells_[kCapacity];
+    alignas(64) std::atomic<uint64_t> enqueue_pos_{0};
+    alignas(64) std::atomic<uint64_t> dequeue_pos_{0};
+    std::atomic<uint64_t> hits_{0};
+    std::atomic<uint64_t> misses_{0};
+};
+
+}  // namespace detail
+
 
 /**
  * @brief 优先级调度器
@@ -146,6 +313,37 @@ public:
      */
     void clear();
 
+    // ------------------------------------------------------------------
+    // 0.7.2 §4.1（roadmap §4.1 堆分配优化阶段一）：Task 节点对象池
+    // ------------------------------------------------------------------
+
+    /**
+     * @brief 从节点池取 Task 存储（池空回退堆分配）
+     *
+     * 入队路径经此构造 Task：命中时零堆分配（内存块复用），未命中
+     * 命中/未命中计数经 node_pool_hits/misses 观测。语义与直接
+     * make_unique<Task>() 等价——返回默认构造的新 Task，所有字段
+     * 均为全新状态（严格重置协议：归还侧先析构再入池，取得侧
+     * placement-new 重建，不依赖任何字段级重置清单）。
+     */
+    std::unique_ptr<Task> make_node();
+
+    /**
+     * @brief 回收空壳 Task 节点：析构字段后内存块回池（池满回堆）
+     *
+     * 出队（dequeue）与分发（dispatch_batch 推入本地队列后）路径在
+     * 字段级移出后调用。池容量 256（roadmap §4.1 草案值）：稳态下
+     * 入队/出队速率平衡，容量吸收提交突发。
+     */
+    void recycle(std::unique_ptr<Task> node) noexcept;
+
+    /** 节点池命中/未命中累计（facade AllocationMetrics 透传，relaxed）。 */
+    uint64_t node_pool_hits() const noexcept;
+    uint64_t node_pool_misses() const noexcept;
+
+    /** 堆分配优化观测快照（0.7.2 §4.1，ThreadPool 透传 facade）。 */
+    AllocationMetrics get_allocation_metrics() const;
+
 private:
     // unique_ptr比较器：比较Task对象（通过解引用）
     // 使用std::greater确保优先级高的任务在堆顶
@@ -182,6 +380,9 @@ private:
 
     /** 从 unique_ptr<Task> 移动出到 Task&，供 dequeue/dequeue_batch 复用（PA-4） */
     static void move_task_out(const std::unique_ptr<Task>& src, Task& out);
+
+    // Task 节点对象池（0.7.2 §4.1）：MPMC 无锁 LIFO，见上方 make_node/recycle。
+    detail::TaskNodePool node_pool_;
 };
 
 } // namespace kairo

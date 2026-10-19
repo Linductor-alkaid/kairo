@@ -52,6 +52,8 @@ public:
      */
     AsyncExecutorStatus get_status() const override;
 
+    AllocationMetrics get_allocation_metrics() const override;
+
     /**
      * @brief 启动执行器
      * 

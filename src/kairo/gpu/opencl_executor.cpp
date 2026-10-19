@@ -150,6 +150,17 @@ bool OpenCLExecutor::start() {
 }
 
 void OpenCLExecutor::stop() {
+    // 无参 stop() 保持 0.7.1 语义（Cancel）。
+    stop_impl(/*cancel_queued=*/true);
+}
+
+void OpenCLExecutor::stop(gpu::GpuStopMode mode) {
+    // CR-154：Cancel = 既有取消行为；Drain = 已入队 kernel 执行至完成
+    // （worker 循环在 !running_ 且队列非空时继续消费，join 等待排空）。
+    stop_impl(mode == gpu::GpuStopMode::Cancel);
+}
+
+void OpenCLExecutor::stop_impl(bool cancel_queued) {
     bool self_stop = false;
     {
         std::unique_lock<std::shared_mutex> lifecycle_lock(lifecycle_mutex_);
@@ -185,17 +196,21 @@ void OpenCLExecutor::stop() {
 
     // Cancel queued tasks so the worker cannot block trying to enter the
     // lifecycle shared gate while stop() is waiting to join it.
-    {
-        std::lock_guard<std::mutex> lock(queue_mutex_);
-        while (!task_queue_.empty()) {
-            auto task = std::move(task_queue_.front());
-            task_queue_.pop();
-            task.promise->set_exception(std::make_exception_ptr(
-                ExecutorStopping("OpenCLExecutor stopped before queued kernel execution")));
-            ++cancelled_tasks;
-        }
-        if (active_kernels_.load() == 0) {
-            queue_drained_cv_.notify_all();
+    // CR-154：Drain 模式跳过取消——worker 循环在 !running_ 且队列非空时
+    // 继续消费，join 等待其排空完毕。
+    if (cancel_queued) {
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex_);
+            while (!task_queue_.empty()) {
+                auto task = std::move(task_queue_.front());
+                task_queue_.pop();
+                task.promise->set_exception(std::make_exception_ptr(
+                    ExecutorStopping("OpenCLExecutor stopped before queued kernel execution")));
+                ++cancelled_tasks;
+            }
+            if (active_kernels_.load() == 0) {
+                queue_drained_cv_.notify_all();
+            }
         }
     }
 

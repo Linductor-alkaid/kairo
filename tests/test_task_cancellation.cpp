@@ -681,14 +681,16 @@ TEST(TaskCancellationTest, SnapshotCarriesCancellationLifecycleFields) {
 }
 
 TEST(TaskCancellationTest, PlainSubmitBehaviorUnchanged) {
-    // 回归锁定：普通 submit()/submit_priority() 返回类型与行为不变。
+    // 回归锁定：普通 submit() 与优先级提交（0.7.2 起经 TaskBuilder）的
+    // 返回类型与行为不变。
     Executor executor;
     ASSERT_TRUE(executor.initialize(small_config()));
 
     auto future = executor.submit([]() { return std::string("ok"); });
     EXPECT_EQ(future.get(), "ok");
 
-    auto priority_future = executor.submit_priority(2, []() { return 7; });
+    auto priority_future = executor.submit_auto(
+        TaskBuilder([]() { return 7; }).priority(TaskPriority::HIGH));
     EXPECT_EQ(priority_future.get(), 7);
 
     auto throwing = executor.submit([]() { throw std::runtime_error("boom"); });

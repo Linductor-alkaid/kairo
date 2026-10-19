@@ -44,7 +44,8 @@ std::atomic<bool> g_counting{false};
 // 对齐分配的平台分派：POSIX 用 posix_memalign（free 释放）；Windows 用
 // _aligned_malloc（必须配 _aligned_free）。两者必须与对应的
 // aligned_deallocate 配对，不与 std::free 混用。
-void* aligned_allocate(std::size_t size, std::size_t alignment) {
+[[maybe_unused]] void* aligned_allocate(std::size_t size,
+                                        std::size_t alignment) {
 #if defined(_WIN32)
     return _aligned_malloc(size, alignment);
 #else
@@ -62,7 +63,8 @@ void aligned_deallocate(void* p) noexcept {
 #endif
 }
 
-void* counted_allocate(std::size_t size, std::size_t alignment) {
+[[maybe_unused]] void* counted_allocate(std::size_t size,
+                                        std::size_t alignment) {
     if (g_counting.load(std::memory_order_relaxed)) {
         g_alloc_count.fetch_add(1, std::memory_order_relaxed);
         g_alloc_bytes.fetch_add(size, std::memory_order_relaxed);
@@ -78,6 +80,12 @@ void* counted_allocate(std::size_t size, std::size_t alignment) {
 
 }  // namespace
 
+// NN-03（0.7.2 §4.2）：guard-ON 构建下全局 operator new 已由
+// comm/realtime_memory.cpp 替换（RealtimeAllocationGuard 作用域计数），
+// 本基准的计数替换与之链接冲突——此时不再定义任何替换（复用库的），
+// 基准照常链接运行，但计数窗口恒为零（分配基线的精确测量只在常规
+// 构建、guard OFF 下有效）。
+#ifndef KAIRO_ENABLE_REALTIME_ALLOCATION_GUARD
 void* operator new(std::size_t size) { return counted_allocate(size, 0); }
 void* operator new[](std::size_t size) { return counted_allocate(size, 0); }
 void* operator new(std::size_t size, const std::nothrow_t&) noexcept {
@@ -102,6 +110,7 @@ void operator delete(void* p, std::align_val_t) noexcept { aligned_deallocate(p)
 void operator delete[](void* p, std::align_val_t) noexcept { aligned_deallocate(p); }
 void operator delete(void* p, std::size_t, std::align_val_t) noexcept { aligned_deallocate(p); }
 void operator delete[](void* p, std::size_t, std::align_val_t) noexcept { aligned_deallocate(p); }
+#endif
 
 namespace {
 

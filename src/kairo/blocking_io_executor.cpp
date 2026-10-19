@@ -74,33 +74,68 @@ bool BlockingIoExecutor::start() {
 }
 
 void BlockingIoExecutor::request_stop() noexcept {
-    std::lock_guard<std::mutex> lock(lifecycle_mutex_);
-    request_stop_locked();
+    // CR-055：用户 wakeup() 在 lifecycle_mutex_ 之外执行——wakeup 是
+    // 用户代码，重入 request_stop()/stop()（如聚合器、看门狗回调）时
+    // 持锁调用即自死锁。
+    bool needs_wakeup = false;
+    {
+        std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+        needs_wakeup = request_stop_locked();
+    }
+    if (needs_wakeup) {
+        perform_wakeup();
+    }
 }
 
-void BlockingIoExecutor::request_stop_locked() noexcept {
+bool BlockingIoExecutor::request_stop_locked() noexcept {
     if (!thread_.joinable()) {
-        return;
+        return false;
     }
     if (stop_requested_.exchange(true, std::memory_order_acq_rel)) {
-        return;
+        return false;
     }
     thread_.request_stop();
-    if (worker_) {
-        try {
-            worker_->wakeup();
-            wakeup_count_.fetch_add(1, std::memory_order_relaxed);
-        } catch (...) {
-            set_error("Blocking I/O worker wakeup threw an exception");
-        }
+    // wakeup 由调用方在锁外经 perform_wakeup() 补发（返回值驱动）。
+    return worker_ != nullptr;
+}
+
+void BlockingIoExecutor::perform_wakeup() noexcept {
+    if (!worker_) {
+        return;
+    }
+    try {
+        worker_->wakeup();
+        wakeup_count_.fetch_add(1, std::memory_order_relaxed);
+    } catch (...) {
+        set_error("Blocking I/O worker wakeup threw an exception");
     }
 }
 
 void BlockingIoExecutor::stop() {
     detail::JThread joiner;
+    bool needs_wakeup = false;
     {
-        std::lock_guard<std::mutex> lock(lifecycle_mutex_);
-        request_stop_locked();
+        // unique_lock：终结栅栏的 cv wait 需要它（lock_guard 不行）。
+        std::unique_lock<std::mutex> lock(lifecycle_mutex_);
+        // CR-055：终结栅栏。join 期间 thread_ 已被移走，并发 stop 此前
+        // 会见到 moved-from 句柄（joinable()==false）而提前返回，观测
+        // 到"未终结"的状态；这里让第二个 stop 等待终结完成后再返回。
+        if (stop_finalization_in_progress_) {
+            // CR-055（复验修正）：重入判定。finalizer 线程内的重入
+            // （用户 wakeup() 回调链调 stop()）若进入 cv 等待即自死锁
+            // ——栅栏只能由本线程在 join 后清除；worker 线程内的重入
+            // 等待同理（finalizer 正在等 worker 退出）。两者立即返回，
+            // 收尾由进行中的 stop() 兑现。
+            const auto self_id = std::this_thread::get_id();
+            if (self_id == stop_finalizer_id_ || self_id == worker_id_) {
+                return;
+            }
+            stop_completion_cv_.wait(lock, [this] {
+                return !stop_finalization_in_progress_;
+            });
+            return;
+        }
+        needs_wakeup = request_stop_locked();
         if (!thread_.joinable()) {
             running_.store(false, std::memory_order_release);
             return;
@@ -108,15 +143,31 @@ void BlockingIoExecutor::stop() {
         if (std::this_thread::get_id() == worker_id_) {
             return;
         }
+        stop_finalization_in_progress_ = true;
+        stop_finalizer_id_ = std::this_thread::get_id();
         joiner = std::move(thread_);
+    }
+
+    // CR-055：wakeup 在锁外补发——先于 join，阻塞在自有等待上的
+    // worker 需要它才能观察到 stop token。
+    if (needs_wakeup) {
+        perform_wakeup();
     }
 
     joiner.join();
     running_.store(false, std::memory_order_release);
     ready_.store(false, std::memory_order_release);
-    std::lock_guard<std::mutex> status_lock(status_mutex_);
-    if (stop_reason_ == BlockingIoStopReason::None) {
-        stop_reason_ = BlockingIoStopReason::Requested;
+    {
+        std::lock_guard<std::mutex> status_lock(status_mutex_);
+        if (stop_reason_ == BlockingIoStopReason::None) {
+            stop_reason_ = BlockingIoStopReason::Requested;
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+        stop_finalization_in_progress_ = false;
+        stop_finalizer_id_ = std::thread::id{};
+        stop_completion_cv_.notify_all();
     }
 }
 

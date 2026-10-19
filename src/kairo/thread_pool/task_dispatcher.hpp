@@ -301,10 +301,20 @@ public:
                 const size_t count = counts_[w];
                 size_t pushed = (*local_queues)[w].push_batch_move(segment, count);
                 total_dispatched += pushed;
+                // 0.7.2 §4.1：WorkerLocalQueue 版 push_batch_move 移出字段
+                // 后不再销毁节点，空壳在此回池复用（池满回堆）；
+                // KAIRO_LOCKFREE_QUEUE=ON 的 lockfree 版仍接管所有权
+                // （节点随其内部环销毁），此时 recycle 收到空指针为
+                // 有意无操作。
+                for (size_t j = 0; j < pushed; ++j) {
+                    scheduler_.recycle(std::move(segment[j]));
+                }
 
                 // 将未能推送的任务放回调度器（移动，不复制）
                 for (size_t j = pushed; j < count; ++j) {
                     scheduler_.enqueue(std::move(*segment[j]));
+                    // 字段已移入新节点，旧壳回池。
+                    scheduler_.recycle(std::move(segment[j]));
                     requeued_any = true;
                 }
 

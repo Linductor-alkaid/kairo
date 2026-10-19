@@ -31,8 +31,8 @@ bool TaskInferenceTable::name_matches(
 
 void TaskInferenceTable::record(const SchedulingFeedback& feedback,
                                 int64_t now_ns) noexcept {
-    // 反馈 task_id 在 submit_auto 路径即任务名；其余路径（submit_priority
-    // 等）的合成 id 不构成有意义的推断键，但记录无害（键空间有界）。
+    // 反馈 task_id 在 submit_auto 路径即任务名；其余路径（如依赖图等）
+    // 的合成 id 不构成有意义的推断键，但记录无害（键空间有界）。
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = entries_.find(feedback.task_id);
     if (it == entries_.end()) {

@@ -58,13 +58,15 @@ executor.submit_auto(TaskBuilder([]{ work(); }).priority(TaskPriority::HIGH));
 
 ## 影响面评估
 
-- **测试代码**：256 处使用（可自动迁移）
-- **示例代码**：4 处使用（手动更新）
+- **测试代码**：规划阶段估计 256 处；2026-10-19 实施复查为 facade 层
+  8 处调用（4 个测试文件），已全部迁移。测试中的
+  `ThreadPool::submit_priority` 属内部层，按计划保留
+- **示例代码**：4 处使用（手动更新，已迁移）
 - **用户代码**：通过 deprecated 警告周期（rc1 → rc2）提示迁移
 
 ## 验收标准
 
-1. 256 处测试代码迁移完成，零 deprecated 警告
+1. facade 层测试调用全部迁移（实际 8 处），零 deprecated 警告
 2. 配对 A/B 基准：迁移前后端到端吞吐 ±2% 内
 3. 契约测试：优先级 + EDF 排序、aging、effective_priority_for 咨询逻辑不变
 4. `scripts/check_docs_drift.sh` 通过

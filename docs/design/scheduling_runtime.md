@@ -665,15 +665,118 @@ submit_after(dep, TaskBuilder(fn).priority(p))
 - **这是 0.7.x 唯一破坏性变更**：roadmap §1 原计划"0.7.2 additive +
   修复"被此项打破，但延后至 0.8.0 会让 0.7.x 内部调度语义不一致，
   造成更大的迁移负担。
-- **影响面可控**：256 处测试代码 + 4 处示例，迁移模式清晰，
+- **影响面可控**：facade 层测试调用 8 处（规划阶段高估为 256 处，
+  2026-10-19 实施复查勘误）+ 4 处示例，迁移模式清晰，
   自动化脚本覆盖主要场景。
 - **文档同步**：`docs/API.md` §3.2 移除 submit_priority，
   website 教程页（priority.md）全面改写为 TaskBuilder 示例。
 
 ### 14.5 验收
 
-- 256 处测试代码迁移完成，零 deprecated 警告
+- facade 层测试调用全部迁移（实际 8 处），零 deprecated 警告
 - 配对 A/B 基准：迁移前后端到端吞吐 ±2% 内
 - 契约测试：优先级 + EDF 排序、aging、effective_priority_for 咨询逻辑不变
 - `scripts/check_docs_drift.sh` 通过
 - MIGRATION.md 0.7.2 节补充语义等价性证明与迁移指南
+
+## 15. 0.7.2 反馈覆盖扩展（roadmap §4.2，开发快照）
+
+0.6.1 的 measurement contract（§6.3）只覆盖默认异步池。0.7.2 §4.2 把
+执行期反馈扩展到 GPU / lockfree / realtime 三类后端，形态按后端约束
+分化：GPU 走逐提交完成计时（sink 通道），lockfree / realtime 只提供
+聚合级计数——**不引入逐任务回调，不破坏 RT 路径的无分配约束**。
+
+### 15.1 聚合级执行反馈（lockfree / realtime）
+
+`AggregateExecutionStats { executed_count, over_budget_count,
+period_count }`（types.hpp）。全部为自执行器启动起的累计值；消费方按
+自己的采样周期取差分得到"周期内执行数 / 超预算次数"。读路径为
+relaxed 原子快照，任意线程可调用，RT/lockfree 执行线程无感知。
+
+- **realtime**：`executed_count` = 累计已执行任务数（新增
+  `executed_task_count_`，process_tasks 内 relaxed 计数，含异常终态）；
+  `over_budget_count` = 周期执行时间超过 cycle_period_ns 的次数（与
+  `get_status().cycle_timeout_count` 同源）；`period_count` = 已完成
+  周期数（cycle_count）。接口侧：`IRealtimeExecutor::
+  get_aggregate_execution_stats()`（虚方法，默认零值）。
+- **lockfree**：`executed_count` = processed_count；`period_count` = 0
+  （无周期语义）；`over_budget_count` 由 opt-in 执行预算驱动：
+  `set_execution_budget_ns(ns)`（默认 0 = 关闭计时，负值按 0，运行期
+  可调）。声明后 worker 对每任务做两次 steady 采样，实测时长**严格
+  大于**预算计一次超；未声明时执行路径零新增时钟采样。
+- **facade**：`Executor::get_aggregate_execution_stats(name)`（按名称
+  解析 realtime/lockfree，未知名零值——§6.4 "未知即宽容"）与
+  `Executor::get_all_aggregate_execution_stats()`。
+- **聚合器边界**：聚合计数不流入 `FeedbackAggregator`（样本形态不同：
+  无逐任务时延向量），诊断口径经上述快照 API 独立暴露。
+- **worker 循环重构**：LockFreeTaskExecutor 两个执行循环（运行 +
+  stop 后排空）的执行/异常处理抽为 `run_wrapped_task()`，行为等价
+  （TSAN 零告警、既有套件全绿为证）。
+
+### 15.2 GPU stream 完成回调计时（CUDA）
+
+0.6.1/0.7.0 的 GPU 反馈包装是 host 侧的：async kernel 从 launch 返回
+即结算 execution_duration——测到的是发起不是完成。0.7.2 以 stream 完
+成回调补齐：
+
+- **接口**：`IGpuExecutor` 新增 `supports_completion_timing()`（默认
+  false）、`submit_kernel_with_timing(kernel, config, sink)`（默认实
+  现照常提交、不调用 sink）与 `KernelTimingSink`；数据形态
+  `gpu::GpuKernelTimingRecord { submit_ns, start_ns, completion_ns,
+  stream_id, success, completed_on_stream }`（全 steady 时钟纳秒）。
+- **CudaExecutor**：async kernel launch 成功后装载
+  `cudaLaunchHostFunc` 完成探针；**CR-153**（回调内调 CUDA API 会驱
+  动级死锁）由结构性约束履行——探针回调（`timing_host_callback`）只
+  做两件事：记完成时点、把上下文推入转交队列。计时数据的消费（sink，
+  即用户反馈回调）一律由执行器 worker 线程执行（`drain_timing_records`，
+  sink 异常隔离）。sync 任务在 cudaStreamSynchronize 返回点由 worker
+  直接交付（`completed_on_stream == false`）。
+- **转交通道与生命周期**：`TimingHandoffState`（mutex + cv + deque）
+  以 shared_ptr 与每个在途上下文共享，自持有全部同步原语。alive 标志
+  在 `finalize_timing()`（stop_and_join join 之后、析构之前）翻
+  false；晚于关停抵达的驱动回调读 alive==false 自弃，不触碰执行器成
+  员——无 UAF。回调与 final drain 经同一把 mutex 全序，无"推入后无人
+  认领"窗口；回调 notify 持执行器 queue 锁（与 worker 等待谓词同锁）
+  防丢失唤醒，锁序恒为 queue_mutex_ → 转交 mutex。
+- **恰一条交付契约**：每计时提交恰好交付一条记录——提交侧校验失败、
+  launch 失败、执行异常（RAII 失败守卫）、stop 排空（completion_ns==0
+  语义）、start 半途失败（fail_all_queued_tasks）逐点交付
+  success==false 或"完成时点不可得"记录。completion_ns == 0 = 未知，
+  消费方不得按"耗时 0"解读（与聚合器 0 = 未知口径一致）。
+- **facade 集成**：`submit_gpu` 新增带 sink 的 overload；
+  `submit_auto(CpuGpuTask)` GPU 分支在 wants_feedback() 且执行器
+  supports 时走计时提交——sink 组装 `SchedulingFeedback`（backend=Gpu；
+  queue_wait 含执行器内部队列等待；execution_duration 至 stream 完成
+  点）后走既有 `report_scheduling_feedback`（聚合器 + IScheduler 交付，
+  §6.3 线程契约同样适用于 CUDA worker 线程）。执行器不支持计时时回落
+  既有 host 侧包装（sync 任务仍精确）；wants_feedback()==false 时零
+  开销（不进计时路径）。OpenCL 执行器默认不支持（回落），parity 属
+  后续项。
+
+### 15.3 NN-03：realtime allocation guard 入 CI 构建矩阵
+
+CI `realtime-allocation-guard` job 从"只编译运行 test_comm_realtime_memory"
+扩为 guard-ON 全量构建（`-DKAIRO_ENABLE_REALTIME_ALLOCATION_GUARD=ON`，
+全局 operator new 替换经 guard_alloc，CR-044 对齐变体盲区由全量编译
+封堵）+ 运行 realtime / lockfree / object_pool 全部套件。两处随动修
+正：`benchmark_submit_allocations` 的全局 new 计数替换与 guard 链接
+冲突 → guard 构建下不定义（计数恒零，基准仍可链接运行）；
+`test_realtime_thread_executor` 的 500ns update_statistics 时延断言对
+分配器速度敏感 → guard 构建下跳过（无锁结构断言保留）。
+
+### 15.4 验收（tests/test_aggregate_execution_stats.cpp、
+tests/test_gpu_timing_feedback.cpp、tests/test_cuda_timing_failure_paths.cpp）
+
+- 聚合反馈 11 用例：lockfree 预算两侧界限/运行期调整/负值/异常终态
+  计数；realtime 同源一致性；facade 按名解析与全量快照；接口默认实现。
+- GPU 计时反馈 5 用例（无硬件，假执行器 + facade 组装层）：恰一条
+  Gpu 反馈、字段映射（含 completion 未知/失败）、wants_feedback 开关
+  两侧行为、不支持执行器回落。
+- CUDA 失败路径 3 用例（stub 编译、无需驱动）：未运行提交逐条交付
+  success==false 记录。
+- 独立验证（Independent-Verification-Agent）：新测试 19/19，v072full
+  全量回归 178/182（4 失败经 A/B 定性为预存容差 flaky 与 doc 测试
+  cwd 环境问题）；TSAN 子集零告警；guard-ON 套件 24/24。
+- 残余风险：无 GPU 硬件，async 探针/sync 交付点/晚到回调自弃仅 stub
+  编译 + 契约层验证；"恰等于预算不算超"以两侧界限覆盖（墙钟无法精确
+  构造等值点，实现为严格大于）。

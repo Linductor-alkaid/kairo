@@ -105,6 +105,65 @@ bool LockFreeTaskExecutor::is_running() const {
     return running_.load(std::memory_order_acquire);
 }
 
+void LockFreeTaskExecutor::set_execution_budget_ns(int64_t budget_ns) noexcept {
+    execution_budget_ns_.store(budget_ns > 0 ? budget_ns : 0,
+                               std::memory_order_relaxed);
+}
+
+AggregateExecutionStats LockFreeTaskExecutor::get_aggregate_execution_stats() const {
+    AggregateExecutionStats stats;
+    stats.executed_count = processed_count_.load(std::memory_order_relaxed);
+    stats.over_budget_count = over_budget_count_.load(std::memory_order_relaxed);
+    stats.period_count = 0;
+    return stats;
+}
+
+void LockFreeTaskExecutor::account_worker_exception() {
+    // P-260618-006: surface task exceptions via the exception_count counter
+    // and (optionally) a registered handler. Default behavior is "count only"
+    // — no rethrow, no crash — preserving back-compat.
+    exception_count_.fetch_add(1, std::memory_order_relaxed);
+    std::function<void(std::exception_ptr)> handler;
+    {
+        std::lock_guard<std::mutex> lock(exception_handler_mutex_);
+        handler = exception_handler_;
+    }
+    if (handler) {
+        try {
+            handler(std::current_exception());
+        } catch (...) {
+            // Swallow exceptions from the handler itself; the worker must
+            // keep draining the queue.
+        }
+    }
+}
+
+void LockFreeTaskExecutor::run_wrapped_task(TaskWrapper& wrapper) noexcept {
+    // 0.7.2 §4.2 聚合反馈：预算声明关闭（默认）时零新增时钟采样；
+    // 声明后每任务两次 steady 采样，超预算 relaxed 计数。无分配、无回调。
+    const int64_t budget = execution_budget_ns_.load(std::memory_order_relaxed);
+    if (budget <= 0) {
+        try {
+            wrapper.func();
+        } catch (...) {
+            account_worker_exception();
+        }
+        return;
+    }
+    const auto start = std::chrono::steady_clock::now();
+    try {
+        wrapper.func();
+    } catch (...) {
+        account_worker_exception();
+    }
+    const auto duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                 std::chrono::steady_clock::now() - start)
+                                 .count();
+    if (duration_ns > budget) {
+        over_budget_count_.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
 bool LockFreeTaskExecutor::push_task(std::function<void()> task) {
     if (!task) {
         rejected_empty_count_.fetch_add(1, std::memory_order_relaxed);
@@ -464,32 +523,17 @@ void LockFreeTaskExecutor::worker_thread() {
             bool self_stop_interrupted_batch = false;
             size_t executed = 0;
             for (size_t i = 0; i < popped; ++i) {
-                try {
-                    batch[i]->func();
-                } catch (...) {
-                    // P-260618-006: surface task exceptions via the
-                    // exception_count counter and (optionally) a registered
-                    // handler. Default behavior is "count only" — no rethrow,
-                    // no crash — preserving back-compat.
-                    exception_count_.fetch_add(1, std::memory_order_relaxed);
-                    std::function<void(std::exception_ptr)> handler;
-                    {
-                        std::lock_guard<std::mutex> lock(exception_handler_mutex_);
-                        handler = exception_handler_;
-                    }
-                    if (handler) {
-                        try {
-                            handler(std::current_exception());
-                        } catch (...) {
-                            // Swallow exceptions from the handler itself;
-                            // the worker must keep draining the queue.
-                        }
-                    }
-                }
+                run_wrapped_task(*batch[i]);
                 ++executed;
                 if (!running_.load(std::memory_order_acquire) &&
                     self_stop_requested_.load(std::memory_order_acquire)) {
                     // 批内自停：已执行的批量回收，剩余的也立即归还。
+                    // CR-123（0.7.2 §4.3 P2 定性，契约注释）：自停路径上
+                    // 未执行的任务被**静默丢弃**——不执行、不重投、无逐
+                    // 任务回调；fire-and-forget 语义下调用方以 stop() 的
+                    // 拒绝契约自行兜底（与 run() 尾部排空循环的"先执行
+                    // 完剩余再退出"不同：那只覆盖外部停机后的常规排空，
+                    // 不覆盖 worker 自停）。
                     clear_batch_callables(batch.data(), executed);
                     clear_batch_callables(batch.data() + executed,
                                           popped - executed);
@@ -520,23 +564,7 @@ void LockFreeTaskExecutor::worker_thread() {
     size_t popped = 0;
     while ((popped = queue_->pop_batch(batch.data(), BATCH_SIZE)) > 0) {
         for (size_t i = 0; i < popped; ++i) {
-            try {
-                batch[i]->func();
-            } catch (...) {
-                // P-260618-006: same handling as in the running loop.
-                exception_count_.fetch_add(1, std::memory_order_relaxed);
-                std::function<void(std::exception_ptr)> handler;
-                {
-                    std::lock_guard<std::mutex> lock(exception_handler_mutex_);
-                    handler = exception_handler_;
-                }
-                if (handler) {
-                    try {
-                        handler(std::current_exception());
-                    } catch (...) {
-                    }
-                }
-            }
+            run_wrapped_task(*batch[i]);
         }
         clear_batch_callables(batch.data(), popped);
         task_pool_->release_bulk(batch.data(), popped);

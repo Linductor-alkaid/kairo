@@ -4,7 +4,7 @@
 | --- | --- |
 | `Executor`, `ExecutorConfig`, `initialize`, `shutdown`, `future` | [Quick start](quick-start.md) and [tasks and lifecycle](tasks-and-lifecycle.md) |
 | `submit_auto`, `submit`, `wait_for_completion`, `CompletionStatus` | [Tasks and lifecycle](tasks-and-lifecycle.md) |
-| `submit_priority`, `submit_delayed`, `submit_periodic`, `TaskHandle`, `when_all` | [Scheduling](scheduling.md) |
+| priority via `submit_auto(TaskBuilder)`, `submit_delayed`, `submit_periodic`, `TaskHandle`, `when_all` | [Scheduling](scheduling.md) |
 | `RealtimeThreadConfig`, `register_realtime_task`, `try_push_realtime_task` | [Realtime control](realtime-control.md) |
 | `BlockingWorkerSpec`, `IBlockingIoWorker`, `WorkerHandle` | [Blocking I/O](blocking-io.md) |
 | `MpscChannel`, `LatestMailbox`, `DoubleBuffer`, `PhaseGate`, `CommStats` | [Communication](communication.md) |

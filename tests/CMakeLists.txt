@@ -188,6 +188,15 @@ if(MINGW)
     list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/test_lockfree_queue_size\\.cpp$")
 endif()
 
+# test_gpu_timing_feedback 的私有注入辅助 TU（不是测试本体）：承载
+# #define private public 的 manager_ 注册入口，使主测试 TU 保持干净
+# include——MSVC 修饰名编码访问权限，重定义 access 后实例化的提交模板
+# 会引用 public 形符号而库内是 private 形（LNK2019）。辅助 TU 只触达
+# 数据成员与 ExecutorManager 公开方法，无跨 TU 成员函数符号引用。
+# 与 test_executor_facade_submit_batch 的 MSVC 排除不同，此法保留
+# Windows 覆盖。跟踪: 同上 PR #174 Windows 测试移植 follow-up。
+list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/test_gpu_timing_feedback_support\.cpp$")
+
 # 如果没有测试文件，创建一个占位符说明
 if(NOT TEST_SOURCES)
     message(STATUS "No test files found. Tests will be added in later stages.")
@@ -231,6 +240,12 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
     get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
     
     add_executable(${TEST_NAME} ${TEST_SOURCE})
+
+    if(TEST_NAME STREQUAL "test_gpu_timing_feedback")
+        target_sources(${TEST_NAME} PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_gpu_timing_feedback_support.cpp
+        )
+    endif()
 
     # Keep CUDA memory validation runnable on hosts without a CUDA SDK.  The
     # kairo source uses its fallback CUDA types there, so this target can

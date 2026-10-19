@@ -50,7 +50,7 @@ title: 首发决策记录
 连续教程统一使用一个小型机器人数据流水线，业务对象固定为：`SensorFrame`（采集帧）、`ParsedFrame`（解析结果）、`Plan`（规划结果）、`ControlCommand`（控制命令）、`ControlConfig`（最新配置）和 `SystemState`（监控快照）。
 
 1. 在后台解析 `SensorFrame`：`submit()`。
-2. 让 `ControlCommand` 抢占普通分析：`submit_priority()`。
+2. 让 `ControlCommand` 先于普通分析排队：`submit_auto(TaskBuilder.priority(CRITICAL))`。
 3. 设备暂不可用时重试，并执行健康检查：`submit_delayed()` / `submit_periodic()`。
 4. 并行处理多帧并汇合 `Plan`：batch、`TaskHandle`、`when_all()`。
 5. 将 `ControlConfig`、命令流和 `SystemState` 传给周期控制：通信 Facade。

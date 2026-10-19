@@ -334,6 +334,18 @@ struct Task {
 };
 
 /**
+ * @brief 堆分配优化观测快照（0.7.2 §4.1，roadmap §4.1 阶段一）
+ *
+ * 数值为进程启动以来的累计计数（relaxed 语义，观测窗口自行配对）。
+ * 由 Executor::get_allocation_metrics() 返回；未初始化/无默认池时
+ * 各字段为 0。
+ */
+struct AllocationMetrics {
+    uint64_t task_pool_hit_count = 0;   // Task 节点池命中（零堆分配）
+    uint64_t task_pool_miss_count = 0;  // 节点池未命中（回退堆分配）
+};
+
+/**
  * @brief 异步执行器状态结构
  */
 struct AsyncExecutorStatus {
@@ -382,6 +394,28 @@ struct RealtimeExecutorStatus {
     uint64_t pool_exhausted_count = 0;            // 对象池耗尽拒绝累计数
     uint64_t queue_full_count = 0;                // 队列满拒绝累计数
     uint64_t cycle_manager_error_count = 0;       // 外部周期管理器调用异常累计数
+};
+
+/**
+ * @brief 聚合级执行反馈（0.7.2 §4.2，lockfree / realtime 后端）。
+ *
+ * 0.6.1 的 measurement contract 只覆盖默认异步池（逐任务
+ * SchedulingFeedback）；lockfree / realtime 路径为保住无分配/无回调约束，
+ * 只提供聚合计数——全部为自执行器启动起的累计值，消费方按自己的采样
+ * 周期取差分得到"周期内执行数 / 超预算次数"。读路径为 relaxed 原子快照，
+ * 可在任意线程调用，RT 线程不受影响。
+ *
+ * - executed_count：累计已执行任务数（含执行中抛异常的任务）。
+ * - over_budget_count：累计超预算事件数。realtime = 周期执行时间超过
+ *   cycle_period_ns 的次数；lockfree = 声明了执行预算
+ *   （set_execution_budget_ns）且单任务执行时长超预算的次数，未声明
+ *   预算时恒为 0。
+ * - period_count：realtime = 已完成周期数；lockfree = 0（无周期语义）。
+ */
+struct AggregateExecutionStats {
+    uint64_t executed_count = 0;
+    uint64_t over_budget_count = 0;
+    uint64_t period_count = 0;
 };
 
 enum class BlockingIoStopReason {
@@ -553,7 +587,43 @@ struct GpuTaskConfig {
     size_t shared_memory_bytes = 0;               // 共享内存大小（字节）
     int stream_id = 0;                            // 流ID（0表示默认流）
     bool async = true;                            // 是否异步执行
-    int priority = 1;                             // 优先级（0=LOW, 1=NORMAL, 2=HIGH, 3=CRITICAL），与 CPU submit_priority 对齐
+    int priority = 1;                             // 优先级（0=LOW, 1=NORMAL, 2=HIGH, 3=CRITICAL），与 CPU 优先级语义（TaskBuilder.priority）对齐
+};
+
+/**
+ * @brief GPU 执行器 stop 语义（0.7.2 §4.3，CR-154）。
+ *
+ * 0.7.1 及之前 CUDA 与 OpenCL 的 stop() 语义不一致（CUDA 排空已入队
+ * kernel、OpenCL 取消未开始的 kernel）且不可显式选择；GpuStopMode 使
+ * 跨后端调用方获得一致的 future 契约：
+ * - Drain：已入队 kernel 继续执行至完成（原 CUDA 行为）；
+ * - Cancel：未开始的 kernel 以 ExecutorStopping 落终态（原 OpenCL
+ *   行为）；正在执行的 kernel 不被中断。
+ * 各后端的 stop() 默认值保持 0.7.1 行为（CUDA=Drain、OpenCL=Cancel）。
+ */
+enum class GpuStopMode : uint8_t {
+    Drain,
+    Cancel,
+};
+
+/**
+ * @brief 一次 GPU kernel 提交的完成计时记录（0.7.2 §4.2 stream 完成回调计时）。
+ *
+ * 全部时点取 steady 时钟（纳秒）。completion_ns 由 stream 完成回调在驱动
+ * 线程观测（completed_on_stream == true，async 任务），或由执行器线程在
+ * cudaStreamSynchronize 返回后观测（completed_on_stream == false，同步任务）。
+ *
+ * 未知即宽容语义：completion_ns == 0 表示完成时点不可得（转交通道溢出/
+ * 执行器停止）——消费方不得把它当成"耗时 0"，应按"未知"处理（与
+ * FeedbackAggregator 的 0 = 未知口径一致）。
+ */
+struct GpuKernelTimingRecord {
+    int64_t submit_ns = 0;      // 提交时点（进入执行器队列前）
+    int64_t start_ns = 0;       // kernel 发起 launch 的时点（执行器线程）
+    int64_t completion_ns = 0;  // 完成观测时点；0 = 不可得
+    int stream_id = 0;          // 提交配置的流 ID（0 = 默认流）
+    bool success = false;       // kernel 是否成功发起（launch 成功即 true）
+    bool completed_on_stream = false;  // 完成时点是否来自 stream 完成回调
 };
 
 } // namespace gpu

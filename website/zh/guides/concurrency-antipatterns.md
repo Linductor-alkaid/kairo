@@ -82,7 +82,7 @@ executor.submit_auto([&] {
 
 ### 为什么出问题
 
-`submit_priority()` 只影响等待队列选择，不能抢占已经运行的任务。若所有 worker 都被长任务或阻塞任务占用，高优先级任务仍要等待；多个 worker 的完成顺序也不由优先级保证。
+优先级提交（`submit_auto(TaskBuilder.priority())`）只影响等待队列选择，不能抢占已经运行的任务。若所有 worker 都被长任务或阻塞任务占用，高优先级任务仍要等待；多个 worker 的完成顺序也不由优先级保证。
 
 ### 修正
 

@@ -63,7 +63,12 @@ enum class TimerOperationResult {
     AlreadyCompleted,
     NotFound,
     ShuttingDown,
-    InvalidDuration
+    InvalidDuration,
+    // CR-136（0.7.2 §4.3）：操作内部异常（如 bad_alloc）不再伪装成
+    // NotFound——真实未命中在 try 内直接返回 NotFound，catch 兜底
+    // 统一返回 InternalError。调用方据此区分"没有这个 timer"与
+    // "操作失败"。
+    InternalError
 };
 
 inline const char* to_string(TimerOperationResult result) noexcept {
@@ -84,6 +89,8 @@ inline const char* to_string(TimerOperationResult result) noexcept {
         return "ShuttingDown";
     case TimerOperationResult::InvalidDuration:
         return "InvalidDuration";
+    case TimerOperationResult::InternalError:
+        return "InternalError";
     default:
         return "Unknown";
     }
@@ -232,6 +239,14 @@ public:
      * 停止后续 tick，状态保留 is_running=false 供旧状态查询。
      */
     void stop() {
+        // CR-134（0.7.2 §4.3 P2 定性，契约注释）：stop 是粗粒度关停——
+        // 结算所有 Scheduled 记录（ShutdownCancelled + on_cancelled
+        // drain），但**不**向已派发、正在执行的 active tick 传播任务取
+        // 消（与 request_cancel 的逐 tick 传播不对称）：在途 tick 自然
+        // 跑完当前执行，其 TaskCancelled/取消语义不经 stop 通道。需要
+        // 在途 tick 协作取消的场景应在 stop 前逐 timer 调 request_cancel
+        // （Completed 路径返回 CancellationRequestedAfterDispatch 并向
+        // active ticks 传播）。
         std::thread thread_to_join;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -420,7 +435,10 @@ public:
             }
             return result;
         } catch (...) {
-            return TimerOperationResult::NotFound;
+            // CR-136：noexcept 函数内异常必须吸收，但不伪装成 NotFound
+            // ——真实未命中在 try 内直接返回；这里只可能是内部异常
+            // （bad_alloc 等），按 InternalError 报告。
+            return TimerOperationResult::InternalError;
         }
     }
 
@@ -466,7 +484,9 @@ public:
             wake_cv_.notify_one();
             return TimerOperationResult::Rescheduled;
         } catch (...) {
-            return TimerOperationResult::NotFound;
+            // CR-136：同 request_cancel——内部异常按 InternalError 报告，
+            // 不与"timer 不存在"混淆。
+            return TimerOperationResult::InternalError;
         }
     }
 

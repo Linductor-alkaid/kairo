@@ -1,6 +1,6 @@
 ---
 title: 让控制命令优先
-description: 使用 submit_priority 让少量控制工作在普通分析之前进入队列。
+description: 使用 submit_auto(TaskBuilder) 的 priority() 让少量控制工作在普通分析之前进入队列。
 ---
 
 # 让控制命令优先
@@ -15,9 +15,9 @@ description: 使用 submit_priority 让少量控制工作在普通分析之前�
 
 ## 推荐方案
 
-使用 `submit_priority(priority, task)`。优先级从 `0`（低）到 `3`（关键）；普通任务使用默认优先级。下面的示例以单工作线程演示两类工作均可正确完成。
+优先级是调度策略维度，经 `submit_auto(TaskBuilder)` 的 `priority()` 表达（0.7.2 起 `submit_priority` 已移除）。优先级取 `TaskPriority` 枚举：`LOW`、`NORMAL`、`HIGH`、`CRITICAL`；普通任务使用默认优先级。下面的示例以单工作线程演示两类工作均可正确完成。
 
-<<< @/../examples/tutorial/02_priority.cpp{4,7-19,21-24}
+<<< @/../examples/tutorial/02_priority.cpp{6-7,9-26,28-30}
 
 完整源码：[`examples/tutorial/02_priority.cpp`](https://github.com/Linductor-alkaid/kairo/blob/master/examples/tutorial/02_priority.cpp)。
 
@@ -33,27 +33,29 @@ priority tasks=analysis,control
 
 ## 为什么这样做
 
-- `submit_priority()` 仍返回 `future`；调用 `get()` 可获得结果，也可重新抛出任务异常。
+- `submit_auto(TaskBuilder)` 仍返回 `future`；调用 `get()` 可获得结果，也可重新抛出任务异常。
 - 优先级只影响等待队列的取出顺序；已经开始运行的低优先级任务不会被抢占。
+- 显式 `priority()` 永不被调度器覆盖；未显式设置时才按 QoS 映射默认优先级（并可被调度器有界调整）。
 - 多工作线程、已有执行中的任务和同优先级 FIFO 都会影响实际观察到的完成顺序，因此不要把这个示例的输出顺序当作调度时序证明。
 
 ## 优先级任务如何接收输入
 
-完整形式是 `submit_priority(priority, fn, args...)`：只有最前面的 priority 是额外调度信息，后面的 callable 与参数保存规则和 `submit(fn, args...)` 相同。
+`TaskBuilder` 只承载单个 callable。有参数需要绑定时，把参数捕获进 lambda 或用 `std::bind`：
 
 ```cpp
 ControlCommand command = read_command();
-auto applied = executor.submit_priority(
-    3, apply_control_command, command);
+auto applied = executor.submit_auto(
+    kairo::TaskBuilder([command] { apply_control_command(command); })
+        .priority(kairo::TaskPriority::CRITICAL));
 ```
 
-`command` 会按值保存到任务中。若改用 lambda，也优先按值捕获命令或捕获稳定 owner；提高优先级不会缩短引用必须存活的时间，也不会让裸 `this`、指针或共享可变状态变安全。
+`command` 会按值保存到任务中。提高优先级不会缩短引用必须存活的时间，也不会让裸 `this`、指针或共享可变状态变安全——优先按值捕获命令或捕获稳定 owner。
 
 ## 运行假设与所有权
 
 示例固定一个 worker，只提交一个分析任务和一个控制任务，目的是验证两种 future 都能完成，而不是证明控制任务一定先完成。任务返回短字符串，没有捕获外部对象；真实 `ControlCommand` 应按值或用明确所有权传入，不能引用提交函数栈上的临时对象。
 
-优先级整数最终映射到四档：`priority <= 0` 为 LOW，`1` 为 NORMAL，`2` 为 HIGH，`priority >= 3` 为 CRITICAL。应用应定义一张全局等级表，不要让不同模块用任意大数互相“加价”。如果最高级任务长期占据大多数提交，普通任务可能持续饥饿。
+优先级只用四档枚举：`LOW`、`NORMAL`、`HIGH`、`CRITICAL`（整数值 0-3，与 0.7.1 及之前的 `submit_priority` 整型一致，该 API 已在 0.7.2 移除）。应用应定义一张全局等级表，不要让不同模块用任意大数互相"加价"。如果最高级任务长期占据大多数提交，普通任务可能持续饥饿。
 
 ## 失败如何观察
 
@@ -69,17 +71,26 @@ auto applied = executor.submit_priority(
 3. 用小队列持续提交最高级任务；观察拒绝、queued 数和普通任务等待时间。
 4. 关闭时先停止控制与分析生产者，再消费仍持有的 futures，最后有界排空 Kairo。
 
-若业务要求“控制命令在 5 ms 内生效”，需要测量排队时延并设计超时/降级；把等级改成 CRITICAL 不是验收标准。
+若业务要求"控制命令在 5 ms 内生效"，需要测量排队时延并设计超时/降级；把等级改成 CRITICAL 不是验收标准。
 
 ## 需求变化时如何演进
 
 | 新需求 | 下一步选择 |
 | --- | --- |
-| 只要紧急工作更早排队 | 保持 `submit_priority()`，监控各等级等待时间 |
+| 只要紧急工作更早排队 | 保持 `submit_auto(TaskBuilder.priority())`，监控各等级等待时间 |
 | 必须在地图加载后执行 | 使用任务依赖，优先级不承担正确性 |
 | 命令旧了就不能执行 | 在任务内校验 deadline/sequence，并设计拒绝结果 |
 | 有固定周期和 jitter 预算 | 迁移到专用实时任务 |
 | 控制输入持续流入 | 用有界通信组件表达背压，不用无限提交任务 |
+
+## 从 submit_priority 迁移（0.7.2 移除了该 API）
+
+0.7.1 及之前的 `executor.submit_priority(P, fn)` 一律改为
+`executor.submit_auto(kairo::TaskBuilder(fn).priority(P'))`，调度顺序
+（priority → EDF → FIFO）逐位一致。带参数绑定的旧写法按上文"优先级任务
+如何接收输入"改为捕获或 `std::bind`。详见
+[版本与迁移](/zh/reference/version-and-migration)与
+`docs/MIGRATION.md` 0.7.2 节。
 
 ## 何时不选
 
@@ -87,4 +98,4 @@ auto applied = executor.submit_priority(
 
 ## 下一步阅读
 
-[延迟重试与健康检查](/zh/tutorial/delayed-and-periodic)处理“现在不做”和“定期做”两种新问题。
+[延迟重试与健康检查](/zh/tutorial/delayed-and-periodic)处理"现在不做"和"定期做"两种新问题。
