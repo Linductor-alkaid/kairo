@@ -29,6 +29,11 @@ description: 发布版本和 API 迁移的入口。
 - `submit_batch_priority` 保留，内部改走同一共享实现，行为不变。
 - 迁移支持：`scripts/migrate_submit_priority.sh` 自动改写 + `docs/MIGRATION.md`
   0.7.2 节（语义等价性说明与排查清单）。教程页与示例已全部迁移。
+- **堆分配优化阶段一（roadmap §4.1，additive 自动生效）**：submit 主路径
+  9 → 7 allocs/task、768 → 512 bytes/task（Task 调度节点对象池 +
+  facade 提交路径单控制块整合，调度语义零变化）；新增观测 API
+  `get_allocation_metrics()` / `get_task_pool_hit_rate()`。实施记录见
+  `docs/design/allocation_optimization_proposal.md` §9。
 - 0.7.2 正式版将移除 `submit_priority` 声明（内部
   `submit_priority_scheduled` 与 `ThreadPool` 层 API 保留）。
 

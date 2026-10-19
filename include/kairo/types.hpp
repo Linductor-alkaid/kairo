@@ -334,6 +334,18 @@ struct Task {
 };
 
 /**
+ * @brief 堆分配优化观测快照（0.7.2 §4.1，roadmap §4.1 阶段一）
+ *
+ * 数值为进程启动以来的累计计数（relaxed 语义，观测窗口自行配对）。
+ * 由 Executor::get_allocation_metrics() 返回；未初始化/无默认池时
+ * 各字段为 0。
+ */
+struct AllocationMetrics {
+    uint64_t task_pool_hit_count = 0;   // Task 节点池命中（零堆分配）
+    uint64_t task_pool_miss_count = 0;  // 节点池未命中（回退堆分配）
+};
+
+/**
  * @brief 异步执行器状态结构
  */
 struct AsyncExecutorStatus {

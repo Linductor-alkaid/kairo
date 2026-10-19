@@ -96,6 +96,23 @@ auto submit(F&& f, Args&&... args)
 - 提交到默认线程池，返回 `std::future`。
 - 支持任意可调用对象及参数，`future.get()` 获取返回值或异常。
 
+#### 堆分配观测（0.7.2 §4.1）
+
+```cpp
+AllocationMetrics get_allocation_metrics() const;
+double get_task_pool_hit_rate() const;
+```
+
+- `AllocationMetrics{task_pool_hit_count, task_pool_miss_count}`：默认
+  池 Task 调度节点对象池（0.7.2 阶段一，submit 主路径
+  9 → 7 allocs/task、768 → 512 bytes/task）的累计命中/未命中计数。
+  诊断用途，relaxed 语义，无同步保证；未初始化或默认池不可用时为 0。
+- `get_task_pool_hit_rate()`：命中率 0.0-1.0（无提交历史时 0.0）。
+  稳态验收线 > 95%；实测约 99.96%。
+- 对象池自动生效、无需配置；池空/池满自动回退堆分配，行为与 0.7.1
+  逐位一致。自定义 `IAsyncExecutor` 后端可覆写
+  `get_allocation_metrics()`（默认返回零）接入观测。
+
 ### 3.2 优先级提交
 
 > **0.7.2 起弃用**：优先级是调度策略维度而非提交协议，统一经

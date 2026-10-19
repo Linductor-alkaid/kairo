@@ -16,6 +16,10 @@ std::string ThreadPoolExecutor::get_name() const {
     return name_;
 }
 
+AllocationMetrics ThreadPoolExecutor::get_allocation_metrics() const {
+    return thread_pool_ ? thread_pool_->get_allocation_metrics() : AllocationMetrics{};
+}
+
 AsyncExecutorStatus ThreadPoolExecutor::get_status() const {
     AsyncExecutorStatus status;
     status.name = name_;

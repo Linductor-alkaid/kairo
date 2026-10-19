@@ -166,6 +166,16 @@ public:
     }
 
     /**
+     * @brief 堆分配优化观测快照（0.7.2 §4.1，additive）
+     *
+     * 默认实现返回全零（未实现节点池/未接入观测的后端）。计数为
+     * 进程累计值；诊断用途，无同步语义。
+     */
+    virtual AllocationMetrics get_allocation_metrics() const {
+        return AllocationMetrics{};
+    }
+
+    /**
      * @brief 等待所有任务完成
      */
     virtual void wait_for_completion() = 0;

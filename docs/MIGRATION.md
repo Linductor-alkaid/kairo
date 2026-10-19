@@ -69,6 +69,18 @@ executor.submit_auto(
 4. 对提交路径做纳秒级吞吐断言的代码需重新标定（决策记录开销，
    见上"语义等价性"末条）。
 
+### 同版 additive：堆分配优化阶段一（roadmap §4.1，无迁移需求）
+
+- submit 主路径自动生效 **9 → 7 allocs/task（-22%）**、768 →
+  512 bytes/task：Task 调度节点对象池 + facade 提交路径单控制块整合，
+  行为与调度语义零变化（实施记录与草案偏差见
+  `docs/design/allocation_optimization_proposal.md` §9）。
+- 新增 additive 观测 API：`AllocationMetrics`、
+  `Executor::get_allocation_metrics()` /
+  `Executor::get_task_pool_hit_rate()`（默认池节点池命中率，稳态
+  >95%）、`IAsyncExecutor::get_allocation_metrics()`（自定义后端
+  默认继承返回零，无需改动）。
+
 ---
 
 ## 从 0.7.0 升级到 0.7.1（无必需迁移）

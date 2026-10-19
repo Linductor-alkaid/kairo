@@ -4,6 +4,8 @@
 > **基于**：v0.7.0 M0 清债成果  
 > **目标版本**：v0.7.2  
 > **性能基线**：当前 0.7.0（9 allocs/task）  
+> **实施记录（2026-10-19，阶段一落地）**：见文末 §9；§2.1 各草图与实际
+> 落地形态的偏差以 §9 为准。
 
 ## 1. 当前状态分析
 
@@ -663,5 +665,109 @@ int result = task_result.get();
 
 ---
 
+## 9. 阶段一实施记录（2026-10-19）
+
+### 9.1 实测分配画像（实施前逐分配归因）
+
+对 `submit([]{})`（void 无参，监控默认开启）逐分配追踪（计数分配器
+序列），9 次分配的构成与草案 §1.2 的估计有实质出入：
+
+| 分配 | 大小 | 归因 | 阶段一处置 |
+|---|---|---|---|
+| PromiseCell 控制块 | 48B | CR-110 合并单元（promise+ready） | 保留 |
+| promise 内部共享状态 | 48B | `std::promise` 构造固有 | 阶段二（TaskResult） |
+| bind 结果 make_shared | 24B | move-only 间接层 | 并入单控制块（计数不变，少一层间接不省分配） |
+| task_wrapper → std::function | 120B | **libstdc++ SBO 只收 <16B functor**，多字段捕获必下堆 | **单控制块整合后 -1**（16B shared_ptr 捕获，仍 1 次分配；裸指针捕获者 0 次） |
+| on_timeout → std::function | 104B | 同上 | **-1**（裸指针捕获，零分配） |
+| Task 调度节点 | 168B | `unique_ptr<Task>` 入队 | **-1（节点池）** |
+| 监控逐任务记录 ×2 | 24B+160B | TaskMonitor 默认开启的 queued/complete 记录 | 不动（监控是特性；关监控实测 9→7 中的 2 次即此项，与阶段二无关） |
+
+关键实证：`std::function` 的 SBO 在 libstdc++ 上**不含 16B functor**
+（微基准验证：16B 捕获 1 次分配、8B 捕获 0 次）——草案 §2.1.2"小闭包
+≤16B 也会堆分配"的表述低估了 SBO 门槛，32B InlineFunction 若用于承载
+facade 包装（实测 104-120B）完全无效。
+
+### 9.2 与草案的偏差清单
+
+1. **Task 池从 per-worker 草图改为 PriorityScheduler 内单一 MPMC 池**：
+   acquire 发生在生产者线程（入队），per-worker 池需要 worker 身份，
+   生产者没有。结构为 Vyukov 有界 MPMC 空闲表（单元序号防 ABA；生产侧
+   seq==pos 写入发布 pos+1、消费侧 seq==pos+1 读取置 pos+容量，两侧
+   条件严格交替）+ 定容 256 保留草案的容量与命中率预期；单生产者稳态
+   命中率实测 ~100%，8 生产者高竞争压力（16 万任务）命中率 100.0%
+   （线 >95%）。
+   实施过程记录（四个中间缺陷均由独立评审发现、全部修复，最终态才
+   是有效实现）：①初版"版本化 head + 先写槽后 CAS"存在输家槽写覆盖
+   赢家槽位的双重所有权逻辑竞态；②初版 Vyukov 适配误用生产侧条件
+   导致消费侧确定性死锁（单线程 100% 复现）；③块以对齐 operator new
+   分配但经 plain delete 流出（本地队列 move+reset）触发 ASAN
+   new-delete-type-mismatch——改普通 new/delete（alignof(Task) ≤ 默认
+   对齐，且块的多条流出路径均为 plain delete，形式全程配对）；④
+   dispatch_batch 的"回收空壳"初版为无效操作（push_batch_move 内部
+   已 reset 销毁节点），分发主路径节点从不回池、并发场景池饥饿
+   （命中率崩至 44%）且每任务白付失败 CAS——push_batch_move 契约
+   改为不销毁节点、由分发器回收后，同压力命中率恢复 100%，producers
+   =1/2 吞吐 A/B 从 -8.6%/-12.7% 回正。详见 priority_scheduler.hpp
+   TaskNodePool 注释。
+2. **严格重置协议升级为"析构-重建"**：归还侧跑 `~Task()` 后入池，取得
+   侧 placement-new 重建——比草案的字段级重置清单结构性更强（新增字段
+   无需维护清单，无陈旧状态残留面）。
+3. **InlineFunction SBO 改为"facade 单控制块整合"**：草案设想的
+   `InlineFunction<32>` 替换 `Task::function` 对 facade 路径无效（包装
+   functor 104-120B 不进 32B 缓冲；且换型需动 Task 拷贝语义，波及
+   WorkerLocalQueue 拷贝设计与 ThrowOnCopyAfterArmed 测试）。等效达成
+   方式：把提交上下文（executor 名/task id/admission/bind）并入
+   promise 控制块，包装只捕获一个 shared_ptr（16B，1 次分配）或裸
+   指针（8B，0 次）。
+4. **DrainBag 侵入式引用计数不实施**：§2.1.3 的前提在当前代码不复现——
+   `ParkedDrainBag` 是栈上结构（两个 vector 成员），普通 submit 路径
+   不涉及任何 DrainBag 引用计数块分配；tracked 路径（19.13 allocs）的
+   优化与 9→7 验收无关，留待有数据支持时单独立项。
+5. **on_timeout 裸指针捕获的生命周期依据**：task_wrapper（持
+   shared_ptr）与 on_timeout（持裸指针）同批经 move_task_fields 移入
+   同一 Task 节点，节点析构时同生共死；on_timeout 全部触发点
+   （execute_task 软超时）Task 节点完整存活。
+
+### 9.3 验收结果（实施实测）
+
+- [x] `benchmark_submit_allocations`：9.00 → **7.00 allocs/task**（-22%）
+- [x] 字节数：768.0 → **512.5 bytes/task**（-33%，优于 ~600 预期）
+- [x] Task 池命中率：单生产者稳态 ~100%，8 生产者 16 万任务压力
+      100.0%（线 >95%；分发回收链修复后）
+- [x] 配对 A/B 吞吐：不弱于基线 ±5%（独立验证 10 轮交错：hotpath
+      p=1 +22.6% 转正、p=2..16 -2.4%~+3.6%；scheduling_paths 提交
+      路径全面改善 plain submit -12.0% / bare builder -30.4% / full
+      spec -45.4%）
+- [x] 新增可观测性：`Executor::get_allocation_metrics()` /
+      `get_task_pool_hit_rate()`、`AllocationMetrics`（types.hpp）、
+      `IAsyncExecutor::get_allocation_metrics()` 虚方法（默认零）
+- [x] ASAN/TSAN 全绿（独立验证：TSAN 15 个 CI 同款目标零竞态报告；
+      ASAN+UBSAN 6 目标零报告；ctest 175/180，5 失败均定性非本次
+      引入）
+
+submit_auto(TaskBuilder) 路径（0.7.2 推荐的优先级表达）共享
+`submit_priority_scheduled` 单控制块整合，节点池全路径生效。
+阶段二（TaskResult 轻量 Future，9→7 中的 promise 内部状态 2 次）不变。
+
+### 9.4 残留风险与后续项（独立验证结论，均非阻断）
+
+1. `KAIRO_LOCKFREE_QUEUE=ON` 配置下 lockfree 本地队列按设计接管节点
+   所有权（其内部环自管理生命周期），分发路径不回池、该配置不享受
+   池收益——已在 task_dispatcher.hpp 注释明示。
+2. 定向池并发回归测试建议入库（独立验证代理的
+   `/tmp/kairo-vtest/test_pool_race.cpp` 为蓝本：acquire 侧
+   test_and_set 所有权标志 + 严格重置校验，本会话 38.4 万次获取零
+   告警）；入库前需加固：进度看门狗（把死锁类挂起变成带诊断的
+   失败——本会话死锁的直接教训）、固定轮次改时间预算、可选扩展到
+   make_node/recycle 集成面。作为独立测试 PR 落地。
+3. 预存问题（非本次引入，独立验证期间定性）：test_thread_pool 的
+   1ms 超时时延断言在重负载下偶发（基线同类，建议后续加负载容忍或
+   RUN_SERIAL）；test_api_doc_* 在两层深构建目录必失败（相对路径
+   断链，建议候选路径补层级）；benchmark_scheduling_paths 的 submit
+   5% 容差线预存 flaky。
+
+---
+
 **变更历史**：
 - 2026-10-13：初始方案（基于 v0.7.0 M0 分析）
+- 2026-10-19：阶段一落地，新增 §9 实施记录（实测画像、偏差清单、验收结果）

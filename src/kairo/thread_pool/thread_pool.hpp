@@ -219,6 +219,11 @@ public:
     ThreadPoolStatus get_status() const;
 
     /**
+     * @brief 堆分配优化观测快照（0.7.2 §4.1：Task 节点池命中/未命中）
+     */
+    AllocationMetrics get_allocation_metrics() const;
+
+    /**
      * @brief 调整工作线程数量。
      *
      * 新数量必须位于初始化配置的 [min_threads, max_threads] 范围内。

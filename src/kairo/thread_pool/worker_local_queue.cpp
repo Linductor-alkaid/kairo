@@ -77,9 +77,11 @@ size_t WorkerLocalQueue::push_batch_move(std::unique_ptr<Task>* tasks, size_t n)
     for (size_t i = 0; i < n; ++i) {
         size_t current_size = size_.load(std::memory_order_relaxed);
         if (current_size >= max_size) break;
-        // PA-4: 字段级移动进环形槽位，旧槽位残留被直接覆盖
+        // PA-4: 字段级移动进环形槽位，旧槽位残留被直接覆盖。
+        // 0.7.2 §4.1：不销毁节点——移出后的空壳留给调用方（dispatch）
+        // 经 PriorityScheduler::recycle 回池（池满回堆）；本方法不再
+        // 拥有节点生命周期，调用方必须处理 tasks[i]（回收或删除）。
         move_task_fields(queue_[back_index_].task, std::move(*tasks[i]));
-        tasks[i].reset();
         back_index_ = (back_index_ + 1) % queue_.size();
         size_.store(current_size + 1, std::memory_order_relaxed);
         ++pushed;

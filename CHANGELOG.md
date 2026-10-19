@@ -30,6 +30,23 @@
   `submit_priority(P, callable)` 两参模式（整数字面量映射
   `TaskPriority` 枚举，变量经 `static_cast`）；带额外绑定参数的调用
   保留原样并逐条报告。`--dry-run` 预览。
+- **堆分配优化阶段一（roadmap §4.1）**：submit 主路径
+  **9 → 7 allocs/task（-22%）**、768 → **512 bytes/task（-33%）**。
+  ① Task 调度节点对象池（PriorityScheduler 内定容 256 Vyukov MPMC
+  空闲表，单元序号防 ABA，析构-重建严格重置协议；命中率实测串行
+  100%、并发 99.1%~100%，池满/池空自动回退堆分配，语义零变化）；
+  ② facade 提交路径单控制块整合（submit 与
+  submit_priority/submit_auto(TaskBuilder) 共享路径的 promise/ready、
+  提交上下文、admission 释放链、资源租约、move-only bind 结果并入
+  单次分配；包装层捕获从多字段降为单 shared_ptr/裸指针，包装层分配
+  5 → 2 次）。自动生效、用户无感知、无行为变化。独立验证：hotpath
+  吞吐 10 轮交错 p=1 +22.6%、p=2..16 容差内，TSAN 15/15 与 ASAN 6/6
+  零报告。实施记录与草案偏差清单见
+  `docs/design/allocation_optimization_proposal.md` §9。
+- **可观测性 API**：`AllocationMetrics`（types.hpp，Task 节点池命中/
+  未命中累计）；`Executor::get_allocation_metrics()` 与
+  `Executor::get_task_pool_hit_rate()`（默认池快照，未初始化返回零）；
+  `IAsyncExecutor::get_allocation_metrics()` 虚方法（additive，默认零）。
 
 ### 文档
 

@@ -735,6 +735,25 @@ size_t Executor::get_in_flight_submissions() const {
     return current > 0 ? static_cast<size_t>(current) : 0;
 }
 
+AllocationMetrics Executor::get_allocation_metrics() const {
+    auto executor = manager_->get_default_async_executor_snapshot();
+    if (!executor) {
+        return AllocationMetrics{};
+    }
+    return executor->get_allocation_metrics();
+}
+
+double Executor::get_task_pool_hit_rate() const {
+    const AllocationMetrics metrics = get_allocation_metrics();
+    const uint64_t total =
+        metrics.task_pool_hit_count + metrics.task_pool_miss_count;
+    if (total == 0) {
+        return 0.0;
+    }
+    return static_cast<double>(metrics.task_pool_hit_count) /
+           static_cast<double>(total);
+}
+
 void Executor::record_task_exception(const std::string& executor_name,
                                      const std::string& task_id,
                                      const std::string& message,

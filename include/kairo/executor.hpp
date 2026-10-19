@@ -265,6 +265,21 @@ public:
     size_t get_in_flight_submissions() const;
 
     /**
+     * @brief 堆分配优化观测快照（0.7.2 §4.1）
+     *
+     * 返回默认异步池 Task 节点池的累计命中/未命中计数（诊断用途，
+     * relaxed 语义，无同步保证）。未初始化或默认池不可用时全零。
+     */
+    AllocationMetrics get_allocation_metrics() const;
+
+    /**
+     * @brief Task 节点池命中率（0.0-1.0）
+     *
+     * 未有任何提交时返回 0.0。验收线：稳态 > 95%（roadmap §4.1）。
+     */
+    double get_task_pool_hit_rate() const;
+
+    /**
      * @brief 提交优先级任务（0.7.2 起弃用）
      *
      * @deprecated 优先级是调度策略维度而非提交协议。请改用
@@ -1780,7 +1795,34 @@ auto Executor::submit_with_rejection_observer(
     }
 
     // CR-107：promise 与 ready 标志合并为单控制块（原两个 make_shared）。
-    auto cell = std::make_shared<detail::PromiseCell<return_type>>();
+    // 0.7.2 §4.1：提交上下文（executor 名、task id、admission 释放、
+    // move-only bind 结果与类型擦除调用）一并并入该控制块——task/
+    // on_timeout 包装只捕获一个 shared_ptr（恰落入 std::function 的小
+    // 对象缓冲，16B ≤ 各标准库 SBO），消除包装层的两次堆分配。语义与
+    // 逐字段捕获逐位一致：结算时序、admission 释放点、异常观测路径不变。
+    struct SubmitCell {
+        std::promise<return_type> promise;
+        std::atomic_bool ready{false};
+        Executor* self = nullptr;
+        std::string executor_name;
+        std::string task_id;
+        std::shared_ptr<AdmissionReleaser> releaser;  // 可空（admission 未启用）
+        // bound_task 经 shared_ptr 持有：支持 move-only 可调用（如
+        // unique_ptr 捕获的 lambda）——wrapper 转 std::function 要求可
+        // 拷贝目标，间接层在此擦除该约束。改动此结构须保证 tutorial 11
+        // 的 move-only 用例。
+        std::shared_ptr<void> bound;
+        return_type (*invoke_bound)(SubmitCell&) = nullptr;
+
+        void release_admission() {
+            if (releaser) releaser->release();
+        }
+    };
+
+    auto cell = std::make_shared<SubmitCell>();
+    cell->self = this;
+    cell->executor_name = executor_name;
+    cell->task_id = task_id;
     auto future = cell->promise.get_future();
 
     if constexpr (sizeof...(Args) == 0) {
@@ -1800,12 +1842,14 @@ auto Executor::submit_with_rejection_observer(
         }
     }
 
-    // bound_task 经 shared_ptr 持有：支持 move-only 可调用（如 unique_ptr
-    // 捕获的 lambda）——wrapper 转 std::function 要求可拷贝目标，间接层
-    // 在此擦除该约束。改动此结构须保证 tutorial 11 的 move-only 用例。
-    auto bound_task = std::make_shared<decltype(std::bind(std::forward<F>(f), std::forward<Args>(args)...))>(
-        std::bind(std::forward<F>(f), std::forward<Args>(args)...)
-    );
+    using BoundTask =
+        decltype(std::bind(std::forward<F>(f), std::forward<Args>(args)...));
+    cell->bound =
+        std::make_shared<BoundTask>(std::bind(std::forward<F>(f),
+                                              std::forward<Args>(args)...));
+    cell->invoke_bound = [](SubmitCell& c) -> return_type {
+        return std::invoke(*std::static_pointer_cast<BoundTask>(c.bound));
+    };
 
     // 总量有界 admission：拒绝时 future 立即以 CapacityExhaustedException
     // 就绪（不抛出），failure 事件已由 try_admit_submission 记录。
@@ -1817,46 +1861,49 @@ auto Executor::submit_with_rejection_observer(
         cell->promise.set_exception(exception);
         return future;
     }
-    auto release_admission = [releaser = std::move(admission.releaser)]() {
-        if (releaser) releaser->release();
-    };
+    cell->releaser = std::move(admission.releaser);
 
-    auto task_wrapper = [this, executor_name, task_id, cell, bound_task,
-                         release_admission]() mutable {
+    // 包装层捕获策略（0.7.2 §4.1）：libstdc++ 的 std::function 小对象
+    // 缓冲只收 <16B 的 functor——task_wrapper 捕获 shared_ptr（16B，堆
+    // 分配一次），on_timeout 捕获裸指针（8B，零分配）。裸指针的安全性
+    // 依据：两者同批移入同一 Task 节点（move_task_fields 字段级整体
+    // 搬运），节点析构时两个成员同生共死——on_timeout 的全部触发点
+    // （execute_task 软超时 / 拒绝路径前）Task 节点均完整存活，不存在
+    // on_timeout 单独存活的窗口。
+    auto task_wrapper = [cell]() mutable {
         try {
             if constexpr (std::is_void_v<return_type>) {
-                std::invoke(*bound_task);
-                release_admission();
+                cell->invoke_bound(*cell);
+                cell->release_admission();
                 cell->promise.set_value();
             } else {
-                auto result = std::invoke(*bound_task);
-                release_admission();
+                auto result = cell->invoke_bound(*cell);
+                cell->release_admission();
                 cell->promise.set_value(std::move(result));
             }
             cell->ready.store(true, std::memory_order_release);
         } catch (...) {
             auto exception = std::current_exception();
-            release_admission();
+            cell->release_admission();
             cell->promise.set_exception(exception);
             cell->ready.store(true, std::memory_order_release);
-            record_task_exception(
-                executor_name,
-                task_id,
+            cell->self->record_task_exception(
+                cell->executor_name,
+                cell->task_id,
                 "Async task threw an exception",
                 exception);
             throw;
         }
     };
 
-    auto on_timeout = [this, executor_name, task_id, cell,
-                       release_admission](std::exception_ptr exception) {
+    auto on_timeout = [keep_alive = cell.get()](std::exception_ptr exception) {
         bool expected = false;
-        if (cell->ready.compare_exchange_strong(expected, true)) {
-            release_admission();
-            cell->promise.set_exception(exception);
-            record_task_timeout(
-                executor_name,
-                task_id,
+        if (keep_alive->ready.compare_exchange_strong(expected, true)) {
+            keep_alive->release_admission();
+            keep_alive->promise.set_exception(exception);
+            keep_alive->self->record_task_timeout(
+                keep_alive->executor_name,
+                keep_alive->task_id,
                 "Async task timed out before execution",
                 exception);
         }
@@ -1867,7 +1914,7 @@ auto Executor::submit_with_rejection_observer(
             std::runtime_error("Async executor rejected task submission"));
         bool expected = false;
         if (cell->ready.compare_exchange_strong(expected, true)) {
-            release_admission();
+            cell->release_admission();
             cell->promise.set_exception(exception);
             record_submit_rejected(
                 executor_name,
@@ -2652,15 +2699,42 @@ auto Executor::submit_priority_scheduled(
         throw std::runtime_error("Async executor not initialized. Call initialize() first.");
     }
 
-    auto promise = std::make_shared<std::promise<return_type>>();
-    auto promise_ready = std::make_shared<std::atomic_bool>(false);
-    auto future = promise->get_future();
+    // 0.7.2 §4.1：与 submit 同款单控制块整合——promise/ready（原两个
+    // make_shared）、admission 释放链、0.7.1 资源租约、move-only bind
+    // 结果并入 PrioritySubmitCell；task_wrapper 捕获 shared_ptr（16B，
+    // 堆分配一次），on_timeout 捕获裸指针（8B，零分配，生命周期依据
+    // 同 submit 注释：两者同批移入同一 Task 节点，同生共死）。原 5 次
+    // 包装层分配降为 2 次；结算时序与释放点逐位一致。
+    struct PrioritySubmitCell {
+        std::promise<return_type> promise;
+        std::atomic_bool ready{false};
+        Executor* self = nullptr;
+        std::string executor_name;
+        std::string task_id;
+        std::shared_ptr<AdmissionReleaser> releaser;
+        std::shared_ptr<detail::TerminalReleaser> terminal;
+        // move-only bind 结果经 shared_ptr 持有（同 submit 的 tutorial 11
+        // 约束），调用经类型擦除 thunk。
+        std::shared_ptr<void> bound;
+        return_type (*invoke_bound)(PrioritySubmitCell&) = nullptr;
+
+        void release_terminal() noexcept {
+            if (releaser) releaser->release();
+            if (terminal) terminal->release();
+        }
+    };
+
+    auto cell = std::make_shared<PrioritySubmitCell>();
+    cell->self = this;
+    cell->executor_name = executor_name;
+    cell->task_id = task_id;
+    auto future = cell->promise.get_future();
 
     if constexpr (sizeof...(Args) == 0) {
         if (detail::is_empty_std_function(f)) {
             auto exception = std::make_exception_ptr(std::invalid_argument("empty task"));
-            promise_ready->store(true, std::memory_order_release);
-            promise->set_exception(exception);
+            cell->ready.store(true, std::memory_order_release);
+            cell->promise.set_exception(exception);
             record_submit_rejected(
                 executor_name,
                 task_id,
@@ -2670,52 +2744,53 @@ auto Executor::submit_priority_scheduled(
         }
     }
 
-    auto bound_task = std::make_shared<decltype(std::bind(std::forward<F>(f), std::forward<Args>(args)...))>(
-        std::bind(std::forward<F>(f), std::forward<Args>(args)...)
-    );
+    using BoundTask =
+        decltype(std::bind(std::forward<F>(f), std::forward<Args>(args)...));
+    cell->bound =
+        std::make_shared<BoundTask>(std::bind(std::forward<F>(f),
+                                              std::forward<Args>(args)...));
+    cell->invoke_bound = [](PrioritySubmitCell& c) -> return_type {
+        return std::invoke(*std::static_pointer_cast<BoundTask>(c.bound));
+    };
 
     // 总量有界 admission（与 submit 相同语义：拒绝不抛出，future 立即就绪）。
     auto admission = try_admit_submission(executor_name, task_id, "submit_priority");
     if (!admission.accepted) {
         auto exception = std::make_exception_ptr(CapacityExhaustedException(
             "In-flight submission capacity exhausted"));
-        promise_ready->store(true, std::memory_order_release);
-        promise->set_exception(exception);
+        cell->ready.store(true, std::memory_order_release);
+        cell->promise.set_exception(exception);
         return future;
     }
     // 终态释放链：admission 计数 + 资源租约（如有）。被任务包装与
     // 软超时结算闭包共享（各自持 shared_ptr 副本），TerminalReleaser
     // 的 CAS 保证恰好一次、析构兜底池丢弃路径。
-    auto release_terminal = [releaser = std::move(admission.releaser),
-                             lease = std::move(terminal_release)]() noexcept {
-        if (releaser) releaser->release();
-        if (lease) lease->release();
-    };
+    cell->releaser = std::move(admission.releaser);
+    cell->terminal = std::move(terminal_release);
 
-    auto task_wrapper = [this, executor_name, task_id, promise, promise_ready, bound_task,
-                         release_terminal]() mutable {
+    auto task_wrapper = [cell]() mutable {
         try {
             if constexpr (std::is_void_v<return_type>) {
-                std::invoke(*bound_task);
-                release_terminal();
-                promise->set_value();
+                cell->invoke_bound(*cell);
+                cell->release_terminal();
+                cell->promise.set_value();
             } else {
-                auto result = std::invoke(*bound_task);
-                release_terminal();
-                promise->set_value(std::move(result));
+                auto result = cell->invoke_bound(*cell);
+                cell->release_terminal();
+                cell->promise.set_value(std::move(result));
             }
-            promise_ready->store(true, std::memory_order_release);
+            cell->ready.store(true, std::memory_order_release);
         } catch (...) {
             auto exception = std::current_exception();
-            release_terminal();
-            promise->set_exception(exception);
-            promise_ready->store(true, std::memory_order_release);
+            cell->release_terminal();
+            cell->promise.set_exception(exception);
+            cell->ready.store(true, std::memory_order_release);
             // DropIfLate 的结构化终态遵循取消类约定：不计 task-exception
             // failure（可观测性由 deadline_dropped_count 与 future 终态承载）。
             if (!is_deadline_drop_exception(exception)) {
-                record_task_exception(
-                    executor_name,
-                    task_id,
+                cell->self->record_task_exception(
+                    cell->executor_name,
+                    cell->task_id,
                     "Priority async task threw an exception",
                     exception);
             }
@@ -2723,15 +2798,14 @@ auto Executor::submit_priority_scheduled(
         }
     };
 
-    auto on_timeout = [this, executor_name, task_id, promise, promise_ready,
-                       release_terminal](std::exception_ptr exception) {
+    auto on_timeout = [keep_alive = cell.get()](std::exception_ptr exception) {
         bool expected = false;
-        if (promise_ready->compare_exchange_strong(expected, true)) {
-            release_terminal();
-            promise->set_exception(exception);
-            record_task_timeout(
-                executor_name,
-                task_id,
+        if (keep_alive->ready.compare_exchange_strong(expected, true)) {
+            keep_alive->release_terminal();
+            keep_alive->promise.set_exception(exception);
+            keep_alive->self->record_task_timeout(
+                keep_alive->executor_name,
+                keep_alive->task_id,
                 "Priority async task timed out before execution",
                 exception);
         }
@@ -2751,9 +2825,9 @@ auto Executor::submit_priority_scheduled(
         auto exception = std::make_exception_ptr(
             std::runtime_error("Async executor rejected priority task submission"));
         bool expected = false;
-        if (promise_ready->compare_exchange_strong(expected, true)) {
-            release_terminal();
-            promise->set_exception(exception);
+        if (cell->ready.compare_exchange_strong(expected, true)) {
+            cell->release_terminal();
+            cell->promise.set_exception(exception);
             record_submit_rejected(
                 executor_name,
                 task_id,

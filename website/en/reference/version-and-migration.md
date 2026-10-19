@@ -31,6 +31,12 @@ This is the **only breaking change in the 0.7.x series**, currently at the rc1 s
 - Migration support: `scripts/migrate_submit_priority.sh` plus the 0.7.2
   section of `docs/MIGRATION.md` (semantic-equivalence notes and a checklist).
   Tutorials and examples are fully migrated.
+- **Heap-allocation optimization phase one (roadmap §4.1, additive and
+  automatic)**: the submit path drops from 9 to 7 allocs/task and 768 to
+  512 bytes/task (task scheduler-node pool + facade single-control-block
+  consolidation; scheduling semantics unchanged). New observability APIs:
+  `get_allocation_metrics()` / `get_task_pool_hit_rate()`. Implementation
+  record: `docs/design/allocation_optimization_proposal.md` §9.
 - The 0.7.2 release will remove the `submit_priority` declaration (the internal
   `submit_priority_scheduled` and ThreadPool-layer APIs remain).
 

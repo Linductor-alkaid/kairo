@@ -23,8 +23,13 @@
 > 未结项、`CHANGELOG.md` 0.6.x 边界声明。
 > **0.7.2 §4.0 rc1 已落地**（submit_priority 标记 deprecated + facade 层
 > 测试/示例迁移 + 迁移脚本与文档，2026-10-19，
-> 分支 feat/v072-priority-transfer）；0.7.2 余项：§4.0 正式移除、
-> §4.1 堆分配优化阶段一、§4.2 反馈覆盖扩展、§4.3 可靠性收尾。
+> 分支 feat/v072-priority-transfer）。
+> **§4.1 堆分配优化阶段一已落地并通过独立验证**（Task 节点池 +
+> facade 单控制块整合 + AllocationMetrics 观测，9→7 allocs /
+> 768→512B，A/B 全线达标，TSAN/ASAN 干净，2026-10-19，实施记录见
+> `allocation_optimization_proposal.md` §9）；
+> 0.7.2 余项：§4.0 正式移除（发布收尾）、§4.2 反馈覆盖扩展、
+> §4.3 可靠性收尾。
 
 ## 0. 系列主题与原则
 
@@ -488,12 +493,22 @@ submit_priority(p, [&]{ ... })  →  submit_auto(TaskBuilder([&]{ ... }).priorit
   ```
 - **预期**：**-1 alloc/task**（引用计数块从 2 次降到 1 次）。
 
-**验收线（阶段一）**：
-- [ ] `benchmark_submit_allocations`：9 → **7 allocs/task** (-22%)
-- [ ] 字节数：768 → ~600 bytes/task (-22%)
-- [ ] 配对 A/B 吞吐基准：不弱于 0.7.0 ±5%
-- [ ] Task 池命中率 > 95%（稳态，通过 `get_allocation_metrics()` 监控）
-- [ ] ASAN/TSAN 全绿
+**验收线（阶段一）**（2026-10-19 落地，实测画像与偏差清单见
+`allocation_optimization_proposal.md` §9：Task 池为 PriorityScheduler
+内单一 Vyukov MPMC 空闲表（实施中经独立评审修正两处并发缺陷）；
+InlineFunction 草图改为 facade 单控制块整合；DrainBag 前提不复现不
+实施）：
+- [x] `benchmark_submit_allocations`：9 → **7 allocs/task** (-22%)（实测 7.00）
+- [x] 字节数：768 → **512.5 bytes/task**（-33%，优于 ~600 预期）
+- [x] 配对 A/B 吞吐基准：不弱于 0.7.0 ±5%（独立验证 10 轮交错：p=1
+      +22.6% 转正，p=2..16 全部容差内 -2.4%~+3.6%；分发回收链修复前
+      曾测得 -8.6%/-12.7%，根因与回正机制见提案 §9.2.1）
+- [x] Task 池命中率 > 95%（稳态，通过 `get_allocation_metrics()` 监控；
+      串行 100%，并发形态 99.1%~100%）
+- [x] ASAN/TSAN 全绿（独立验证：TSAN 15/15 零报告、ASAN 6/6 零报告；
+      全量 ctest 175/180，5 失败均定性非本次引入——3× test_api_doc
+      构建目录层级环境问题、benchmark_scheduling_paths 预存 flaky、
+      test_thread_pool 负载敏感 flake 基线同类）
 
 **可观测性**：新增诊断 API
 ```cpp

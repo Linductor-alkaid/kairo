@@ -82,9 +82,33 @@ void PriorityScheduler::move_task_out(const std::unique_ptr<Task>& src, Task& ou
     move_task_fields(out, std::move(*src));
 }
 
+std::unique_ptr<Task> PriorityScheduler::make_node() {
+    // 0.7.2 §4.1：节点池命中时零堆分配；语义等同 make_unique<Task>()。
+    return node_pool_.acquire();
+}
+
+void PriorityScheduler::recycle(std::unique_ptr<Task> node) noexcept {
+    node_pool_.release(std::move(node));
+}
+
+uint64_t PriorityScheduler::node_pool_hits() const noexcept {
+    return node_pool_.hits();
+}
+
+uint64_t PriorityScheduler::node_pool_misses() const noexcept {
+    return node_pool_.misses();
+}
+
+AllocationMetrics PriorityScheduler::get_allocation_metrics() const {
+    AllocationMetrics metrics;
+    metrics.task_pool_hit_count = node_pool_.hits();
+    metrics.task_pool_miss_count = node_pool_.misses();
+    return metrics;
+}
+
 void PriorityScheduler::enqueue(const Task& task) {
-    // 创建unique_ptr<Task>（复制字段）
-    auto task_ptr = std::make_unique<Task>();
+    // 创建unique_ptr<Task>（复制字段）；0.7.2 §4.1 起经节点池取存储。
+    auto task_ptr = make_node();
     copy_task_fields(*task_ptr, task);
 
     TaskPtrCompare cmp;
@@ -122,8 +146,9 @@ void PriorityScheduler::enqueue(const Task& task) {
 void PriorityScheduler::enqueue(Task&& task) {
     // PA-4: 移动版本 —— 字段级移动进 unique_ptr<Task>，无 function/string 复制。
     // priority 标量在 move_task_fields 移动后保持原值，可安全用于选队列。
+    // 0.7.2 §4.1 起经节点池取存储。
     TaskPriority priority = task.priority;
-    auto task_ptr = std::make_unique<Task>();
+    auto task_ptr = make_node();
     move_task_fields(*task_ptr, std::move(task));
 
     TaskPtrCompare cmp;
@@ -204,6 +229,7 @@ bool PriorityScheduler::dequeue(Task& task) {
             return false;
         }
         move_task_out(aged, task);
+        recycle(std::move(aged));
         return true;
     }
 
@@ -220,6 +246,7 @@ bool PriorityScheduler::dequeue(Task& task) {
     }
     if (task_ptr) {
         move_task_out(task_ptr, task);
+        recycle(std::move(task_ptr));
         return true;
     }
 
@@ -233,6 +260,7 @@ bool PriorityScheduler::dequeue(Task& task) {
     }
     if (task_ptr) {
         move_task_out(task_ptr, task);
+        recycle(std::move(task_ptr));
         return true;
     }
 
@@ -246,6 +274,7 @@ bool PriorityScheduler::dequeue(Task& task) {
     }
     if (task_ptr) {
         move_task_out(task_ptr, task);
+        recycle(std::move(task_ptr));
         return true;
     }
 
@@ -259,6 +288,7 @@ bool PriorityScheduler::dequeue(Task& task) {
     }
     if (task_ptr) {
         move_task_out(task_ptr, task);
+        recycle(std::move(task_ptr));
         return true;
     }
 
@@ -322,10 +352,19 @@ bool PriorityScheduler::empty() const {
 
 void PriorityScheduler::clear() {
     std::scoped_lock lock(critical_mutex_, high_mutex_, normal_mutex_, low_mutex_);
-    critical_queue_.clear();
-    high_queue_.clear();
-    normal_queue_.clear();
-    low_queue_.clear();
+    // 0.7.2 §4.1：残留节点析构后内存块回池（池满部分回堆），而非整批丢弃。
+    auto drain = [&](TaskQueue& queue) {
+        for (auto& node : queue) {
+            if (node) {
+                node_pool_.release(std::move(node));
+            }
+        }
+        queue.clear();
+    };
+    drain(critical_queue_);
+    drain(high_queue_);
+    drain(normal_queue_);
+    drain(low_queue_);
 }
 
 } // namespace kairo

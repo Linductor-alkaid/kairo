@@ -468,6 +468,10 @@ void ThreadPool::update_statistics(int64_t execution_time_ns, bool success, bool
     notify_completion_waiters();
 }
 
+AllocationMetrics ThreadPool::get_allocation_metrics() const {
+    return scheduler_.get_allocation_metrics();
+}
+
 ThreadPoolStatus ThreadPool::get_status() const {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -1199,7 +1203,8 @@ bool ThreadPool::try_submit_batch(
     ).count();
 
     for (size_t i = 0; i < batch_size; ++i) {
-        auto executor_task = std::make_unique<Task>();
+        // 0.7.2 §4.1：批量路径同样经节点池取 Task 存储（命中零堆分配）。
+        auto executor_task = scheduler_.make_node();
         executor_task->task_id = generate_task_id();
         executor_task->priority = TaskPriority::NORMAL;
         executor_task->function = std::move(tasks[i]);
