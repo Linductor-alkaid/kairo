@@ -41,12 +41,9 @@
 #include <utility>
 #include <vector>
 
-// 既有 repo 模式（参照 tests/test_executor_facade_submit_batch.cpp）：
-// 借 private->public 访问 facade 的 manager_ 以注册假 IGpuExecutor
-// （facade 公开 API 只能创建 CudaExecutor，无硬件环境不可用）。
-#define private public
+#include "test_gpu_timing_feedback_support.h"
+
 #include <kairo/executor.hpp>
-#undef private
 
 using namespace kairo;
 
@@ -261,10 +258,10 @@ protected:
         auto fake = std::make_unique<FakeGpuTimingExecutor>(kFakeGpuName,
                                                             supports_timing);
         fake_ = fake.get();
-        // manager 的注册方法是公开 API；此处仅需访问 facade 持有的
-        // manager_ 指针（文件顶部 private->public 模式）。
-        ASSERT_TRUE(executor_.manager_->register_gpu_executor(
-            kFakeGpuName, std::move(fake)));
+        // 注册经 support TU 的注入辅助（MSVC 修饰名兼容，见
+        // test_gpu_timing_feedback_support.h 注释）。
+        gpu_timing_test::register_fake_gpu(executor_, kFakeGpuName,
+                                           std::move(fake));
     }
 
     void SetScheduler(bool feedback) {
