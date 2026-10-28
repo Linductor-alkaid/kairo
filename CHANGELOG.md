@@ -6,12 +6,44 @@
 
 ## [Unreleased]
 
-分主体在途份额 admission（总量有界 admission 之上的可选分桶维度，issue
-#222 / Mira 台账 EXE-20261028-001）。全部为 additive；默认行为与 0.7.2
-逐项一致（未配置主体与未带键提交零热路径开销）。设计见
+0.7.3 主体内容（roadmap §5）：堆分配优化阶段二（TaskResult 轻量
+Future + submit_v2）、返回值语义补齐（取值 CpuGpuTask +
+ResultAdapter + ExecutionReport），以及先行落地的分主体在途份额
+admission（issue #222 / Mira 台账 EXE-20261028-001）。全部为
+additive；submit() 等既有 API 行为与 0.7.2 逐项一致。设计见
+`docs/design/scheduling_runtime.md` §16/§17 与
 `docs/design/subject_bucket_admission.md`。
 
 ### 新增
+
+- **TaskResult<T> 轻量 Future 与 `Executor::submit_v2`（roadmap §5.0，
+  堆分配优化阶段二）**：`<kairo/task_result.hpp>` 单次分配的
+  promise/future 一体单元——结算仲裁（settled CAS）与值发布（ready
+  release/acquire）分离，`get()` 快速路径无锁读值（实测命中率 99.7%）；
+  `submit_v2` 与 `submit` 语义逐项同构（admission / 空任务拒绝 /
+  queued soft timeout / 异常与超时观测 / 释放时序），提交上下文与
+  bind 结果本体并入同一控制块。实测 submit 主路径 **4.00
+  allocs/task / 488 bytes**（v0.7.2 submit 为 7.00 / 512；旧路径
+  不变）。broken promise 契约与 std::promise 析构对齐：
+  shutdown(false) 丢弃排队任务时 get() 以
+  future_error(broken_promise) 就绪，不挂死。可观测：
+  `AllocationMetrics` 追加 `fast_path_get_count` /
+  `slow_path_get_count`（"快速路径命中率" = fast/(fast+slow)）。迁移
+  策略：opt-in 新 API，`submit()` 不受影响（0.8.0 前不弃用）。
+- **取值 CpuGpuTask + ResultAdapter + ExecutionReport（roadmap §5.1）**：
+  `CpuGpuTask<CpuFunction, GpuFunction, R = void>`（末尾默认模板参，
+  两参拼写与 void 语义逐位不变）+ `cpu_gpu_task<R>(cpu, gpu)` 工厂 +
+  `CpuGpuTask::result_adapter()`。R 非 void 选中 GPU 时必须显式提供
+  `ResultAdapter<R>::gpu_extract`（GPU worker、GPU callable 返回后
+  调用；async 配置 = launch 完成点，设备搬运与同步责任在用户侧），
+  否则按 fallback 提交前结构化拒绝或 AllowCpu 回退——宁拒不静默降级
+  void。`submit_auto(CpuGpuTask)` 泛化为条件返回：void 实例化逐位
+  不变；非 void 产出 `ExecutionReport<R>{result, decision}`（报告
+  实际选择路径；回退时 decision 记录回退后最终路径；拒绝时 result
+  以 runtime_error 就绪、报告即终态）。GPU 结算双保险：kernel 包装
+  主结算（成功值/异常保真）+ stream 完成计时 sink "恰一条交付"兜底
+  （校验失败/launch 失败/post-kernel 设备错误/停止排空全路径）。需要
+  不支持完成计时的 GPU 执行器承接取值任务会被提交前拒绝。
 
 - **分主体在途份额运行期接口**：`Executor::set_subject_max_in_flight_tasks(subject, max)`
   （`max == 0` 解除该主体约束）、`get_subject_max_in_flight_tasks()`、

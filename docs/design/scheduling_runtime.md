@@ -780,3 +780,202 @@ tests/test_gpu_timing_feedback.cpp、tests/test_cuda_timing_failure_paths.cpp）
 - 残余风险：无 GPU 硬件，async 探针/sync 交付点/晚到回调自弃仅 stub
   编译 + 契约层验证；"恰等于预算不算超"以两侧界限覆盖（墙钟无法精确
   构造等值点，实现为严格大于）。
+
+---
+
+## 16. 0.7.3 TaskResult 轻量 Future 与 submit_v2（roadmap §5.0，堆分配优化阶段二）
+
+v0.7.2 阶段一后 submit 主路径余 7 allocs/task，其中两次来自
+Promise/Future 基础设施：SubmitCell 控制块（make_shared）与其内部
+`std::promise` 的固有共享状态（libstdc++ 每次 promise 构造必然一次
+堆分配），另一次为 move-only bind 结果的 `shared_ptr` 间接层。阶段二
+以自研 `kairo::TaskResult<T>`（单次分配的 promise/future 一体单元）
+承接新 opt-in 提交入口 `Executor::submit_v2`，三处并为一次分配；
+`submit()` 保持 `std::future` 契约原样（迁移策略：0.8.0 前不弃用，
+见 roadmap §5.0）。
+
+### 16.1 `kairo::TaskResult<T>`（`<kairo/task_result.hpp>`）
+
+**共享状态**（`detail::TaskResultSharedState<T>`，与提交上下文同一
+控制块）：mutex + cv 仅供慢速等待路径；结算仲裁与值发布分离为两个
+原子标志——`settled`（CAS 选举唯一结算者，语义同既有 promise_ready）
+与 `ready`（发布标志：先写值/异常，后 release 存 ready）。分离的原因：
+`get()` 快速路径在 `ready == true` 时**无锁读值**，若沿用"先 CAS
+ready 再写值"的既有形态，消费者会在值写入前观察到 ready——快速路径
+不成立。值存储 `std::optional<T>`（void 特化无此成员），异常
+`std::exception_ptr`。
+
+**get() 三段路径**（roadmap §5.0.2）：
+
+1. 快速路径：`ready` acquire 读为 true → 无锁取值（先 fast 计数）；
+2. 短暂 spin：至多 100 次 `yield()` 内轮询 ready（仍计 fast）；
+3. 慢速路径：mutex + cv 等待谓词 ready（计 slow）。
+
+唤醒协议：结算者写值 → `ready` release 存 → lock mutex → notify_all
+（持锁 notify 消除"消费者已检查 ready 未入队 cv、结算者未持锁 notify"
+的丢失唤醒窗）。快速/慢速命中计数为进程级 relaxed 原子（诊断口径：
+**(immediate + spin) / 总数** 为"快速路径命中率"），并入
+`Executor::get_allocation_metrics()` 的 `fast_path_get_count` /
+`slow_path_get_count`（AllocationMetrics 追加两字段，additive）。
+
+**单次结算与异常语义**：所有结算路径（正常执行、软超时、提交拒绝、
+admission 拒绝、shutdown 丢弃、promise 侧析构）经 `settled` CAS 恰好
+一次胜出，与 submit 的 promise_ready 仲裁逐点同构；胜者写值/异常 →
+ready 发布。异常经 `std::exception_ptr` 于 `get()` 重抛，与
+`std::future::get()` 一致。
+
+**broken promise 检测**：std::promise 析构自带 broken_promise 兑现；
+TaskResult 的"promise 侧"是池 Task 节点里的任务包装闭包，其析构须
+补齐同等语义——包装 functor 析构时 `break_promise_if_pending()`
+（未结算则以 `std::future_error(broken_promise)` 结算）。该检测幂等
+（settled CAS 输家即空操作），functor 经 std::function 拷贝的多份
+析构安全；shutdown(false) 丢弃排队任务的 `get()` 不再永久阻塞（与
+submit 的 broken_promise 行为对齐）。
+
+**句柄语义**：`TaskResult` 可移动、不可拷贝（`std::future` 同款单消费
+契约）；`get()` 取值后置无效（`valid() == false`），重复 `get()` 抛
+`future_error(no_state)`；另提供 `wait()` / `wait_for()` /
+`wait_until()`（返回 `std::future_status`，永不 deferred）与
+`is_ready()`。
+
+### 16.2 `Executor::submit_v2(F&&, Args&&...) -> TaskResult<T>`
+
+与 `submit()` 的语义对齐清单（逐项同构，仅返回载体不同）：
+
+| 语义点 | submit | submit_v2 |
+|---|---|---|
+| admission（总量 + 分桶 subject=""）| ✓ | 同一接纳点同一拒绝异常 |
+| admission 释放时序 | 计数先于 future | 计数先于 TaskResult |
+| 空任务拒绝 | invalid_argument 异常就绪 | 同 |
+| queued soft timeout | on_timeout CAS 仲裁 | 同（settled 仲裁）|
+| 任务异常观测 | record_task_exception | 同 |
+| 超时观测 | record_task_timeout | 同 |
+| 提交拒绝观测 | record_submit_rejected | 同 |
+| 监控 task_id | "facade_submit" | **"facade_submit_v2"**（路径可区分）|
+| 未初始化 | 抛 runtime_error | 同 |
+
+**单控制块形态**：`detail::SubmitV2Cell<R>` 公有继承
+`TaskResultSharedState<R>` 并内联提交上下文（executor 名、task id、
+admission releaser、**bind 结果本体**——不再经 shared_ptr<void> 间接
+层，move-only 可调用支持由 functor 持 cell shared_ptr 天然成立）与
+类型擦除调用指针。一次 `make_shared` 覆盖原 SubmitCell + promise 内部
+状态 + bind 间接层三次分配。任务包装 functor 持 cell（16B shared_ptr
+落入 std::function SBO，零分配）；on_timeout 持裸指针（零分配，存活
+性依据同 0.7.2 §4.1：同批 move_task_fields 入同一 Task 节点）。
+
+**验收线**（`benchmark_submit_allocations` 扩展 submit_v2 用例）：
+
+- submit void no-args 路径 **7 → 5 allocs/task**（-2：promise 状态 +
+  bind 间接层并入单控制块）；
+- 字节数 512.5 → ~400-500 bytes/task；
+- `get()` 快速路径命中率 > 60%（提交后即 get 的基准形态）；
+- 配对 A/B 吞吐：submit_v2 vs submit 不弱于 -5%（新 API 只需不弱于
+  旧路径；旧路径行为零变化）；
+- 全量测试 + 向后兼容验证（submit 系列契约一字不改）。
+
+## 17. 0.7.3 返回值语义补齐：CpuGpuTask<T> / ResultAdapter / ExecutionReport
+（roadmap §5.1）
+
+unified_facade_and_auto_routing.md §4.2 第一阶段延后项：带返回值的
+CPU/GPU 自动任务。核心约束（原设计）：**GPU callback 的返回值与设备
+同步语义不得被库草率定义**——GPU 侧何时能安全读出结果取决于用户的
+设备搬运安排（sync 拷贝 / pinned memory + 自管同步），库无法替用户
+保证。故取值机制由用户**显式**提供。
+
+### 17.1 形态
+
+- `CpuGpuTask<CpuFunction, GpuFunction, R = void>`：在既有两参形态
+  **末尾**追加默认模板参（`CpuGpuTask<A, B>` 拼写与 void 语义逐位
+  不变）；工厂 `cpu_gpu_task<R>(cpu, gpu)` 以首个显式模板参表达 R。
+  CPU callable 要求可调用且返回可转换到 R；GPU callable 形态不变
+  （`(void* stream)` 或无参，返回 void）。
+- `ResultAdapter<R>`（`<kairo/task_result.hpp>`）：显式取值适配器，
+  唯一成员 `std::function<R()> gpu_extract`。R 非 void 且路由选中
+  GPU 时**必须**提供（提交时拒绝，结构化 SubmitRejected，不运行任何
+  代码后才发现）；R 为 void 时 adapter 无意义。
+- **取值点**（`gpu_extract` 的调用时点与线程）：GPU worker 线程、
+  GPU callable 返回之后——与执行器自身 promise 结算点完全一致
+  （async 配置 = launch 完成点，**不是** stream 完成点；sync 配置 =
+  设备同步完成点）。该契约把设备同步责任完整交给用户：需要 stream
+  完成语义时由 GPU callable 自行同步；`gpu_extract` 阻塞会拖住 GPU
+  worker，属用户的显式选择。CR-153 不适用（不涉及 CUDA API 回调，
+  取值发生在 kernel callable 的同一线程与调用栈之后）。
+- CPU 路径：R = cpu() 的返回（在默认池 worker 结算），异常经
+  `TaskResult::get()` 重抛。
+
+### 17.2 `ExecutionReport<R>` 与新 overload
+
+`submit_auto(CpuGpuTask<C, G, R>)` 泛化为条件返回：
+`std::conditional_t<std::is_void_v<R>, std::future<void>,
+ExecutionReport<R>>`——**void 实例化的签名与行为逐位不变**
+（既有 overload 的返回类型表达式泛化，非 void 才产出报告），
+`ExecutionReport<R> { TaskResult<R> result; RoutingDecision decision; }`
+报告实际选择路径（selected_backend / selected_executor_name /
+reason / status / diagnostics / fell_back）。拒绝（路由拒绝、GPU 提交
+异常且不容回退）时 `result` 以 runtime_error 异常就绪、`decision`
+如实反映拒绝原因——不抛出，报告即终态；这与 void 版"future 以异常
+就绪"的既有语义同构。
+
+**允许回退（AllowCpu）的路径切换**：GPU 提交异常回退 CPU 时
+`decision` 记录回退后的最终路径（AcceptDegraded + fell_back），
+result 来自 CPU callable——报告的 decision 恒为实际执行路径。
+
+### 17.3 明确不做
+
+- 不改变 void 版本的任何行为/签名实例化；
+- 不做 GPU 异步取值（stream 完成点交付 R 依赖 per-executor 完成回调
+  注入，属 0.8 方向；届时 CR-153 约束由"取值仅转交、搬运由用户
+  callable 安排"延续）；
+- 不为 R 非 void 且未提供 gpu_extract 的 GPU 选择做静默 void 降级
+  （宁拒不骗）。
+
+
+---
+
+## 18. 0.7 系列接口冻结与 0.8 预留方向（roadmap §5.2）
+
+### 18.1 0.7 系列接口冻结清单
+
+随 0.7.3 收官，以下 0.7 系列引入的调度面接口进入冻结态——0.8 内
+保持源码与语义兼容，语义变更须走新增版本小节 + 迁移指南：
+
+- **调度协议**：`IScheduler`（`route` / `route_dispatch` /
+  `select_bounded_executor` / `effective_priority_for` /
+  `wants_feedback` / `on_task_completed`）、`RoutingDecision`/
+  `RoutingStatus`/`RoutingReason`/`RoutingDiagnostics` 位、
+  `SchedulingFeedback` 字段集、`SchedulingMetrics` 计数集。
+- **pipeline 组件**（`<kairo/scheduling_pipeline.hpp>`）：
+  `ConstraintFilterChain<>`、`IntentCandidateGenerator`、
+  `IdentityScoring`、`select_first`、`apply_affinity_advisory`。
+- **反馈与推断**：`FeedbackAggregator` 快照语义与键空间有界契约、
+  `TaskInferenceTable` 建议性推断（AutoInferredIntent 位 +
+  inferred_reason）、能力快照 TTL 缓存（`state_epoch` 主动失效）。
+- **资源与期限**：`ResourceLease`/`ResourceRequirements` 静态配额
+  语义、`DeadlinePolicy` 三态裁决点（开始执行时）。
+- **提交通道**：`submit` / `submit_v2`(TaskResult) /
+  `submit_auto`（裸、SubjectKey、TaskBuilder、CpuGpuTask<R>）/
+  `dispatch_auto` 的语义分工（§10.2：submit 系列不产出路由决策）
+  与 `ExecutionReport<R>` 形态。
+
+### 18.2 为 0.8 预留的方向（写进设计文档，非 0.7 承诺）
+
+1. **NUMA topology 感知**：`ExecutorCapability` 已预留
+   `bound_cpus`；0.8 方向 = 拓扑发现（节点/缓存域）进入能力快照 +
+   pipeline 的 scoring 阶段消费（§5 pipeline 化已完成，scoring 扩展
+   不再动 route 结构）。约束：DefaultScheduler 保持确定性，拓扑
+   评分进 AdaptiveScheduler（opt-in 不变）。
+2. **跨 pool locality**：同节点执行器偏好（CPU 亲和任务避开跨节点
+   默认池）与 `SerialExecutionContext` 的就地执行偏好；需要
+   per-executor locality 元数据与迁移成本模型，避免两个控制回路
+   （resizer / adaptive）打架的约束延续 §7 风险表。
+3. **transfer cost（CPU↔GPU 数据搬运成本）**：`TaskCharacteristics::
+   data_size_bytes` + `compute_intensity` 已在路由输入中；0.8 方向
+   = 把 PCIe/NVLink 实测传输速率纳入 GpuScheduler 决策（历史 EWMA
+   或静态拓扑带宽表），并与 0.7.3 的
+   `ResultAdapter::gpu_extract` 取值点联动（取值时点即搬运时点，
+   可解释、可观测）。GPU 异步取值（stream 完成点交付 R，经完成
+   回调注入）依赖 per-executor 完成回调扩展，CR-153 约束（取值仅
+   转交、搬运由用户 callable 安排）延续。
+4. **堆分配优化阶段三（协程，实验性）**：见
+   `allocation_optimization_proposal.md` §2.3（`KAIRO_ENABLE_CORO_TASK`
+   可选特性，3-4 allocs/task）。

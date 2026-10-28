@@ -12,7 +12,7 @@ This site anchors on `v0.7.2` as its stable baseline, covering unified auto-rout
 | Module | Facade / types | Learning entry | Full API docs |
 | --- | --- | --- | --- |
 | Lifecycle | `instance`, standalone instances, `initialize[_ex]`, `shutdown` | [Lifecycle](/en/quick-start/lifecycle) | Lifecycle and configuration chapters of `docs/API.md`. |
-| Regular tasks and routing | `submit_auto`, `TaskOptions`, `RoutingDecision`, `submit` | [Execution Models and Routing Boundaries](/en/guides/execution-models-and-routing), [Task Inputs and Ownership](/en/quick-start/task-inputs-and-ownership) | `Executor` template API. |
+| Regular tasks and routing | `submit_auto`, `TaskOptions`, `RoutingDecision`, `submit`, `submit_v2`/`TaskResult` (0.7.3) | [Execution Models and Routing Boundaries](/en/guides/execution-models-and-routing), [Task Inputs and Ownership](/en/quick-start/task-inputs-and-ownership) | `Executor` template API. |
 | Periodic and batch | `submit_periodic`, `TimerHandle::cancel`, periodic status, three batch flavors | [Delayed and Periodic](/en/tutorial/delayed-and-periodic), [Batch](/en/tutorial/batch) | Facade timer and batch chapters. |
 | Task graphs | `submit_with_handle`, `submit_after[_with_handle]`, `when_all` | [Task Dependencies](/en/tutorial/dependencies) | Task dependency chapter. |
 | Failure and waiting | failure callback/status, recent failures, `wait_for_completion[_ex]`, completion status | [Failure Observability](/en/reliability/failure-observability), [Bounded Waiting](/en/tutorial/waiting-and-status) | Failure, waiting and type chapters. |

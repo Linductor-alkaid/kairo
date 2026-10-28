@@ -36,6 +36,13 @@
 > **§4.0 正式移除已完成**（facade `submit_priority` 声明删除，文档全面
 > 统一，2026-10-19）——0.7.2 全部路线图项收官，**0.7.2 已发布
 > （tag v0.7.2）**。
+> **0.7.3 §5.0/§5.1 已落地（2026-10-28，分支 feat/v073-task-result）**：
+> TaskResult 轻量 Future + submit_v2（堆分配优化阶段二，submit 主路径
+> 7 → 4 allocs/task，实施记录见 `allocation_optimization_proposal.md`
+> §10，设计语义见 `scheduling_runtime.md` §16）+ 取值 CpuGpuTask /
+> ResultAdapter / ExecutionReport（`scheduling_runtime.md` §17）。
+> §5.2 稳定化（soak / 全矩阵 / 接口冻结）进行中；另：分主体在途份额
+> admission（issue #222，非路线图项）已随 0.7.3 先行落地。
 
 ## 0. 系列主题与原则
 
@@ -608,23 +615,33 @@ CR-116/123/125/126/134 契约注释落源码，定性结果见评审文档 §4.3
   - 慢速路径：mutex + cv（与 std::future 相当）
 - **预期**：快速路径命中率 > 60%（取决于任务粒度）。
 
-**验收线（阶段二）**：
-- [ ] `benchmark_submit_allocations`：7 → **5-6 allocs/task** (-17-29%)
-- [ ] 字节数：~600 → ~400-500 bytes/task
-- [ ] `TaskResult::get()` 快速路径命中率 > 60%
-- [ ] 配对 A/B 吞吐基准：不弱于 v0.7.2 ±5%
-- [ ] 全量测试 + 向后兼容性验证
+**验收线（阶段二）**（2026-10-28 落地实测，实施记录见
+`allocation_optimization_proposal.md` §10）：
+- [x] `benchmark_submit_allocations`：7 → **4 allocs/task**（目标 5-6，
+      超额；-43%）
+- [x] 字节数：512 → **488 bytes/task**（目标 ~400-500，线内）
+- [x] `TaskResult::get()` 快速路径命中率 > 60%（实测 99.7%）
+- [ ] 配对 A/B 吞吐基准：不弱于 v0.7.2 ±5%（独立验证进行中）
+- [ ] 全量测试 + 向后兼容性验证（独立验证进行中）
 
 **迁移策略**：
 - 新 API 作为 opt-in，旧 API 保持兼容
 - 0.8.0 前标记 `submit()` 为 deprecated
 - 0.9.0 完全移除旧 API
 
-### 5.1 返回值语义补齐
+### 5.1 返回值语义补齐 ✅ 已落地（2026-10-28）
 
 - `CpuGpuTask<T>` 带返回值 + 显式 `ResultAdapter<T>`（`unified_facade_and_auto_routing.md`
   第一阶段延后项），`ExecutionReport<T>` 报告实际选择的路径。以新 overload 形式加入，
   不改变 `void` 版本。
+- 落地形态：`CpuGpuTask<CpuFunction, GpuFunction, R = void>`（末尾默认
+  模板参，两参拼写逐位不变）+ `cpu_gpu_task<R>` 工厂；R 非 void 选中
+  GPU 必须显式 `ResultAdapter<R>::gpu_extract`（GPU worker、callable
+  返回后取值；async = launch 完成点，设备同步责任在用户侧），否则
+  提交前结构化拒绝或 AllowCpu 回退；`submit_auto` 泛化为条件返回
+  （void 实例化逐位不变，非 void 产出 `ExecutionReport<R>`）；GPU
+  结算双保险（kernel 包装主结算 + 计时 sink 兜底）。设计语义与明确
+  不做清单见 `scheduling_runtime.md` §17。
 
 ### 5.2 系列稳定化
 

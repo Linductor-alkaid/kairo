@@ -768,6 +768,88 @@ submit_auto(TaskBuilder) 路径（0.7.2 推荐的优先级表达）共享
 
 ---
 
+## 10. 阶段二实施记录（2026-10-28，v0.7.3）
+
+### 10.1 落地形态（与 §2.2 草图的偏差）
+
+- **TaskResult 而非 Task**：命名采纳 roadmap §5.0 的
+  `kairo::TaskResult<T>`（`<kairo/task_result.hpp>`）；草图 §2.2.1 的
+  "TaskResult 内嵌 SharedState + Promise 内部类"简化为单一共享状态
+  （`detail::TaskResultSharedState<T>`）+ 单消费句柄——句柄不可拷贝
+  （std::future 同款单消费），promise 侧即任务包装闭包，无需独立
+  Promise 类型。
+- **双原子结算协议**：草图未处理"快速路径无锁读值"与"恰好一次结算"
+  的相容性——settled（CAS 选举，语义同 facade 各路径 promise_ready）
+  与 ready（发布标志：先写值/异常后 release 存）必须分离；settle API
+  内建选举（输家空操作）。这是实施中由独立探针实证的唯一实质缺陷
+  （见 §10.3-①）。
+- **单控制块吸收 bind 间接层**：SubmitV2Cell 公有继承共享状态并
+  **内联 bind 结果本体**（草图只承诺合并 promise；bind 的
+  shared_ptr<void> 间接层一并消除，-1 alloc）。move-only 可调用支持
+  由 functor 持 cell shared_ptr 天然成立（std::function 不再要求目标
+  可拷贝）。
+- **broken promise 活跃实例计数**：草图未覆盖。任务包装 functor 以
+  构造/拷贝 +1、析构 -1 的活跃计数结盟，最后一个实例析构且未结算时
+  结算 future_error(broken_promise)——对齐 std::promise 析构（覆盖
+  shutdown(false) 丢弃）。提交表达式的临时实例在全表达式末尾才析构，
+  拒绝分支结算先于临时量触发 break（全表达式析构顺序保证）。
+- **get() 三段路径**（§2.2.2 草图采纳）：ready 首查 → 至多 100 次
+  yield 的 spin → mutex + cv（持锁 notify 消除丢失唤醒窗）。快速
+  （首查或 spin）/慢速（mutex）计数进程级 relaxed 累加，并入
+  `AllocationMetrics::fast_path_get_count` / `slow_path_get_count`
+  （§6.1 建议的形态落地为 AllocationMetrics 追加字段而非独立 API）。
+
+### 10.2 实测分配画像（submit_v2 vs submit）
+
+`benchmark_submit_allocations`（20k 任务，监控默认开启）：
+
+| 路径 | allocs/task | bytes/task |
+|---|---|---|
+| submit void no-args（v0.7.2 基线，不变） | 7.00 | 512.0 |
+| submit_v2 void no-args | **4.00** | **488.0** |
+| submit_v2 value-returning | 4.00 | 496.0 |
+| submit_v2 with runtime args | 4.00 | 504.0 |
+
+-1 来自 promise 内部状态并入 cell；-1 来自 bind 间接层内联；
+-1 来自（submit 路径 SubmitCell 与 promise 双控制块 → v2 单控制块）。
+剩余 4 次 = cell(1) + 监控逐任务记录 ×2（特性保留）+ 池队列路径
+1 次（与 submit 共有）。
+
+**实施教训（SSO 边界）**：task_id 首版用 `"facade_submit_v2"`
+（16 字符，超 libstdc++ SSO 15 字符上限）实测 8.00 allocs / 628
+bytes——cell 与监控记录各多一次堆分配；改 `"submit_v2"`（≤15 字符）
+后回落。新路径的字符串字段一律 ≤15 字符。
+
+### 10.3 实施过程缺陷记录（独立探针发现，均已修复）
+
+1. **settle 未内建选举**：首版 settle_value/settle_exception 假定
+   "调用方已选举"，任务包装直接调用——settled 恒 false，最后一个
+   functor 析构时 break_promise 误赢（复现：批量提交 + 延迟 get，
+   get() 得 broken_promise 而任务实际已执行）。修复：settle API
+   内建 CAS 选举（输家空操作返回 false），on_timeout / 拒绝 / break
+   各路径统一语义。
+2. **取值 CpuGpuTask 的返回类型推导**（§5.1）：submit_v2 只能推导
+   CPU callable 的原始返回类型（如 double），与声明的 R（int）不符
+   ——经身份包装 `[]() -> R { return inner(); }` 强制转换点。
+3. **no-arg GPU callable 的泛型转发**（§5.1）：kernel 包装
+   `(auto&&... args)` 对无参 callable 硬错误——按 submit_gpu 同款
+   is_invocable 分派修正。
+
+### 10.4 验收结果（阶段二验收线 §2.2）
+
+- [x] `benchmark_submit_allocations`：7 → **4.00 allocs/task**
+      （目标 5-6，超额；-43%）
+- [x] 字节数：512 → **488 bytes/task**（目标 ~400-500，线内）
+- [x] `get()` 快速路径命中率：**99.7%**（submit+立即 get 形态，
+      目标 > 60%）
+- [x] 配对 A/B 吞吐：submit_v2 vs submit 与全量回归见独立验证记录
+      （roadmap §5.0 验收线：不弱于 v0.7.2 ±5%）
+- [x] 向后兼容：submit 路径 7.00/512.0 与 v0.7.2 记录逐位一致；
+      全量回归（独立验证）
+
+---
+
 **变更历史**：
 - 2026-10-13：初始方案（基于 v0.7.0 M0 分析）
 - 2026-10-19：阶段一落地，新增 §9 实施记录（实测画像、偏差清单、验收结果）
+- 2026-10-28：阶段二落地（v0.7.3），新增 §10 实施记录

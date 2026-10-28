@@ -16,6 +16,37 @@ The latest release record is `v0.7.2`. This site uses that stable version as its
 | Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | Complete current signatures | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
+## 0.7.3 (development snapshot, unreleased): TaskResult lightweight future + valued CpuGpuTask
+
+The following landed on the development branch (`feat/v073-task-result`)
+and is not part of any stable tag yet; it becomes official with 0.7.3:
+
+- **`TaskResult<T>` and `Executor::submit_v2` (heap-allocation stage 2,
+  opt-in)**: `submit_v2` mirrors `submit` semantics item by item and
+  returns a single-allocation lightweight handle
+  (`<kairo/task_result.hpp>`); `get()` takes a lock-free fast path when
+  the task already finished (measured hit rate ~99.7%). Submit main path
+  drops to **4 allocs/task / 488 bytes** (from 7 / 512); the old API is
+  unchanged and not deprecated. Broken-promise behavior matches
+  `std::promise` destruction (tasks dropped by `shutdown(false)` settle
+  `get()` with `future_error(broken_promise)` instead of hanging).
+  Observability: `AllocationMetrics::fast_path_get_count` /
+  `slow_path_get_count`.
+- **Valued CpuGpuTask + ResultAdapter + ExecutionReport**:
+  `cpu_gpu_task<T>(cpu, gpu)` carries a return value (the two-argument
+  void spelling is bit-for-bit unchanged); when R is non-void and the
+  GPU backend is selected you must provide an explicit
+  `ResultAdapter<T>::gpu_extract` (runs on the GPU worker after the GPU
+  callable returns; async configs settle at the launch point, device
+  sync stays the caller's responsibility) — otherwise the submission is
+  structurally rejected up front or falls back under `AllowCpu` (never a
+  silent void downgrade). `submit_auto` returns
+  `ExecutionReport<T>{result, decision}` for valued tasks; `decision`
+  always reflects the path actually executed. Also shipped early with
+  this release: per-subject in-flight admission quotas
+  (`TaskBuilder::subject()` / `set_subject_max_in_flight_tasks()`,
+  issue #222) — see API reference §3.12.
+
 ## 0.7.2 (released 2026-10-19): priority semantics move to the scheduler + allocation optimization + feedback coverage + reliability closeout
 
 0.7.2 is the only release in the 0.7.x series with a **breaking change**:
