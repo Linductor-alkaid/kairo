@@ -26,7 +26,7 @@ English pages use the same repository examples and commands as Chinese pages; no
 | `/zh/realtime-and-communication/` | `/en/realtime-and-communication/` | Published | Realtime, communication, and blocking-I/O public APIs; tutorial examples `07`–`08`, `12` |
 | `/zh/realtime-and-communication/blocking-io-workers` | `/en/realtime-and-communication/blocking-io-workers` | Published | `IBlockingIoWorker`, Facade lifecycle API, and tutorial example `12` |
 | `/zh/realtime-and-communication/cancellation-and-timers` | `/en/realtime-and-communication/cancellation-and-timers` | Published | Cancellation/timer public APIs, serial dispatch semantics, and tutorial example `13` |
-| `/zh/realtime-and-communication/capacity-and-alerting` | `/en/realtime-and-communication/capacity-and-alerting` | Published | Bounded comm/realtime capacity plus `max_in_flight_tasks` total admission (`docs/API.md` §3.10) |
+| `/zh/realtime-and-communication/capacity-and-alerting` | `/en/realtime-and-communication/capacity-and-alerting` | Published | Bounded comm/realtime capacity, `max_in_flight_tasks` total admission (`docs/API.md` §3.11), and per-subject in-flight quotas (§3.12, `docs/design/subject_bucket_admission.md`) |
 | `/zh/guides/event-loop-interop` | `/en/guides/event-loop-interop` | Published | `docs/design/external_event_loop_interop.md` and `examples/event_loop_interop.cpp` |
 | `/zh/reliability/` | `/en/reliability/` | Published | Failure/status APIs, monitoring, deployment checks, and tutorial example `06` |
 | `/zh/advanced/` | `/en/advanced/` | Published | Public advanced APIs, current source architecture, and benchmark protocol |

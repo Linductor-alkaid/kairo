@@ -88,6 +88,44 @@ config.max_in_flight_tasks = 256;   // 已接纳未结算的提交总量
 随完成下降），再决定限流、扩容或降级；不要用调大 `max_in_flight_tasks`
 掩盖消费端停顿。
 
+### 分主体在途份额（master 开发，未发布）
+
+多个主体（租户 / 会话 / 管线）共享同一个 Executor 时，`max_in_flight_tasks`
+只有全局一本账：一个主体可以吃光全部在途额度，其他主体即使自身份额未被
+触碰也被全局拒绝。分主体在途份额在同一接纳点叠加**可选分桶维度**：每个
+已配置主体独立计数在途提交并以份额约束，与全局上限**同时生效**。仅运行
+期接口（`ExecutorConfig` 无初始映射）：
+
+```cpp
+ex.set_subject_max_in_flight_tasks("tenant-A", 4);   // 份额；0 = 解除约束
+ex.submit_auto(kairo::task(fn).subject("tenant-A")); // 带键提交计入该桶
+size_t a_water = ex.get_subject_in_flight_submissions("tenant-A");
+auto all = ex.get_subject_quota_status();            // 全体快照（按 key 排序）
+```
+
+- **覆盖路径**：带键 = `submit_auto(TaskBuilder)` 与
+  `submit_after*(TaskBuilder)`；其余提交路径仅全局兜底。未配置主体仅受
+  全局约束（未知即宽容）；全局 `max_in_flight_tasks == 0`（未启用）时
+  已配置主体的份额仍独立生效。
+- **拒绝可观测（与总量拒绝共用拒绝面）**：异常类型与 failure kind 不变。
+  区分靠两个维度：failure 事件新增的 `subject` 字段携带分桶键（空 = 总量
+  拒绝）；`subject_quota_exhausted_count` 是 `capacity_exhausted_count`
+  的子集计数（分桶拒绝时两者同时递增）。告警把「主体份额打满」与「全局
+  容量打满」分开路由：前者提示单主体限流或配额调整，后者才是扩容信号。
+- **水位判读**：`get_subject_in_flight_submissions(subject)` 是该主体的
+  瞬时水位，与 `subject_quota_exhausted_count` 的窗口增量配合，判读方式
+  与总量维度相同（贴顶 + 拒绝增长 = 持续过载）。
+- **热更新与代际**：活键调大/调小即刻约束后续提交，不驱逐已接纳任务；
+  `set(key, 0)` 解除即刻生效，已接纳任务随终态释放，此后该键不可查询；
+  解除后同名重建为**新代**、从 0 起计，不继承旧代残量——重建后的短暂
+  窗口内该主体实际并发在途可达「旧代残量 + 新代份额」，查询只反映当代。
+  配额更新与并发接纳为**弱一致**：更新完成后开始的提交必用新份额；与
+  更新交错的已开始接纳允许按旧快照完成，随终态自愈。
+
+完整契约（并发一致性、代际语义与验收）见
+[`docs/design/subject_bucket_admission.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/design/subject_bucket_admission.md)；
+API 语义见 `docs/API.md` §3.12。
+
 ## MpscChannel：每条消息都要处理
 
 ### 计算可持续性

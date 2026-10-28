@@ -66,6 +66,26 @@ config.max_in_flight_tasks = 256;   // total accepted-but-unsettled submissions
 
 Alert handling follows the same discipline as communication components: determine whether the cause is excess input, slow consumption, or a leak (in-flight count that never drops), then throttle, scale, or shed load. Do not hide consumer stalls by raising `max_in_flight_tasks`.
 
+### Per-subject in-flight quotas (master, unreleased)
+
+When multiple subjects (tenants / sessions / pipelines) share one Executor, `max_in_flight_tasks` keeps only a single global ledger: one subject can consume the entire in-flight budget, and other subjects are rejected globally even though their own share was never touched. Per-subject in-flight quotas add an **optional bucket dimension** at the same admission point: every configured subject counts its in-flight submissions independently under its own quota, **in effect together with** the global bound. Runtime API only (no `ExecutorConfig` mapping):
+
+```cpp
+ex.set_subject_max_in_flight_tasks("tenant-A", 4);   // quota; 0 = lift the constraint
+ex.submit_auto(kairo::task(fn).subject("tenant-A")); // keyed submit billed to this bucket
+size_t a_water = ex.get_subject_in_flight_submissions("tenant-A");
+auto all = ex.get_subject_quota_status();            // snapshot of all subjects (sorted by key)
+```
+
+- **Coverage**: keyed = `submit_auto(TaskBuilder)` and `submit_after*(TaskBuilder)`; all other submit paths get the global bound only. Unconfigured subjects are governed by the global bound alone (unknown is tolerant); a configured subject's quota still applies even when the global bound is disabled (`max_in_flight_tasks == 0`).
+- **Rejection observability (shared rejection surface)**: exception type and failure kind are unchanged. Two dimensions tell the cases apart: the new `subject` field on failure events carries the bucket key (empty = total-bound rejection), and `subject_quota_exhausted_count` is a subset counter of `capacity_exhausted_count` (both increment together on bucket rejections). Route "a subject filled its quota" and "the global capacity is full" to different playbooks: the former calls for per-subject throttling or a quota change; only the latter is a scale-up signal.
+- **Watermark reading**: `get_subject_in_flight_submissions(subject)` is the subject's instantaneous watermark; combine it with windowed `subject_quota_exhausted_count` growth exactly as you would for the total bound (watermark at the bound plus rising rejections = sustained overload).
+- **Hot updates and generations**: resizing a live key takes effect for subsequent submissions immediately and never evicts already-admitted tasks; `set(key, 0)` lifts the constraint immediately, admitted tasks release at their terminals, and the key becomes unqueryable; re-configuring the same key afterwards starts a **new generation** from zero without inheriting the old residue — during the transient window the subject's actual concurrent in-flight can reach "old-generation residue + new quota", while queries report the current generation only. Quota updates versus concurrent admissions are **weakly consistent**: submissions that start after an update completes must use the new quota; admissions already in flight when the update lands may finish under the old snapshot and self-heal at their terminals.
+
+Full contracts (concurrency consistency, generation semantics, acceptance) are frozen in
+[`docs/design/subject_bucket_admission.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/design/subject_bucket_admission.md);
+API semantics in `docs/API.md` §3.12.
+
 ## `MpscChannel`: every message matters
 
 For a FIFO flow, calculate within stable windows:
