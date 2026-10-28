@@ -244,7 +244,8 @@ foreach(TEST_SOURCE ${TEST_SOURCES})
     
     add_executable(${TEST_NAME} ${TEST_SOURCE})
 
-    if(TEST_NAME STREQUAL "test_gpu_timing_feedback")
+    if(TEST_NAME STREQUAL "test_gpu_timing_feedback"
+            OR TEST_NAME STREQUAL "test_valued_cpu_gpu_task")
         target_sources(${TEST_NAME} PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/test_gpu_timing_feedback_support.cpp
         )
