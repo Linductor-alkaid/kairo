@@ -41,7 +41,7 @@ description: 公开 API 的模块入口与稳定性边界。
 | `submit_cancellable*`、`request_task_cancel`、`get_cancellation_status` | 取消与定时教程 | 协作语义、registry 容量与取消计数。 |
 | `submit_delayed`、`submit_periodic`、`TimerHandle` / `ScopedTimerHandle` | 取消与定时教程 | cancel/reschedule、终态与定时计数。 |
 | `submit_on`、`submit_on_with_handle`、`SerialExecutionContext` | 事件循环互操作指南 | FIFO ticket 顺序、非阻塞派发与 shutdown 拒绝。 |
-| `max_in_flight_tasks`、`set/get_max_in_flight_tasks`、`get_in_flight_submissions`、`set_subject_max_in_flight_tasks`、`get_subject_max_in_flight_tasks` / `get_subject_in_flight_submissions` / `get_subject_quota_status`、`SubjectQuotaStatus`、`TaskBuilder::subject()` | 容量与告警 | 覆盖路径、capacity 拒绝语义与计数；分主体份额的覆盖路径、代际与弱一致契约。 |
+| `max_in_flight_tasks`、`set/get_max_in_flight_tasks`、`get_in_flight_submissions`、`set_subject_max_in_flight_tasks`、`get_subject_max_in_flight_tasks` / `get_subject_in_flight_submissions` / `get_subject_quota_status`、`SubjectQuotaStatus`（含 `admitted_total`）、`SubjectKey` / `subject()`、`TaskBuilder::subject()` | 容量与告警 | 覆盖路径（含裸形态带键入口）、capacity 拒绝语义与计数；分主体份额的覆盖路径、代际与弱一致契约、键脱敏与低报警示。 |
 | `register_lockfree_executor` / `start_` / `stop_` / `get_lockfree_executor_names` | 提交接口选型、高级与原理 | 后端生命周期；`dispatch_auto` 的 `accepted` 只代表队列接收。 |
 | 有界 dispatch、Blocking worker | 执行模型与路由边界 | admission 不等于完成、worker 生命周期。 |
 | GPU 注册、提交、状态、自动调度 | GPU 教程 | 后端可用性、stream 与硬件验证。 |

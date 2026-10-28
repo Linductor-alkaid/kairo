@@ -371,6 +371,29 @@ auto task(Function&& function) -> TaskBuilder<std::decay_t<Function>> {
 }
 
 /**
+ * @brief 分主体在途份额的分桶键标签（`submit_auto` 裸形态带键入口）。
+ *
+ * 用法：`ex.submit_auto(kairo::subject("tenant-A"), [&]{ ... })`——经
+ * `TaskBuilder::subject()` 同一接纳点消费，语义与带键 TaskBuilder 形态
+ * 一致（docs/design/subject_bucket_admission.md 修订 R-1）。
+ *
+ * 构造函数**刻意 explicit**：若允许 `const char*` 隐式转换，
+ * `submit_auto("key", fn)` 会因泛型重载 `submit_auto(F&&, Args&&...)`
+ * 对首参的精确匹配而在重载决议中胜出——键被当成 callable 静默错绑。
+ * explicit 使该误用直接编译失败，强制经 `subject()` 工厂表达。
+ */
+struct SubjectKey {
+    std::string key;
+
+    explicit SubjectKey(std::string k) : key(std::move(k)) {}
+};
+
+/** @brief SubjectKey 工厂：`submit_auto(kairo::subject("key"), fn)`。 */
+inline SubjectKey subject(std::string key) {
+    return SubjectKey(std::move(key));
+}
+
+/**
  * @brief CPU/GPU 自动路由任务的双路径 callable。
  *
  * CPU 与 GPU 路径彼此独立：CPU callable 不接收 stream，GPU callable 可接收

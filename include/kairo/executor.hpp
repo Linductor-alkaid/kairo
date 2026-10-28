@@ -871,6 +871,19 @@ public:
         -> std::future<typename std::invoke_result<F, Args...>::type>;
 
     /**
+     * @brief 裸 callable 形态携带分主体在途份额键（分桶 admission 修订 R-1）。
+     *
+     * 与 `submit_auto(F&&, Args&&...)` 语义逐位一致（同一接纳点、同一路由
+     * 决策与推断注解），仅把 `subject("key")` 的键送入接纳点，使裸 lambda
+     * 写法同样受该主体份额约束。键经 `kairo::subject()` 工厂构造
+     * （`SubjectKey` explicit，字面量误用编译失败而非静默错绑）。未配置
+     * 主体仅受全局约束；份额语义与拒绝/释放契约见 docs/API.md §3.12。
+     */
+    template<typename F, typename... Args>
+    auto submit_auto(SubjectKey subject, F&& f, Args&&... args)
+        -> std::future<typename std::invoke_result<F, Args...>::type>;
+
+    /**
      * @brief 提交带任务意图的普通 callable。
      *
      * 阶段一仅接受 `Auto` 或 `GeneralCpu`，其他意图必须使用对应 typed API。
@@ -1023,13 +1036,28 @@ private:
      * 会停留在 Pending。没有这个通知，任何依赖该句柄的 submit_after /
      * when_all 都会在 worker 线程上无限期等待，耗尽线程池并挂死 shutdown。
      * on_rejected 在设置拒绝异常的同一位置被调用（可能为 null）。
+     *
+     * @param subject 分主体在途份额键（空 = 不分桶）；公开 submit() 恒传
+     *                空串，submit_auto(SubjectKey, ...) 裸形态带键入口经
+     *                submit_auto_impl 传入。
      */
     template<typename F, typename... Args>
     std::future<typename std::invoke_result<F, Args...>::type>
     submit_with_rejection_observer(
         std::function<void(std::exception_ptr)> on_rejected,
+        const std::string& subject,
         F&& f,
         Args&&... args);
+
+    /**
+     * @brief submit_auto 裸形态（含 SubjectKey 带键入口）的共享实现。
+     *
+     * 路由决策、自动推断注解与拒绝语义逐位同 bare submit_auto；subject
+     * 空串 = 既有裸形态，非空 = 送入接纳点的分桶键。
+     */
+    template<typename F, typename... Args>
+    std::future<typename std::invoke_result<F, Args...>::type>
+    submit_auto_impl(const std::string& subject, F&& f, Args&&... args);
 
     // ------------------------------------------------------------------
     // 协作取消内部管道（C1）
@@ -1448,7 +1476,7 @@ template<typename F, typename... Args>
 auto Executor::submit(F&& f, Args&&... args)
     -> std::future<typename std::invoke_result<F, Args...>::type> {
     return submit_with_rejection_observer(
-        nullptr, std::forward<F>(f), std::forward<Args>(args)...);
+        nullptr, "", std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template<typename F, typename... Args>
@@ -1839,6 +1867,7 @@ auto Executor::submit_on_with_handle(SerialExecutionContext& context, F&& f, Arg
 template<typename F, typename... Args>
 auto Executor::submit_with_rejection_observer(
     std::function<void(std::exception_ptr)> on_rejected,
+    const std::string& subject,
     F&& f,
     Args&&... args)
     -> std::future<typename std::invoke_result<F, Args...>::type> {
@@ -1919,11 +1948,15 @@ auto Executor::submit_with_rejection_observer(
     };
 
     // 总量有界 admission：拒绝时 future 立即以 CapacityExhaustedException
-    // 就绪（不抛出），failure 事件已由 try_admit_submission 记录。
-    auto admission = try_admit_submission(executor_name, task_id, "submit", "");
+    // 就绪（不抛出），failure 事件已由 try_admit_submission 记录。subject
+    // 非空（submit_auto 裸形态带键入口）时同一接纳点叠加分桶份额判定。
+    auto admission = try_admit_submission(executor_name, task_id, "submit", subject);
     if (!admission.accepted) {
-        auto exception = std::make_exception_ptr(CapacityExhaustedException(
-            "In-flight submission capacity exhausted"));
+        // 分桶拒绝经 decision.rejection_exception 复用同一异常（消息含 key）。
+        auto exception = admission.rejection_exception
+            ? admission.rejection_exception
+            : std::make_exception_ptr(CapacityExhaustedException(
+                  "In-flight submission capacity exhausted"));
         cell->ready.store(true, std::memory_order_release);
         cell->promise.set_exception(exception);
         return future;
@@ -3451,13 +3484,28 @@ auto Executor::submit_gpu(const std::string& executor_name,
 template<typename F, typename... Args>
 auto Executor::submit_auto(F&& f, Args&&... args)
     -> std::future<typename std::invoke_result<F, Args...>::type> {
+    return submit_auto_impl("", std::forward<F>(f), std::forward<Args>(args)...);
+}
+
+template<typename F, typename... Args>
+auto Executor::submit_auto(SubjectKey subject, F&& f, Args&&... args)
+    -> std::future<typename std::invoke_result<F, Args...>::type> {
+    return submit_auto_impl(subject.key, std::forward<F>(f), std::forward<Args>(args)...);
+}
+
+template<typename F, typename... Args>
+auto Executor::submit_auto_impl(const std::string& subject, F&& f, Args&&... args)
+    -> std::future<typename std::invoke_result<F, Args...>::type> {
     TaskOptions options;
     RoutingDecision decision = route_task(options, false);
     // 0.7.1 §3.0.2：裸 callable 路径同样产出推断建议（共享池化键
     // "submit_auto"，名称模式不适用于匿名 lambda）。
     annotate_auto_inference(options, decision);
     record_routing_decision(std::move(decision));
-    return submit(std::forward<F>(f), std::forward<Args>(args)...);
+    // subject 为空 = 既有裸形态（修订 R-1 前）；非空 = SubjectKey 带键
+    // 入口，键经 submit() 的内部实现进入接纳点。
+    return submit_with_rejection_observer(
+        nullptr, subject, std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template<typename Function>

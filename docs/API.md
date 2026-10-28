@@ -729,8 +729,9 @@ size_t current_cap = ex.get_max_in_flight_tasks();  // 当前生效上限（0 = 
 ### 3.12 分主体在途份额（分桶 admission）
 
 在 §3.11 总量上限之上叠加**可选分桶维度**：经 `TaskBuilder::subject(key)`
-携带的分桶键进入接纳点，每个已配置主体独立计数在途提交并以份额上限约束，
-与全局 `max_in_flight_tasks` **同时生效**（任一超限即拒绝该次提交）。
+或裸形态 `submit_auto(kairo::subject("key"), fn)` 携带的分桶键进入接纳点，
+每个已配置主体独立计数在途提交并以份额上限约束，与全局
+`max_in_flight_tasks` **同时生效**（任一超限即拒绝该次提交）。
 份额值从哪来、是否按主体动态调整由调用方决定；Executor 只负责按 key
 记账与拒绝。仅运行期接口（`ExecutorConfig` 无初始映射）：
 
@@ -741,20 +742,33 @@ ex.initialize(config);
 ex.set_subject_max_in_flight_tasks("tenant-A", 4);   // 份额；0 = 解除约束
 ex.set_subject_max_in_flight_tasks("tenant-B", 4);
 
-ex.submit_auto(kairo::task(fn).subject("tenant-A"));  // 计入 tenant-A 桶
+ex.submit_auto(kairo::task(fn).subject("tenant-A"));  // TaskBuilder 形态计入桶
+ex.submit_auto(kairo::subject("tenant-A"), [&] {      // 裸 callable 形态（等价）
+});
 size_t a_in_flight = ex.get_subject_in_flight_submissions("tenant-A");
 size_t a_quota = ex.get_subject_max_in_flight_tasks("tenant-A");
 // 全体快照：std::vector<SubjectQuotaStatus>（元素字段 subject /
-// max_in_flight_tasks / in_flight_submissions），按 subject 字典序。
+// max_in_flight_tasks / in_flight_submissions / admitted_total），
+// 按 subject 字典序。
 std::vector<kairo::SubjectQuotaStatus> all = ex.get_subject_quota_status();
 ```
 
-- **覆盖路径（一期）**：带键 = `submit_auto(TaskBuilder)`、
-  `submit_after(TaskBuilder)`、`submit_after_with_handle(TaskBuilder)`。
-  其余提交路径（裸 `submit` 系、`submit_cancellable*`、`submit_batch*`、
-  `submit_on*` 等）仅受全局约束，不携带分桶键；`submit_delayed*` /
-  `submit_periodic*` 与 realtime / GPU / Blocking I/O / lockfree 同 §3.11，
-  不在覆盖范围。
+- **覆盖路径**：带键 = `submit_auto(TaskBuilder)`、
+  `submit_after(TaskBuilder)`、`submit_after_with_handle(TaskBuilder)`，
+  以及裸 callable 形态的 `submit_auto(kairo::subject("key"), fn)`
+  （`SubjectKey` 构造 explicit，`submit_auto("字面量", fn)` 编译失败
+  而非静默错绑）。其余提交路径（裸 `submit` 系、`submit_cancellable*`、
+  `submit_batch*`、`submit_on*` 等）仅受全局约束，不携带分桶键；
+  `submit_delayed*` / `submit_periodic*` 与 realtime / GPU / Blocking I/O
+  / lockfree 同 §3.11，不在覆盖范围。
+- **键的敏感性约定**：分桶键被**逐字复制**进拒绝异常消息、
+  `ExecutorFailureEvent::subject` 与状态快照，均会流向日志。键必须是
+  不可识别的派生标识（内部编号、哈希、代号），不得使用账号、租户名、
+  外部 ID 等原文；键随主体生命周期增删、`set(key, 0)` 移除配置项的
+  清理责任在调用方。
+- **验证键已生效**：`SubjectQuotaStatus::admitted_total` 是该主体当前代
+  的累计接纳数。份额已配置但 `admitted_total` 停在 0 = 带键提交未流过
+  接纳点（键未生效）；该计数只增不减，键解除重建后从 0 起计。
 - **拒绝语义**：分桶份额超限时提交不抛出，对应 future 立即以
   `CapacityExhaustedException` 就绪（消息含 `key=…`，可与总量消息区分），
   并同步记录 `FailureKind::CapacityExhausted` 事件——事件 `subject` 字段
@@ -775,9 +789,12 @@ std::vector<kairo::SubjectQuotaStatus> all = ex.get_subject_quota_status();
 - **代际语义（解除与重建）**：对活键 `set(N→M)` 原位缩放（同一代，计数
   保留）；`set(key, 0)` 解除即刻生效——后续提交不再受该主体约束，已接纳
   任务随终态释放到孤儿计数；解除后同名重建为**新代**、从 0 起计，不继承
-  旧代残量。查询接口只反映当代计数：重建后的短暂窗口内，该主体实际并发
-  在途可达「旧代残量 + 新代份额」，随旧代任务终态归零。不提供跨代总量
-  与代标识。
+  旧代残量。查询接口只反映当代计数。
+- **⚠ 低报窗口（调用方注意事项）**：解除后同名重建的短暂窗口内，
+  `get_subject_in_flight_submissions(key)` 可能**低于**该主体真实在途，
+  差额 = 旧代残量（上界 = 解除前的份额），方向与份额判定的安全侧相反。
+  不要把该查询当作精确值用于份额判定；监控口径建议采用「超额上界 +
+  自愈时间」（弱一致契约保证自愈）。不提供跨代总量与代标识。
 
 详细设计见 [分主体在途份额 Admission 设计](design/subject_bucket_admission.md)。
 

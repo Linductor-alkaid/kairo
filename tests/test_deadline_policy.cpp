@@ -52,24 +52,35 @@ void init_executor(Executor& executor, size_t threads) {
 // 在队列中熬过自己的 deadline，再放行门闩——目标任务开始执行时必然
 // 严格晚于 deadline。
 //
-// 门闩自身携带更早的 deadline（10ms < 目标的 30ms）：同优先级内 EDF
-// 先于 FIFO，无 deadline 的门闩会被带 deadline 的目标任务插队
-//（"无 deadline 排后"），门闩必须同样是带 deadline 的任务且键更早，
-// 才能保证先出队占住 worker。
+// setup 返回前必须等到门闩已真实起跑（gate_running 握手）：若在 worker
+// 尚未取走门闩时提交目标任务，两者会同队列竞争，出队次序取决于 EDF 键
+//（Task::operator<：同优先级按 deadline 升序）而非提交顺序。握手保证
+// 用例提交目标任务时门闩已占住 worker，构造对门闩起跑延迟不敏感。
+//
+// 门闩 deadline 必须是实际不可错过的远期时点（与下方"不应错过"用例的
+// 写法一致），不能给临近值（如 10ms）：deadline_missed 在任务开始执行
+// 时判定（evaluate_deadline_policy，每任务至多一次），runner 高负载时
+// 门闩自身起跑延迟可能超过临近 deadline，被额外计一次错过，污染各用例
+// 针对目标任务的 deadline_missed 计数（PR #224 的 flake 根因）。
 struct LatenessFixture {
     Executor executor;
     std::atomic<bool> gate{false};
+    std::atomic<bool> gate_running{false};
     std::future<void> blocker;
 
     void setup(size_t threads = 1) {
         init_executor(executor, threads);
         blocker = executor.submit_auto(
             kairo::task([this] {
+                gate_running.store(true, std::memory_order_release);
                 while (!gate.load(std::memory_order_acquire)) {
                     std::this_thread::sleep_for(milliseconds(1));
                 }
             })
-                .deadline(Clock::now() + milliseconds(10)));
+                .deadline(Clock::now() + std::chrono::hours(1)));
+        while (!gate_running.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(milliseconds(1));
+        }
     }
 
     void release() {
