@@ -198,6 +198,9 @@ struct ExecutorFailureEvent {
     std::exception_ptr exception;
     std::chrono::steady_clock::time_point timestamp =
         std::chrono::steady_clock::now();
+    // 分主体在途份额拒绝（issue #222）的分桶键；空 = 非分桶拒绝
+    //（总量超限或其他容量拒绝）。尾部追加保持聚合初始化源兼容。
+    std::string subject;
 };
 
 /**
@@ -214,6 +217,21 @@ struct ExecutorFailureStatus {
     uint64_t capacity_exhausted_count = 0;  // max_in_flight_tasks 拒绝数
     uint64_t deadline_missed_count = 0;     // 开始执行时已错过声明 deadline 的任务数
     uint64_t total_count = 0;
+    // 分主体在途份额拒绝数（issue #222）：capacity_exhausted_count 的子集
+    // ——分桶份额超限时两者同时递增。尾部追加保持聚合初始化源兼容。
+    uint64_t subject_quota_exhausted_count = 0;
+};
+
+/**
+ * @brief 分主体在途份额快照（分桶 admission，issue #222）
+ *
+ * `Executor::get_subject_quota_status()` 的元素类型：每个已配置主体的
+ * 份额上限与当前在途计数（弱一致读，无同步保证）。
+ */
+struct SubjectQuotaStatus {
+    std::string subject;
+    size_t max_in_flight_tasks = 0;    // 该主体的在途份额上限
+    size_t in_flight_submissions = 0;  // 该主体当前在途计数
 };
 
 /**

@@ -1,6 +1,7 @@
 #include "kairo/executor.hpp"
 
 #include "executor_detail.hpp"
+#include "subject_quota_registry.hpp"
 #include "kairo/monitor/executor_snapshot_formatter.hpp"
 #include "kairo/monitor/executor_monitor.hpp"
 #include "task/task_dependency_manager.hpp"
