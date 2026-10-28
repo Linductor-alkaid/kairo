@@ -201,3 +201,56 @@ TEST(ApiDocAdmissionFields, ReadmeBoundaryMentionsAdmission) {
     EXPECT_NE(readme.find("queue_capacity"), std::string::npos)
         << "README must state queue_capacity is not a backpressure bound";
 }
+
+// 分主体在途份额（分桶 admission，issue #222）：锁定 docs/API.md §3.12
+// 存在且覆盖新公开符号；types.hpp 新字段/新结构与文档宣称一致。
+TEST(ApiDocAdmissionFields, SubjectBucketAdmissionDocumented) {
+    const std::string doc = read_api_md();
+    ASSERT_FALSE(doc.empty()) << "docs/API.md not found from test cwd";
+
+    // §3.12 章节存在并覆盖新公开符号（与 §3.11 总量 admission 锁同风格）。
+    EXPECT_NE(doc.find("### 3.12 分主体在途份额"), std::string::npos)
+        << "API.md must keep the subject bucket admission section";
+    EXPECT_NE(doc.find("set_subject_max_in_flight_tasks"), std::string::npos)
+        << "API.md must document the subject quota setter";
+    EXPECT_NE(doc.find("get_subject_quota_status"), std::string::npos)
+        << "API.md must document the quota snapshot getter";
+    EXPECT_NE(doc.find("TaskBuilder::subject"), std::string::npos)
+        << "API.md must document the keyed TaskBuilder setter";
+    EXPECT_NE(doc.find("subject_quota_exhausted_count"), std::string::npos)
+        << "API.md must document the subject quota rejection counter";
+    EXPECT_NE(doc.find("SubjectQuotaStatus"), std::string::npos)
+        << "API.md must document the SubjectQuotaStatus snapshot type";
+
+    // types.hpp 新字段与新结构真实存在（编译期锁，随库签名漂移即编译失败）。
+    static_assert(requires { &ExecutorFailureStatus::subject_quota_exhausted_count; },
+                  "ExecutorFailureStatus must expose subject_quota_exhausted_count");
+    static_assert(requires { &ExecutorFailureEvent::subject; },
+                  "ExecutorFailureEvent must expose the subject field");
+    static_assert(requires {
+                      &SubjectQuotaStatus::subject;
+                      &SubjectQuotaStatus::max_in_flight_tasks;
+                      &SubjectQuotaStatus::in_flight_submissions;
+                  },
+                  "SubjectQuotaStatus must expose subject/max/in_flight fields");
+    static_assert(requires(Executor& ex) {
+                      ex.set_subject_max_in_flight_tasks("A", 1);
+                      ex.get_subject_max_in_flight_tasks("A");
+                      ex.get_subject_in_flight_submissions("A");
+                      ex.get_subject_quota_status();
+                  },
+                  "Executor must expose the subject quota API surface");
+
+    // 观测面语义宣称：§3.12 记载事件 subject 携带分桶键（空 = 总量拒绝）
+    // 且 subject_quota_exhausted_count 是 capacity_exhausted_count 的子集
+    //（语义跨续行，按位置窗口断言）。
+    const size_t subject_count_pos = doc.find("`subject_quota_exhausted_count`");
+    ASSERT_NE(subject_count_pos, std::string::npos)
+        << "API.md §3.12 must document the subject quota rejection counter";
+    const std::string semantics_window =
+        doc.substr(subject_count_pos, 200);
+    EXPECT_NE(semantics_window.find("capacity_exhausted_count"), std::string::npos)
+        << "subject quota count must be documented alongside capacity count";
+    EXPECT_NE(semantics_window.find("前者是后者的子集"), std::string::npos)
+        << "subject quota count must be documented as a subset of capacity count";
+}

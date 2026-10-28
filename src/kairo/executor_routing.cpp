@@ -1,5 +1,7 @@
 #include "kairo/executor.hpp"
 
+#include "subject_quota_registry.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <memory>
@@ -622,6 +624,11 @@ void Executor::record_failure(ExecutorFailureEvent event) {
             break;
         case FailureKind::CapacityExhausted:
             ++failure_status_.capacity_exhausted_count;
+            // 分桶份额拒绝是总量拒绝的子集（issue #222）：同一 kind 下
+            // 依 event.subject 区分，细分计数同步递增。
+            if (!event.subject.empty()) {
+                ++failure_status_.subject_quota_exhausted_count;
+            }
             break;
         case FailureKind::DeadlineMissed:
             ++failure_status_.deadline_missed_count;
@@ -692,28 +699,95 @@ void Executor::record_capacity_exhausted(const std::string& executor_name,
     record_failure(std::move(event));
 }
 
+void Executor::record_subject_quota_exhausted(
+    const std::string& executor_name,
+    const std::string& task_id,
+    const std::string& subject,
+    const std::string& message,
+    std::exception_ptr exception) {
+    ExecutorFailureEvent event;
+    event.kind = FailureKind::CapacityExhausted;
+    event.executor_name = executor_name;
+    event.task_id = task_id;
+    event.message = message;
+    // 与 future 结算共用同一异常（调用方传入，避免重复构造）。
+    event.exception = std::move(exception);
+    event.subject = subject;
+    record_failure(std::move(event));
+}
+
 Executor::AdmissionDecision Executor::try_admit_submission(
     const std::string& executor_name,
     const std::string& task_id,
-    const std::string& scope) {
+    const std::string& scope,
+    const std::string& subject) {
     AdmissionDecision decision;
+
+    // 分桶查表先于任何计数（issue #222）：未带键的提交不触碰注册表锁；
+    // 未配置主体 = 仅全局约束（"未知即宽容"）。计数 shared 所有权在此
+    // 取得，fetch_add 在注册表锁外。
+    std::shared_ptr<std::atomic<int64_t>> bucket_counter;
+    int64_t bucket_max = 0;
+    if (!subject.empty()) {
+        detail::SubjectQuotaRegistry* registry = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(subject_quotas_mutex_);
+            registry = subject_quotas_.get();
+        }
+        if (registry) {
+            bucket_counter = registry->find(subject, bucket_max);
+        }
+    }
+
     const int64_t max = static_cast<int64_t>(
         max_in_flight_tasks_.load(std::memory_order_acquire));
-    if (max <= 0) {
-        return decision;  // 未启用：无计数、无释放器
+    if (max <= 0 && !bucket_counter) {
+        return decision;  // 两维皆未启用：无计数、无释放器
     }
-    const int64_t current =
-        in_flight_submissions_.fetch_add(1, std::memory_order_acq_rel);
-    if (current >= max) {
-        in_flight_submissions_.fetch_sub(1, std::memory_order_release);
-        record_capacity_exhausted(
-            executor_name, task_id,
-            "In-flight submission capacity exhausted (" + scope + "); "
-            "max_in_flight_tasks=" + std::to_string(max));
-        decision.accepted = false;
-        return decision;
+
+    // 全局维度先行（总量语义逐位不变，docs/design/bounded_admission.md）。
+    bool global_counted = false;
+    if (max > 0) {
+        const int64_t current =
+            in_flight_submissions_.fetch_add(1, std::memory_order_acq_rel);
+        if (current >= max) {
+            in_flight_submissions_.fetch_sub(1, std::memory_order_release);
+            record_capacity_exhausted(
+                executor_name, task_id,
+                "In-flight submission capacity exhausted (" + scope + "); "
+                "max_in_flight_tasks=" + std::to_string(max));
+            decision.accepted = false;
+            return decision;
+        }
+        global_counted = true;
     }
-    decision.releaser = std::make_shared<AdmissionReleaser>(&in_flight_submissions_);
+
+    // 分桶维度：全局通过后评估；超限则回滚分桶与全局并拒绝。拒绝消息
+    // 与 future 结算共用同一异常（decision.rejection_exception）。
+    if (bucket_counter) {
+        const int64_t bucket_current =
+            bucket_counter->fetch_add(1, std::memory_order_acq_rel);
+        if (bucket_current >= bucket_max) {
+            bucket_counter->fetch_sub(1, std::memory_order_release);
+            if (global_counted) {
+                in_flight_submissions_.fetch_sub(1, std::memory_order_release);
+            }
+            const std::string message =
+                "Subject in-flight quota exhausted (key=" + subject + "); "
+                "subject_max_in_flight=" + std::to_string(bucket_max);
+            auto exception =
+                std::make_exception_ptr(CapacityExhaustedException(message));
+            record_subject_quota_exhausted(
+                executor_name, task_id, subject, message, exception);
+            decision.accepted = false;
+            decision.rejection_exception = std::move(exception);
+            return decision;
+        }
+    }
+
+    decision.releaser = std::make_shared<AdmissionReleaser>(
+        global_counted ? &in_flight_submissions_ : nullptr,
+        std::move(bucket_counter));
     return decision;
 }
 
@@ -733,6 +807,49 @@ size_t Executor::get_in_flight_submissions() const {
     }
     const int64_t current = in_flight_submissions_.load(std::memory_order_acquire);
     return current > 0 ? static_cast<size_t>(current) : 0;
+}
+
+void Executor::set_subject_max_in_flight_tasks(const std::string& subject,
+                                               size_t max) {
+    std::lock_guard<std::mutex> lock(subject_quotas_mutex_);
+    if (!subject_quotas_) {
+        subject_quotas_ = std::make_unique<detail::SubjectQuotaRegistry>();
+    }
+    subject_quotas_->set(subject, max);
+}
+
+size_t Executor::get_subject_max_in_flight_tasks(
+    const std::string& subject) const {
+    std::lock_guard<std::mutex> lock(subject_quotas_mutex_);
+    if (!subject_quotas_) {
+        return 0;  // 未配置任何主体："未知即宽容"
+    }
+    int64_t max = 0;
+    const auto counter = subject_quotas_->find(subject, max);
+    return counter ? static_cast<size_t>(max) : 0;
+}
+
+size_t Executor::get_subject_in_flight_submissions(
+    const std::string& subject) const {
+    std::lock_guard<std::mutex> lock(subject_quotas_mutex_);
+    if (!subject_quotas_) {
+        return 0;
+    }
+    int64_t max = 0;
+    const auto counter = subject_quotas_->find(subject, max);
+    if (!counter) {
+        return 0;
+    }
+    const int64_t current = counter->load(std::memory_order_acquire);
+    return current > 0 ? static_cast<size_t>(current) : 0;
+}
+
+std::vector<SubjectQuotaStatus> Executor::get_subject_quota_status() const {
+    std::lock_guard<std::mutex> lock(subject_quotas_mutex_);
+    if (!subject_quotas_) {
+        return {};
+    }
+    return subject_quotas_->status();
 }
 
 AggregateExecutionStats Executor::get_aggregate_execution_stats(

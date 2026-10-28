@@ -38,6 +38,7 @@ namespace kairo {
 
 class TaskDependencyManager;
 namespace monitor { class ExecutorMonitor; }
+namespace detail { class SubjectQuotaRegistry; }
 
 /**
  * @brief Executor Facade
@@ -265,6 +266,23 @@ public:
     size_t get_in_flight_submissions() const;
 
     /**
+     * @brief 分主体在途份额运行期配置与观测（分桶 admission，issue #222）
+     *
+     * subject 键经 TaskOptions::subject（TaskBuilder::subject()）随提交
+     * 进入接纳点；每个已配置主体独立计数在途提交并以 max 约束，与全局
+     * max_in_flight_tasks 同时生效（任一超限即拒绝该次提交）。max == 0
+     * 解除该主体约束——已接纳任务随终态释放计数，此后该主体不再可查询。
+     * 调小不驱逐已接纳任务，只约束后续提交。未配置主体仅受全局约束
+     * （"未知即宽容"）。仅运行期接口，ExecutorConfig 无初始映射。
+     * 覆盖路径、拒绝/释放语义与总量维度的可区分性见
+     * docs/design/subject_bucket_admission.md。
+     */
+    void set_subject_max_in_flight_tasks(const std::string& subject, size_t max);
+    size_t get_subject_max_in_flight_tasks(const std::string& subject) const;
+    size_t get_subject_in_flight_submissions(const std::string& subject) const;
+    std::vector<SubjectQuotaStatus> get_subject_quota_status() const;
+
+    /**
      * @brief 堆分配优化观测快照（0.7.2 §4.1）
      *
      * 返回默认异步池 Task 节点池的累计命中/未命中计数（诊断用途，
@@ -288,6 +306,7 @@ public:
     auto submit_priority_scheduled(
         int priority, std::optional<TaskSchedulingMeta> meta,
         std::shared_ptr<detail::TerminalReleaser> terminal_release,
+        const std::string& subject,
         F&& f, Args&&... args)
         -> std::future<typename std::invoke_result<F, Args...>::type>;
 
@@ -1040,6 +1059,7 @@ private:
     auto submit_tracked(
         std::optional<int> priority,
         std::shared_ptr<const std::vector<TaskHandle>> dependencies,
+        const std::string& subject,
         F&& f,
         Args&&... args)
         -> TaskSubmission<typename tracked_invoke_result<kInjectToken, F, Args...>::type>;
@@ -1050,6 +1070,7 @@ private:
         std::shared_ptr<const std::vector<TaskHandle>> dependencies,
         std::function<void()> terminal_hook,
         std::shared_ptr<detail::TerminalReleaser> terminal_release,
+        const std::string& subject,
         F&& f,
         Args&&... args)
         -> TaskSubmission<typename tracked_invoke_result<kInjectToken, F, Args...>::type>;
@@ -1211,9 +1232,16 @@ private:
     // 总量有界 admission（docs/design/bounded_admission.md）：上限 0 = 未启用，
     // 提交热路径零额外开销。接纳经 try_admit_submission() 单次 fetch_add，
     // 释放由 AdmissionReleaser 恰好一次完成（显式路径先于 future 结算，
-    // 析构兜底覆盖池丢弃）。
+    // 析构兜底覆盖池丢弃）。分主体在途份额（docs/design/
+    // subject_bucket_admission.md）在同一接纳点叠加可选分桶维度。
     std::atomic<size_t> max_in_flight_tasks_{0};
     std::atomic<int64_t> in_flight_submissions_{0};
+    // 分主体在途份额注册表（issue #222）：懒创建（首次
+    // set_subject_max_in_flight_tasks），此后地址稳定至 facade 析构。
+    // 未创建或未带键的提交不触碰。set 与接纳点查表经 subject_quotas_mutex_
+    // 短临界区取得计数 shared 所有权，fetch_add/释放在注册表锁外。
+    std::unique_ptr<detail::SubjectQuotaRegistry> subject_quotas_;
+    mutable std::mutex subject_quotas_mutex_;
     // 默认异步执行器的 queued soft timeout（毫秒，0 = 不启用）。parked
     // 依赖图任务的超时定时器以此为时长、自提交时刻起算（D1，见
     // docs/design/dependency_driven_scheduling.md）：池自身的队列计时器
@@ -1232,20 +1260,34 @@ private:
      *
      * 经 shared_ptr 被所有可能结算 future 的闭包共享；任何路径先调用
      * release()（计数先于 future 的观测不变式），析构兜底无人结算的路径
-     * （如池 shutdown(false) 丢弃排队任务）。
+     * （如池 shutdown(false) 丢弃排队任务）。分桶 admission（issue #222）：
+     * 单一 CAS 旗标同时释放全局与分桶两个计数（各自可为 null——全局未
+     * 启用或无分桶）；分桶计数以 shared_ptr keepalive，键解除后释放仍安全。
      */
     struct AdmissionReleaser {
-        std::atomic<int64_t>* counter;
+        std::atomic<int64_t>* counter = nullptr;                // 全局计数
+        std::shared_ptr<std::atomic<int64_t>> bucket_counter;   // 分桶计数
         std::atomic_bool released{false};
 
-        explicit AdmissionReleaser(std::atomic<int64_t>* c) noexcept : counter(c) {}
+        explicit AdmissionReleaser(std::atomic<int64_t>* c) noexcept
+            : counter(c) {}
+
+        AdmissionReleaser(
+            std::atomic<int64_t>* c,
+            std::shared_ptr<std::atomic<int64_t>> bucket) noexcept
+            : counter(c), bucket_counter(std::move(bucket)) {}
 
         void release() noexcept {
             bool expected = false;
             if (released.compare_exchange_strong(
                     expected, true, std::memory_order_acq_rel,
                     std::memory_order_acquire)) {
-                counter->fetch_sub(1, std::memory_order_release);
+                if (counter) {
+                    counter->fetch_sub(1, std::memory_order_release);
+                }
+                if (bucket_counter) {
+                    bucket_counter->fetch_sub(1, std::memory_order_release);
+                }
             }
         }
 
@@ -1255,17 +1297,27 @@ private:
     struct AdmissionDecision {
         bool accepted = true;
         std::shared_ptr<AdmissionReleaser> releaser;  // null 当 admission 未启用
+        // 拒绝时与 future 结算共用同一异常（分桶拒绝的消息含 key；总量
+        // 拒绝为 null，调用方按既有文本就地构造）。
+        std::exception_ptr rejection_exception;
     };
 
     /** 接纳检查；拒绝时已记录 CapacityExhausted failure 事件。 */
     AdmissionDecision try_admit_submission(
         const std::string& executor_name,
         const std::string& task_id,
-        const std::string& scope);
+        const std::string& scope,
+        const std::string& subject);
 
     void record_capacity_exhausted(const std::string& executor_name,
                                    const std::string& task_id,
                                    const std::string& message);
+
+    void record_subject_quota_exhausted(const std::string& executor_name,
+                                        const std::string& task_id,
+                                        const std::string& subject,
+                                        const std::string& message,
+                                        std::exception_ptr exception);
 
     // 定时器调度器（delayed/periodic registry + generation heap + 线程）。
     // 懒创建：地址在 Executor 生命周期内稳定，TimerHandle 经 weak_ptr 锚定。
@@ -1459,7 +1511,7 @@ auto Executor::submit_on_with_handle(SerialExecutionContext& context, F&& f, Arg
 
     // 总量有界 admission（先于 registry；拒绝时 ticket 经 complete_terminal
     // 释放，后续 FIFO 不阻塞）。
-    auto admission = try_admit_submission("default", handle.id(), "serial submit");
+    auto admission = try_admit_submission("default", handle.id(), "serial submit", "");
     if (!admission.accepted) {
         auto exception = std::make_exception_ptr(CapacityExhaustedException(
             "In-flight submission capacity exhausted"));
@@ -1868,7 +1920,7 @@ auto Executor::submit_with_rejection_observer(
 
     // 总量有界 admission：拒绝时 future 立即以 CapacityExhaustedException
     // 就绪（不抛出），failure 事件已由 try_admit_submission 记录。
-    auto admission = try_admit_submission(executor_name, task_id, "submit");
+    auto admission = try_admit_submission(executor_name, task_id, "submit", "");
     if (!admission.accepted) {
         auto exception = std::make_exception_ptr(CapacityExhaustedException(
             "In-flight submission capacity exhausted"));
@@ -1951,21 +2003,21 @@ template<typename F, typename... Args>
 auto Executor::submit_with_handle(F&& f, Args&&... args)
     -> TaskSubmission<typename std::invoke_result<F, Args...>::type> {
     return submit_tracked<false>(
-        std::nullopt, nullptr, std::forward<F>(f), std::forward<Args>(args)...);
+        std::nullopt, nullptr, "", std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template<typename F, typename... Args>
 auto Executor::submit_cancellable(F&& f, Args&&... args)
     -> TaskSubmission<typename std::invoke_result<F, StopToken, Args...>::type> {
     return submit_tracked<true>(
-        std::nullopt, nullptr, std::forward<F>(f), std::forward<Args>(args)...);
+        std::nullopt, nullptr, "", std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template<typename F, typename... Args>
 auto Executor::submit_cancellable_priority(int priority, F&& f, Args&&... args)
     -> TaskSubmission<typename std::invoke_result<F, StopToken, Args...>::type> {
     return submit_tracked<true>(
-        priority, nullptr, std::forward<F>(f), std::forward<Args>(args)...);
+        priority, nullptr, "", std::forward<F>(f), std::forward<Args>(args)...);
 }
 
 template<typename F, typename... Args>
@@ -1976,7 +2028,7 @@ auto Executor::submit_cancellable_after(const TaskHandle& dependency,
     auto dependencies =
         std::make_shared<const std::vector<TaskHandle>>(std::vector<TaskHandle>{dependency});
     return submit_tracked<true>(
-        std::nullopt, std::move(dependencies), std::forward<F>(f),
+        std::nullopt, std::move(dependencies), "", std::forward<F>(f),
         std::forward<Args>(args)...);
 }
 
@@ -1988,7 +2040,7 @@ auto Executor::submit_cancellable_after(const std::vector<TaskHandle>& dependenc
     auto dependencies_copy =
         std::make_shared<const std::vector<TaskHandle>>(dependencies);
     return submit_tracked<true>(
-        std::nullopt, std::move(dependencies_copy), std::forward<F>(f),
+        std::nullopt, std::move(dependencies_copy), "", std::forward<F>(f),
         std::forward<Args>(args)...);
 }
 
@@ -2018,7 +2070,7 @@ auto Executor::submit_after_with_handle(const std::vector<TaskHandle>& dependenc
     auto dependencies_copy =
         std::make_shared<const std::vector<TaskHandle>>(dependencies);
     return submit_tracked<false>(
-        std::nullopt, std::move(dependencies_copy), std::forward<F>(f),
+        std::nullopt, std::move(dependencies_copy), "", std::forward<F>(f),
         std::forward<Args>(args)...);
 }
 
@@ -2115,7 +2167,7 @@ auto Executor::submit_after_with_handle(const std::vector<TaskHandle>& dependenc
         std::make_shared<const std::vector<TaskHandle>>(dependencies);
     return submit_tracked_with_hook<false>(
         effective_priority, std::move(dependencies_copy), nullptr,
-        std::move(terminal_release), std::move(function));
+        std::move(terminal_release), options.subject, std::move(function));
 }
 
 template<typename Function>
@@ -2144,11 +2196,12 @@ template <bool kInjectToken, typename F, typename... Args>
 auto Executor::submit_tracked(
     std::optional<int> priority,
     std::shared_ptr<const std::vector<TaskHandle>> dependencies,
+    const std::string& subject,
     F&& f,
     Args&&... args)
     -> TaskSubmission<typename tracked_invoke_result<kInjectToken, F, Args...>::type> {
     return submit_tracked_with_hook<kInjectToken>(
-        priority, std::move(dependencies), nullptr, nullptr,
+        priority, std::move(dependencies), nullptr, nullptr, subject,
         std::forward<F>(f), std::forward<Args>(args)...);
 }
 
@@ -2158,6 +2211,7 @@ auto Executor::submit_tracked_with_hook(
     std::shared_ptr<const std::vector<TaskHandle>> dependencies,
     std::function<void()> terminal_hook,
     std::shared_ptr<detail::TerminalReleaser> terminal_release,
+    const std::string& subject,
     F&& f,
     Args&&... args)
     -> TaskSubmission<typename tracked_invoke_result<kInjectToken, F, Args...>::type> {
@@ -2207,10 +2261,14 @@ auto Executor::submit_tracked_with_hook(
     // 的闭包共享，显式路径先于结算释放，析构兜底池丢弃路径。0.7.1 §3.1：
     // 资源租约（如有）经同一终态释放链归还——CAS 恰好一次 + 析构兜底，
     // 覆盖成功/异常/协作取消/丢弃/软超时/提交拒绝/排空全部路径。
-    auto admission = try_admit_submission("default", handle.id(), "tracked submit");
+    auto admission = try_admit_submission("default", handle.id(), "tracked submit", subject);
     if (!admission.accepted) {
-        auto exception = std::make_exception_ptr(CapacityExhaustedException(
-            "In-flight submission capacity exhausted"));
+        // 分桶拒绝经 decision.rejection_exception 复用同一异常（消息含 key）；
+        // 总量拒绝为 null，就地构造既有文本。
+        auto exception = admission.rejection_exception
+            ? admission.rejection_exception
+            : std::make_exception_ptr(CapacityExhaustedException(
+                  "In-flight submission capacity exhausted"));
         bool expected = false;
         if (promise_ready->compare_exchange_strong(
                 expected, true, std::memory_order_acq_rel,
@@ -2692,6 +2750,7 @@ template<typename F, typename... Args>
 auto Executor::submit_priority_scheduled(
     int priority, std::optional<TaskSchedulingMeta> meta,
     std::shared_ptr<detail::TerminalReleaser> terminal_release,
+    const std::string& subject,
     F&& f, Args&&... args)
     -> std::future<typename std::invoke_result<F, Args...>::type> {
     using return_type = typename std::invoke_result<F, Args...>::type;
@@ -2762,10 +2821,13 @@ auto Executor::submit_priority_scheduled(
     };
 
     // 总量有界 admission（与 submit 相同语义：拒绝不抛出，future 立即就绪）。
-    auto admission = try_admit_submission(executor_name, task_id, "submit_priority");
+    auto admission = try_admit_submission(executor_name, task_id, "submit_priority", subject);
     if (!admission.accepted) {
-        auto exception = std::make_exception_ptr(CapacityExhaustedException(
-            "In-flight submission capacity exhausted"));
+        // 分桶拒绝经 decision.rejection_exception 复用同一异常（消息含 key）。
+        auto exception = admission.rejection_exception
+            ? admission.rejection_exception
+            : std::make_exception_ptr(CapacityExhaustedException(
+                  "In-flight submission capacity exhausted"));
         cell->ready.store(true, std::memory_order_release);
         cell->promise.set_exception(exception);
         return future;
@@ -3158,7 +3220,7 @@ std::vector<std::future<void>> Executor::submit_batch(const std::vector<F>& task
         // 总量有界 admission：逐任务独立接纳，部分接纳合法（设计稿 D-4）。
         // 被拒任务的 future 立即以 CapacityExhaustedException 就绪，不进入
         // 池提交；接纳任务的 releaser 由 wrapper/timeout 闭包持有。
-        auto admission = try_admit_submission(executor_name, task_id, "submit_batch");
+        auto admission = try_admit_submission(executor_name, task_id, "submit_batch", "");
         if (!admission.accepted) {
             promise_ready->store(true, std::memory_order_release);
             promise->set_exception(std::make_exception_ptr(CapacityExhaustedException(
@@ -3269,7 +3331,7 @@ std::vector<std::future<void>> Executor::submit_batch_priority(
         // 0.7.2 起直接走共享实现：submit_priority 已移除，batch 变体
         // 经同一 submit_priority_scheduled 路径，行为不变。
         futures.push_back(submit_priority_scheduled(
-            priority, std::nullopt, nullptr, task));
+            priority, std::nullopt, nullptr, "", task));
     }
 
     return futures;
@@ -3296,7 +3358,7 @@ void Executor::submit_batch_no_future(const std::vector<F>& tasks) {
             "facade_submit_batch_no_future[" + std::to_string(i) + "]";
 
         // 总量有界 admission：逐任务接纳；被拒任务仅记录事件（无 future）。
-        auto admission = try_admit_submission(executor_name, task_id, "submit_batch_no_future");
+        auto admission = try_admit_submission(executor_name, task_id, "submit_batch_no_future", "");
         if (!admission.accepted) {
             continue;
         }
@@ -3548,6 +3610,7 @@ auto Executor::submit_auto(TaskBuilder<Function> task)
     }
     return submit_priority_scheduled(effective_priority, std::move(meta),
                                      std::move(terminal_release),
+                                     options.subject,
                                      std::move(function));
 }
 

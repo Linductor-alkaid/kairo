@@ -4,6 +4,45 @@
 
 ---
 
+## [Unreleased]
+
+分主体在途份额 admission（总量有界 admission 之上的可选分桶维度，issue
+#222 / Mira 台账 EXE-20261028-001）。全部为 additive；默认行为与 0.7.2
+逐项一致（未配置主体与未带键提交零热路径开销）。设计见
+`docs/design/subject_bucket_admission.md`。
+
+### 新增
+
+- **分主体在途份额运行期接口**：`Executor::set_subject_max_in_flight_tasks(subject, max)`
+  （`max == 0` 解除该主体约束）、`get_subject_max_in_flight_tasks()`、
+  `get_subject_in_flight_submissions()`、`get_subject_quota_status()`
+  （`SubjectQuotaStatus` 快照，按 key 排序）。每个已配置主体独立计数在途
+  提交并以份额约束，与全局 `max_in_flight_tasks` 同时生效；仅运行期接口，
+  `ExecutorConfig` 无初始映射。
+- **分桶键进入提交 API**：`TaskOptions::subject`（空 = 不分桶）+
+  `TaskBuilder::subject()`。一期带键路径 = `submit_auto(TaskBuilder)` 与
+  `submit_after*(TaskBuilder)`；其余提交路径仅全局约束（见 API.md §3.12
+  覆盖路径说明）。
+- **拒绝可区分性（共用 §3.11 拒绝面，不新造异常/failure kind）**：
+  `ExecutorFailureStatus` 追加 `subject_quota_exhausted_count`（分桶拒绝时
+  与 `capacity_exhausted_count` 同时递增，前者是后者子集）；
+  `ExecutorFailureEvent` 追加 `subject` 字段（分桶拒绝携带键，空 = 总量
+  拒绝）。分桶拒绝消息 `Subject in-flight quota exhausted (key=…)`。
+- **测试**：`tests/test_subject_bucket_admission.cpp`（standalone）锁定
+  份额互不影响、分桶/总量拒绝可区分、终态恰好一次释放、热更新/解除、
+  shutdown 与零回归锚；`tests/test_subject_quota_concurrency.cpp`
+  （standalone，参与 TSAN job）锁定并发契约——热更新严格可见性与并发
+  交错弱一致、解除/重建代际隔离、stress 下无泄漏/无越权/恰好一次释放；
+  `tests/test_api_doc_admission_fields.cpp` 扩展锁定新字段与 API.md
+  §3.12。
+- **并发契约文档化（PR #223 审查）**：热更新弱一致语义（接纳快照点 =
+  注册表查表临界区；set 完成后的新提交必用新份额，交错中的已开始接纳
+  允许按旧快照完成）与代际语义（活键原位缩放同代；set(key,0) 解除即刻
+  生效、已接纳落账孤儿计数；同名重建新代从 0 起计不继承残量；查询面只
+  反映当代）。见 `docs/design/subject_bucket_admission.md` D-2/D-5。
+
+---
+
 ## [0.7.2] - 2026-10-19
 
 优先级语义转移到调度器（roadmap §4.0，0.7.x 唯一破坏性变更）+

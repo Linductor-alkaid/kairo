@@ -191,6 +191,12 @@ struct TaskOptions {
     QosClass qos = QosClass::Standard;
     AffinityHint affinity;
     ResourceRequirements resources;
+    // 分主体在途份额键（分桶 admission，issue #222）。仅在接纳点
+    // （try_admit_submission）消费，不进入内部 Task 结构（与
+    // affinity/resources 同层）。空 = 不分桶，仅全局 max_in_flight_tasks
+    // 约束。一期仅 submit_auto(TaskBuilder) 与
+    // submit_after*_with_handle(TaskBuilder) 携带该键进入接纳点。
+    std::string subject;
 };
 
 /** @brief A routable executor's advisory capability snapshot. */
@@ -277,6 +283,12 @@ public:
 
     TaskBuilder& preferred_executor(std::string value) {
         options_.preferred_executor = std::move(value);
+        return *this;
+    }
+
+    /** 分主体在途份额键（分桶 admission，issue #222）；空 = 不分桶。 */
+    TaskBuilder& subject(std::string value) {
+        options_.subject = std::move(value);
         return *this;
     }
 
