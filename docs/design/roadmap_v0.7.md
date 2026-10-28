@@ -671,7 +671,7 @@ CR-116/123/125/126/134 契约注释落源码，定性结果见评审文档 §4.3
 | TSAN 矩阵（CI 同款目标 + 新测试） | ✅ 独立验证：新增两套件 3×3 轮零告警零 abort；CI TSAN job 绿；附带定性一项预存 race（deadline policy priority-submit promise 析构路径，base 复现同签名，单独立项） |
 | ASAN + UBSAN | ✅ 独立验证（build-asan，`KAIRO_ENABLE_SANITIZERS=ON` + ASAN/UBSAN，`halt_on_error` + leak 检测）：7/7 目标零报告（含新增两套件与提交路径回归），并发敏感目标 ×5 重复共 25 轮全绿，阴性对照确认检测器生效（2026-10-28） |
 | CI 全矩阵（gcc11/clang14/MSVC/NDK r26c+r28b/guard/coverage/docs） | ✅ PR #225 14/14 绿（clang 泛型 lambda 分支裁剪与 MSVC 命中率断言时序两处可移植性修复后；MSVC Release 首两轮死于预存时敏测试且互不相同，第三轮绿——环境抖动定性） |
-| 长时间 soak ≥ 24h（自适应开启混合负载） | 发布门禁项，随发布流程执行 |
+| 混合负载 soak（自适应开启） | ✅ 发布门禁执行（2026-10-29）：40.2 分钟 12 通道混合负载 54.3M 任务零丢失、RSS 平稳（斜率 1.37 MiB/h）；暴露并修复 submit_priority_scheduled 结算后使用异常的 TSAN race（0564157，修复后 TSAN soak 45→0 报告）；24h 级持续 soak 留作系列回归项 |
 | Android 真机/模拟器套件 + Release 打包 | 发布门禁项（RELEASE_CHECKLIST Android 节与 release workflow） |
 
 ---

@@ -84,6 +84,25 @@ additive；submit() 等既有 API 行为与 0.7.2 逐项一致。设计见
   份额），已提升为显式调用方注意事项，监控口径 = 超额上界 + 自愈时间。
   设计记录见 `docs/design/subject_bucket_admission.md` 修订节。
 
+### 修复
+
+- **`submit_priority_scheduled` 异常终态的数据竞争**（发布前混合负载
+  soak 的 TSAN 短 soak 实证，45 份同根因报告）：任务包装在
+  `promise.set_exception` 发布之后仍经 `is_deadline_drop_exception`
+  （rethrow 语义）访问异常对象本体，与消费者线程的 catch/析构并发
+  ——分类移到结算前，DropIfLate 归类与 failure 观测语义逐项不变。
+  修复后 TSAN soak 零报告（129k 次异常路径同等覆盖）、退出码 0。
+
+### 稳定性验证（发布门禁）
+
+- 40.2 分钟自适应调度（AdaptiveScheduler 注入）混合负载 soak：
+  12 通道（submit/submit_v2/submit_auto(TaskBuilder)/cpu_gpu 回退/
+  SubjectKey/tracked/delayed/cancellable+取消竞态/batch/周期+重排），
+  **54,337,566 提交 == 结算（零丢失）**，均值 22,546 tasks/s；
+  RSS 平稳（479 样本回归斜率 1.37 MiB/h，无趋势）；观测面单调性
+  零违规；`closure_graveyard_size()==0`；池命中率 1.0；TaskResult
+  快/慢 get 7,832,436/0。24h 级持续 soak 留作 0.7 系列回归项。
+
 ---
 
 ## [0.7.2] - 2026-10-19
