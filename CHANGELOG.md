@@ -40,6 +40,17 @@
   允许按旧快照完成）与代际语义（活键原位缩放同代；set(key,0) 解除即刻
   生效、已接纳落账孤儿计数；同名重建新代从 0 起计不继承残量；查询面只
   反映当代）。见 `docs/design/subject_bucket_admission.md` D-2/D-5。
+- **裸形态带键入口（修订 R-1，下游反馈）**：`submit_auto(kairo::subject("key"), fn)`
+  ——裸 callable 写法经 `SubjectKey` 标签进入分桶接纳点，与带键
+  TaskBuilder 形态语义逐位一致；`SubjectKey` 构造 explicit（字面量误用
+  编译失败而非静默错绑）。`SubjectQuotaStatus` 追加 `admitted_total`
+  （当前代累计接纳数）：份额已配置但该值停在 0 = 键未生效。
+- **键脱敏约定与低报警示（修订 R-2/R-3，下游反馈）**：分桶键逐字复制进
+  异常消息/failure 事件/状态快照，必须使用不可识别的派生标识，键集清理
+  责任在调用方（API.md §3.12）；解除后同名重建的短暂窗口内
+  `get_subject_in_flight_submissions()` 低报真实在途（差额上界 = 解除前
+  份额），已提升为显式调用方注意事项，监控口径 = 超额上界 + 自愈时间。
+  设计记录见 `docs/design/subject_bucket_admission.md` 修订节。
 
 ---
 

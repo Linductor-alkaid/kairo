@@ -98,15 +98,24 @@ config.max_in_flight_tasks = 256;   // 已接纳未结算的提交总量
 
 ```cpp
 ex.set_subject_max_in_flight_tasks("tenant-A", 4);   // 份额；0 = 解除约束
-ex.submit_auto(kairo::task(fn).subject("tenant-A")); // 带键提交计入该桶
+ex.submit_auto(kairo::task(fn).subject("tenant-A")); // TaskBuilder 形态计入桶
+ex.submit_auto(kairo::subject("tenant-A"), [&] {     // 裸 callable 形态（等价）
+});
 size_t a_water = ex.get_subject_in_flight_submissions("tenant-A");
 auto all = ex.get_subject_quota_status();            // 全体快照（按 key 排序）
 ```
 
-- **覆盖路径**：带键 = `submit_auto(TaskBuilder)` 与
-  `submit_after*(TaskBuilder)`；其余提交路径仅全局兜底。未配置主体仅受
-  全局约束（未知即宽容）；全局 `max_in_flight_tasks == 0`（未启用）时
-  已配置主体的份额仍独立生效。
+- **覆盖路径**：带键 = `submit_auto(TaskBuilder)`、
+  `submit_after*(TaskBuilder)` 与裸形态
+  `submit_auto(kairo::subject("key"), fn)`；其余提交路径仅全局兜底。
+  未配置主体仅受全局约束（未知即宽容）；全局 `max_in_flight_tasks == 0`
+  （未启用）时已配置主体的份额仍独立生效。
+- **验证键已生效**：`SubjectQuotaStatus::admitted_total` 是该主体当前代
+  累计接纳数——份额已配置但停在 0 = 带键提交未流过接纳点（键未生效）。
+- **键的敏感性约定**：键被逐字复制进拒绝异常消息、failure 事件与状态
+  快照（均流向日志），必须是不可识别的派生标识（内部编号/哈希/代号），
+  不得使用账号、租户名、外部 ID 原文；键随主体生命周期增删的清理责任
+  在调用方。
 - **拒绝可观测（与总量拒绝共用拒绝面）**：异常类型与 failure kind 不变。
   区分靠两个维度：failure 事件新增的 `subject` 字段携带分桶键（空 = 总量
   拒绝）；`subject_quota_exhausted_count` 是 `capacity_exhausted_count`
@@ -117,10 +126,14 @@ auto all = ex.get_subject_quota_status();            // 全体快照（按 key �
   与总量维度相同（贴顶 + 拒绝增长 = 持续过载）。
 - **热更新与代际**：活键调大/调小即刻约束后续提交，不驱逐已接纳任务；
   `set(key, 0)` 解除即刻生效，已接纳任务随终态释放，此后该键不可查询；
-  解除后同名重建为**新代**、从 0 起计，不继承旧代残量——重建后的短暂
-  窗口内该主体实际并发在途可达「旧代残量 + 新代份额」，查询只反映当代。
-  配额更新与并发接纳为**弱一致**：更新完成后开始的提交必用新份额；与
-  更新交错的已开始接纳允许按旧快照完成，随终态自愈。
+  解除后同名重建为**新代**、从 0 起计，不继承旧代残量。配额更新与并发
+  接纳为**弱一致**：更新完成后开始的提交必用新份额；与更新交错的已开始
+  接纳允许按旧快照完成，随终态自愈。
+- **⚠ 低报窗口**：解除后同名重建的短暂窗口内，
+  `get_subject_in_flight_submissions(key)` 可能**低于**真实在途，差额 =
+  旧代残量（上界 = 解除前的份额），方向与份额判定的安全侧相反。不要把
+  该查询当精确值做份额判定；监控口径建议「超额上界 + 自愈时间」（弱一致
+  契约保证自愈）。
 
 完整契约（并发一致性、代际语义与验收）见
 [`docs/design/subject_bucket_admission.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/design/subject_bucket_admission.md)；

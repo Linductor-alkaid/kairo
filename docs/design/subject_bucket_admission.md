@@ -148,3 +148,53 @@ lockfree 本就不在总量 admission 覆盖范围，同样不带键。直接使
 10. 代际语义：解除即刻解除后续提交的约束；解除后同名重建为新代、从 0
     起计；共存窗口内查询只反映当代计数，旧代任务终态释放不影响新代
     计数，全部终态后归零。
+
+## 修订（2026-10-28，下游反馈）
+
+以下修订来自下游对已交付能力真实使用形态的反馈（issue #222 评论），不改变
+D-1～D-5 已冻结的计数、释放与拒绝语义，仅扩展入口面、补文档约定。
+
+### R-1 裸形态带键入口
+
+下游全部 `submit_auto` 调用均为裸 lambda 形态（`submit_auto([&]{...})`），
+D-4 的带键路径（仅 TaskBuilder 形态）对其不生效，且**静默**——不抛错、
+不计数、查询恒 0。修订：
+
+- 新增公开重载 `submit_auto(SubjectKey, F&&, Args&&...)`，用法
+  `ex.submit_auto(kairo::subject("key"), fn)`。与裸形态语义逐位一致
+  （同一接纳点、同一路由决策与推断注解），仅把键送入接纳点；实现上
+  `submit_with_rejection_observer` 增内部 subject 参数（公开 `submit()`
+  恒传空串），两个裸形态共享 `submit_auto_impl`。
+- 消歧安全：`SubjectKey` 构造**刻意 explicit**——若允许 `const char*`
+  隐式转换，`submit_auto("key", fn)` 会因泛型重载对首参的精确匹配而
+  静默错绑（键被当成 callable）；explicit 使该误用编译失败，强制经
+  `subject()` 工厂表达。非模板具体首参在 C++ 重载偏序化中对
+  `(SubjectKey, callable)` 调用精确胜出泛型模板。
+- 诊断面：`SubjectQuotaStatus` 追加 `admitted_total`（当前代累计接纳数，
+  与 in_flight 同一 shared 块、单次分配）。接入方验证配方：份额已配置但
+  `admitted_total` 停在 0 = 键未流过接纳点。键化接纳路径一条 relaxed
+  `fetch_add`，未带键路径零开销不变。
+- 仍不带键（声明，不做静默）：公开 `submit()`、`submit_after` 裸形态、
+  `submit_cancellable*`、`submit_on*`、`submit_batch*`；是否扩展属后续
+  修订（下游未请求）。
+
+### R-2 键的敏感性约定
+
+分桶键被**逐字复制**进三处可观测面：拒绝异常消息
+（`Subject in-flight quota exhausted (key=…)`）、`ExecutorFailureEvent::subject`
+与 `ExecutorFailureStatus`/`SubjectQuotaStatus` 快照，均会流向日志、可能
+被宿主呈现到界面。约定：
+
+- 键必须是**不可识别的派生标识**（内部编号、哈希、代号），不得使用账号、
+  租户名、外部 ID 等带身份含义的原文；
+- 键空间以已配置集合为界、不存在无界增长；键随主体生命周期增删的清理
+  责任在调用方（`set(key, 0)` 移除配置项）。
+
+### R-3 跨代低报的显式警示
+
+D-5 代际语义的一个后果提升为 API 层显式注意事项：解除后同名重建的短暂
+窗口内，`get_subject_in_flight_submissions()` **低报**真实在途，差额 =
+旧代残量（上界 = 解除前的份额），方向恰好与配额判定的安全侧相反。处置：
+API.md §3.12 给出显式 ⚠ 注意事项与监控口径（超额上界 + 自愈时间，弱一致
+契约 D-2 保证自愈）；不引入 retired 计数暴露——跨代可观测需要永久
+graveyard 状态，收益不抵成本（维持 D-5 裁定，下游已按该口径设定监控）。
