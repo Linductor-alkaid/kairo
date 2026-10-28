@@ -889,11 +889,22 @@ Executor::get_all_aggregate_execution_stats() const {
 }
 
 AllocationMetrics Executor::get_allocation_metrics() const {
+    // 0.7.3 §5.0：TaskResult::get() 命中计数为进程级（所有 TaskResult
+    // 实例共享），在默认池池计数之外附加聚合。
+    AllocationMetrics metrics;
+    const auto& counters = detail::task_result_get_counters();
+    metrics.fast_path_get_count =
+        counters.fast_path.load(std::memory_order_relaxed);
+    metrics.slow_path_get_count =
+        counters.slow_path.load(std::memory_order_relaxed);
     auto executor = manager_->get_default_async_executor_snapshot();
     if (!executor) {
-        return AllocationMetrics{};
+        return metrics;
     }
-    return executor->get_allocation_metrics();
+    const AllocationMetrics pool_metrics = executor->get_allocation_metrics();
+    metrics.task_pool_hit_count = pool_metrics.task_pool_hit_count;
+    metrics.task_pool_miss_count = pool_metrics.task_pool_miss_count;
+    return metrics;
 }
 
 double Executor::get_task_pool_hit_rate() const {
