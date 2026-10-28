@@ -726,6 +726,50 @@ size_t current_cap = ex.get_max_in_flight_tasks();  // 当前生效上限（0 = 
 
 详细设计见 [总量有界 Admission 设计](design/bounded_admission.md)。
 
+### 3.12 分主体在途份额（分桶 admission）
+
+在 §3.11 总量上限之上叠加**可选分桶维度**：经 `TaskBuilder::subject(key)`
+携带的分桶键进入接纳点，每个已配置主体独立计数在途提交并以份额上限约束，
+与全局 `max_in_flight_tasks` **同时生效**（任一超限即拒绝该次提交）。
+份额值从哪来、是否按主体动态调整由调用方决定；Executor 只负责按 key
+记账与拒绝。仅运行期接口（`ExecutorConfig` 无初始映射）：
+
+```cpp
+kairo::ExecutorConfig config;
+config.max_in_flight_tasks = 256;   // 全局兜底（可与分桶叠加）
+ex.initialize(config);
+ex.set_subject_max_in_flight_tasks("tenant-A", 4);   // 份额；0 = 解除约束
+ex.set_subject_max_in_flight_tasks("tenant-B", 4);
+
+ex.submit_auto(kairo::task(fn).subject("tenant-A"));  // 计入 tenant-A 桶
+size_t a_in_flight = ex.get_subject_in_flight_submissions("tenant-A");
+size_t a_quota = ex.get_subject_max_in_flight_tasks("tenant-A");
+// 全体快照：std::vector<SubjectQuotaStatus>（元素字段 subject /
+// max_in_flight_tasks / in_flight_submissions），按 subject 字典序。
+std::vector<kairo::SubjectQuotaStatus> all = ex.get_subject_quota_status();
+```
+
+- **覆盖路径（一期）**：带键 = `submit_auto(TaskBuilder)`、
+  `submit_after(TaskBuilder)`、`submit_after_with_handle(TaskBuilder)`。
+  其余提交路径（裸 `submit` 系、`submit_cancellable*`、`submit_batch*`、
+  `submit_on*` 等）仅受全局约束，不携带分桶键；`submit_delayed*` /
+  `submit_periodic*` 与 realtime / GPU / Blocking I/O / lockfree 同 §3.11，
+  不在覆盖范围。
+- **拒绝语义**：分桶份额超限时提交不抛出，对应 future 立即以
+  `CapacityExhaustedException` 就绪（消息含 `key=…`，可与总量消息区分），
+  并同步记录 `FailureKind::CapacityExhausted` 事件——事件 `subject` 字段
+  携带分桶键（空 = 总量拒绝），`subject_quota_exhausted_count` 与
+  `capacity_exhausted_count` 同时递增（前者是后者的子集）。与 §3.11 共用
+  拒绝面，不新造异常类型或 failure kind。
+- **释放语义**：与总量维度一致——恰好一次接纳、恰好一次释放，终态集合
+  相同；future 就绪前分桶计数已释放。份额热更新调小不驱逐已接纳任务；
+  `set(key, 0)` 解除约束，已接纳任务随终态释放后该主体不再可查询。
+- **未知即宽容**：未配置主体仅受全局约束；键空间以已配置集合为界。
+  全局 `max_in_flight_tasks == 0`（未启用）时已配置主体的份额仍独立生效；
+  未带键路径不触碰分桶注册表，零热路径开销不变。
+
+详细设计见 [分主体在途份额 Admission 设计](design/subject_bucket_admission.md)。
+
 ---
 
 ## 4. 实时任务 API（专用线程）
