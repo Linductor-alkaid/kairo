@@ -16,7 +16,8 @@ foreach(STANDALONE_TEST_SOURCE
         test_serial_execution_context.cpp
         test_serial_context_stress.cpp
         test_bounded_admission.cpp
-        test_subject_bucket_admission.cpp)
+        test_subject_bucket_admission.cpp
+        test_subject_quota_concurrency.cpp)
     list(FILTER TEST_SOURCES EXCLUDE REGEX ".*/${STANDALONE_TEST_SOURCE}$")
     get_filename_component(STANDALONE_TEST_NAME ${STANDALONE_TEST_SOURCE} NAME_WE)
     add_executable(${STANDALONE_TEST_NAME} ${STANDALONE_TEST_SOURCE})
