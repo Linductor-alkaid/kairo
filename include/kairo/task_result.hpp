@@ -186,7 +186,9 @@ struct TaskResultSharedState<void> {
         }
     }
 
-    void retrieve_value() noexcept {
+    // 非 noexcept：异常终态经 rethrow 交付（noexcept 会把重抛变成
+    // terminate，破坏与 submit 的异常语义同构）。
+    void retrieve_value() {
         if (exception) {
             std::rethrow_exception(exception);
         }
