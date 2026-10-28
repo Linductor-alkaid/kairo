@@ -648,6 +648,18 @@ CR-116/123/125/126/134 契约注释落源码，定性结果见评审文档 §4.3
 - 0.7 系列整体回归：长时间 soak（自适应开启，混合负载 ≥ 24h）、ASAN/TSAN/UBSAN 全矩阵、
   Android NDK smoke、Windows MinGW/MSVC。
 - 冻结 0.7 调度接口，为 0.8 预留的方向写进设计文档（NUMA topology、跨 pool locality、transfer cost）。
+  → 接口冻结清单与 0.8 方向已入档：`scheduling_runtime.md` §18（2026-10-28）。
+
+**稳定化执行状态（随分支推进更新）**：
+
+| 项 | 状态 |
+|---|---|
+| 全量回归（桌面，Release） | 独立验证随 0.7.3 特性分支执行 |
+| TSAN 矩阵（CI 同款目标 + 新测试） | 独立验证随 0.7.3 特性分支执行 |
+| ASAN + UBSAN | 发布前随发布流程执行（本地矩阵见 RELEASE_CHECKLIST） |
+| 长时间 soak ≥ 24h（自适应开启混合负载） | 发布门禁项，随发布流程执行 |
+| Android NDK smoke / 模拟器套件 | CI 门禁项（RELEASE_CHECKLIST Android 节） |
+| Windows MinGW/MSVC | CI 门禁项（release workflow windows-static-x64） |
 
 ---
 
