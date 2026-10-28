@@ -620,7 +620,9 @@ CR-116/123/125/126/134 契约注释落源码，定性结果见评审文档 §4.3
 - [x] `benchmark_submit_allocations`：7 → **4 allocs/task**（目标 5-6，
       超额；-43%）
 - [x] 字节数：512 → **488 bytes/task**（目标 ~400-500，线内）
-- [x] `TaskResult::get()` 快速路径命中率 > 60%（实测 99.7%）
+- [x] `TaskResult::get()` 快速路径命中率 > 60%（Linux submit+立即
+      get 实测 99.7%；机制契约全平台确定性，时序命中属基准观察，
+      见 allocation_optimization_proposal.md §10.4 口径说明）
 - [x] 配对 A/B 吞吐基准：不弱于 v0.7.2 ±5%（独立验证 10 轮交错：
       单线程提交 submit_v2 中位数 3347 vs submit 6980 ns/op，
       **-52.1%**；8 线程提交 2212 vs 2438 ns/op，**-11.6%**——两

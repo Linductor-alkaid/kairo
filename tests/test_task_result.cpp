@@ -263,10 +263,21 @@ TEST_F(TaskResultTest, FastPathHitRateAboveAcceptanceLine) {
         EXPECT_EQ(executor_.submit_v2([] { return 1; }).get(), 1);
     }
 
+    // 测量"就绪后 get() 必走快速路径"这一机制契约：get() 前以有界
+    // is_ready() 等待确保任务已完成（轮询本身不计数）。不测"提交后
+    // 立即 get 恰好已完成"的调度时序——那取决于 worker 唤醒时延
+    // （2 核 Windows CI runner 实测命中率 ~0.5%，Linux 实测 99.7%，
+    // 属基准观察非机制断言，见 benchmark_submit_allocations）。
     const AllocationMetrics before = executor_.get_allocation_metrics();
     constexpr int kIterations = 2000;
     for (int i = 0; i < kIterations; ++i) {
         auto result = executor_.submit_v2([i] { return i; });
+        int spins = 0;
+        while (!result.is_ready()) {
+            std::this_thread::yield();
+            ASSERT_LT(++spins, 10 * 1000 * 1000)
+                << "task not ready after bounded wait (iteration " << i << ")";
+        }
         (void)result.get();
     }
     const AllocationMetrics after = executor_.get_allocation_metrics();
