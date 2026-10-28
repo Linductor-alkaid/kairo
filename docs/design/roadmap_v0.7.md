@@ -36,13 +36,16 @@
 > **§4.0 正式移除已完成**（facade `submit_priority` 声明删除，文档全面
 > 统一，2026-10-19）——0.7.2 全部路线图项收官，**0.7.2 已发布
 > （tag v0.7.2）**。
-> **0.7.3 §5.0/§5.1 已落地（2026-10-28，分支 feat/v073-task-result）**：
+> **0.7.3 开发完成（2026-10-28，PR #225 已并入 master）**：
 > TaskResult 轻量 Future + submit_v2（堆分配优化阶段二，submit 主路径
 > 7 → 4 allocs/task，实施记录见 `allocation_optimization_proposal.md`
 > §10，设计语义见 `scheduling_runtime.md` §16）+ 取值 CpuGpuTask /
-> ResultAdapter / ExecutionReport（`scheduling_runtime.md` §17）。
-> §5.2 稳定化（soak / 全矩阵 / 接口冻结）进行中；另：分主体在途份额
-> admission（issue #222，非路线图项）已随 0.7.3 先行落地。
+> ResultAdapter / ExecutionReport（`scheduling_runtime.md` §17）+
+> 接口冻结与 0.8 预留方向（§18）。独立验证：32 契约用例全绿、TSAN
+> 3×3 零告警、ASAN+UBSAN 7/7 零报告（含阴性对照）、A/B 吞吐 v2 单
+> 线程 -52.1% / 8 线程 -11.6%；CI 14/14 绿（含 MSVC/clang/NDK）。
+> 剩发布收尾：24h soak、版本定版与 tag（见 §5.2 状态表）。另：分主
+> 体在途份额 admission（issue #222，非路线图项）已随 0.7.3 先行落地。
 
 ## 0. 系列主题与原则
 
@@ -664,11 +667,11 @@ CR-116/123/125/126/134 契约注释落源码，定性结果见评审文档 §4.3
 | 项 | 状态 |
 |---|---|
 | 全量回归（桌面，Release） | ✅ 独立验证：174/175（1 失败 = benchmark_scheduling_paths 预存 flaky，base 78c6f55 A/B 定性非本分支引入） |
-| TSAN 矩阵（CI 同款目标 + 新测试） | ✅ 独立验证：新增两套件 3×3 轮零告警零 abort；附带定性一项预存 race（deadline policy priority-submit promise 析构路径，base 复现同签名，单独立项） |
+| TSAN 矩阵（CI 同款目标 + 新测试） | ✅ 独立验证：新增两套件 3×3 轮零告警零 abort；CI TSAN job 绿；附带定性一项预存 race（deadline policy priority-submit promise 析构路径，base 复现同签名，单独立项） |
 | ASAN + UBSAN | ✅ 独立验证（build-asan，`KAIRO_ENABLE_SANITIZERS=ON` + ASAN/UBSAN，`halt_on_error` + leak 检测）：7/7 目标零报告（含新增两套件与提交路径回归），并发敏感目标 ×5 重复共 25 轮全绿，阴性对照确认检测器生效（2026-10-28） |
+| CI 全矩阵（gcc11/clang14/MSVC/NDK r26c+r28b/guard/coverage/docs） | ✅ PR #225 14/14 绿（clang 泛型 lambda 分支裁剪与 MSVC 命中率断言时序两处可移植性修复后；MSVC Release 首两轮死于预存时敏测试且互不相同，第三轮绿——环境抖动定性） |
 | 长时间 soak ≥ 24h（自适应开启混合负载） | 发布门禁项，随发布流程执行 |
-| Android NDK smoke / 模拟器套件 | CI 门禁项（RELEASE_CHECKLIST Android 节） |
-| Windows MinGW/MSVC | CI 门禁项（release workflow windows-static-x64） |
+| Android 真机/模拟器套件 + Release 打包 | 发布门禁项（RELEASE_CHECKLIST Android 节与 release workflow） |
 
 ---
 
