@@ -115,14 +115,39 @@ bool test_realtime_executor_cycle_loop_execution() {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(80));
     executor.stop();
-    // 在 stop() 之后再读取回调次数，避免竞态：stop() 前读取时工作线程可能多跑一个周期，
-    // 导致 status.cycle_count 比当时读到的值多 1（CI 环境更容易触发）。
+    // stop() => stop_and_join()（realtime_thread_executor.cpp:221-223, 283-286）：返回时工作
+    // 线程已 Join，此后不会再有回调或 cycle_count_ 更新，两侧计数均已冻结——在 stop() 之后
+    // 读取是必要前提（前次 deflake be5d6c3 的结论，保持不变）。
+    //
+    // 但"精确相等"不是实现保证的不变量：stop 请求置 running_=false（:259）到 cycle manager
+    // 观察到 stop（:276 调 stop_cycle → mock_cycle_manager.hpp:101 置 stop_requested_）之间，
+    // 工作线程仍可能醒来通过 mock 的 stop 检查并投递一个 tick。此时 cycle_loop() 会因
+    // running_==false 跳过用户回调（:500 的防护），却仍无条件 update_statistics() 计一次周期
+    // （:517-521）——这是设计行为（CR-054：停止请求后不再发起用户回调），cycle_count 的语义
+    // 是"已执行的周期数"，不是"回调次数"。因此停止窗口内每投递一个 5ms tick 边界，
+    // status.cycle_count 就比 final_callback_count 多 1。
+    //
+    // 该窗口正常只有数微秒（实测 ~6μs，0.1% 量级/次），本地难以稳定复现；CI 共享 runner
+    // （抢占 / steal time / cgroup 限流）可把窗口拉长到毫秒级——这正是两次 CI 失败
+    // （clang-Release 与 Code Coverage job，同一断言）的来源。放大验证（外包 ICycleManager
+    // 把窗口拉宽）证实：窗口 6ms → 差值 +1/+2，11ms → +2/+3，不加宽 → 恒 0；差值从不出负
+    // （回调先于其所在周期的计数发生，Join 后必然可见）。
+    //
+    // 故断言改为有界一致性，容差 = 2：0 为常态，1 = 一个 tick 边界落入微秒级窗口，
+    // 2 覆盖 stopper 在 :259→:276 之间被停顿超过一个完整周期（5ms）的极端情况；
+    // 再放宽会掩盖真实的计数回归（本测试 80ms/5ms ≈ 16 个周期，任何漏计/双计回归
+    // 产生的偏差都远大于 2，断言仍具区分度）。
     int final_callback_count = cycle_count.load();
     auto status = executor.get_status();
 
+    constexpr int kMaxUninvoicedCycles = 2;
     TEST_ASSERT(final_callback_count > 0, "Cycle callback should have been called");
-    TEST_ASSERT(status.cycle_count == final_callback_count,
-                "Executor cycle count should match callback invocations");
+    TEST_ASSERT(status.is_running == false,
+                "Executor should be joined and not running after stop()");
+    TEST_ASSERT(status.cycle_count >= final_callback_count,
+                "Every callback invocation must be reflected in cycle count");
+    TEST_ASSERT(status.cycle_count - final_callback_count <= kMaxUninvoicedCycles,
+                "Executor cycle count may exceed callbacks only by stop-window ticks");
 
     std::cout << "  Cycle_loop execution: PASSED" << std::endl;
     return true;
