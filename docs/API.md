@@ -1,4 +1,4 @@
-# Kairo API 使用说明（v0.7.2）
+# Kairo API 使用说明（v0.7.3）
 
 本文档说明 `kairo` 库的主要 API、配置与类型，便于集成与扩展。完整接口定义见头文件 `include/kairo/`。
 

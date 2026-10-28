@@ -136,6 +136,6 @@ target_link_libraries(myapp PRIVATE kairo::executor)
 
 ## 版本与许可
 
-当前版本：**v0.7.2**
+当前版本：**v0.7.3**
 
 Kairo 使用 [MIT License](LICENSE)。

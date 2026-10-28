@@ -54,7 +54,7 @@ auto decoded = future.get();
 
 按值捕获 `frame` 让任务拥有稳定输入。`future.get()` 是完成和异常传播边界；`get_last_routing_decision()` 则解释默认 Facade 为什么选择该路径。完全不需要路由语义的裸提交用 `submit()`（0.7.1 评审曾评估过独立的 `submit_fast` 快速路径，实测普通提交通道本身快于优先级通道约 31%，故收敛回 `submit`，未引入新 API）。需要意图路由、QoS 映射或结构化诊断时用 `submit_auto`。
 
-## 高频短任务的可选项：`submit_v2`（0.7.3 开发快照）
+## 高频短任务的可选项：`submit_v2`（0.7.3）
 
 提交后立即取结果的短任务可以考虑 0.7.3 的 opt-in 快速通道：
 

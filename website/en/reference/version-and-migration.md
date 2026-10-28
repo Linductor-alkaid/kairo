@@ -7,7 +7,7 @@ description: Entry points for releases and API migration.
 
 ## Current scope
 
-The latest release record is `v0.7.2`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
+The latest release record is `v0.7.3`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
 
 | What to check | Source of truth |
 | --- | --- |
@@ -16,10 +16,10 @@ The latest release record is `v0.7.2`. This site uses that stable version as its
 | Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | Complete current signatures | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
-## 0.7.3 (development snapshot, unreleased): TaskResult lightweight future + valued CpuGpuTask
+## 0.7.3 (released 2026-10-29): TaskResult lightweight future + valued CpuGpuTask
 
-The following landed on the development branch (`feat/v073-task-result`)
-and is not part of any stable tag yet; it becomes official with 0.7.3:
+All changes are additive with no required migration (opt-in APIs; the
+existing `submit()` family is bit-for-bit identical to 0.7.2):
 
 - **`TaskResult<T>` and `Executor::submit_v2` (heap-allocation stage 2,
   opt-in)**: `submit_v2` mirrors `submit` semantics item by item and

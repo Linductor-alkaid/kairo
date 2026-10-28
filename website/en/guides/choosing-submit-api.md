@@ -54,7 +54,7 @@ Value capture gives the task stable input. `future.get()` is the completion and 
 
 Value capture gives the task stable input. `future.get()` is the completion and exception boundary; `get_last_routing_decision()` explains why the default Facade selected its path. For bare submissions without routing semantics use `submit()` (a 0.7.1 review evaluated a separate `submit_fast` fast path; the plain submission channel measured ~31% faster than the priority channel, so the idea converged back into `submit` and no new API was added). When intent routing, QoS mapping, or structured diagnostics matter, use `submit_auto`.
 
-## Optional for hot short tasks: `submit_v2` (0.7.3 development snapshot)
+## Optional for hot short tasks: `submit_v2` (0.7.3)
 
 For short tasks whose result is consumed right away, the 0.7.3 opt-in
 fast lane is worth considering:

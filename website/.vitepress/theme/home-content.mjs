@@ -38,7 +38,7 @@ export const homeContent = {
       primary: { text: '十分钟跑通第一个任务', link: '/zh/quick-start/build' },
       secondary: { text: 'Kairo 是什么', link: '/zh/getting-started/what-is-kairo' },
       facts: [
-        ['版本', 'v0.7.2'],
+        ['版本', 'v0.7.3'],
         ['语言', 'C++20'],
         ['构建', 'CMake 3.16+'],
         ['平台', 'Linux、Windows、Android'],
@@ -166,7 +166,7 @@ export const homeContent = {
       ],
     },
     closing: { title: '十分钟，跑通你的第一个任务', detail: '编译、链接、拿到返回值，再故意抛一个异常看看它怎么回来。' },
-    versionNote: '本手册对应 v0.7.2；master 上的后续能力需在发布 tag 后才构成稳定版承诺。'
+    versionNote: '本手册对应 v0.7.3；master 上的后续能力需在发布 tag 后才构成稳定版承诺。'
   },
   en: {
     hero: {
@@ -175,7 +175,7 @@ export const homeContent = {
       primary: { text: 'Run your first task', link: '/en/quick-start/build' },
       secondary: { text: 'What is Kairo?', link: '/en/getting-started/what-is-kairo' },
       facts: [
-        ['Version', 'v0.7.2'],
+        ['Version', 'v0.7.3'],
         ['Language', 'C++20'],
         ['Build', 'CMake 3.16+'],
         ['Platforms', 'Linux, Windows, Android'],
@@ -303,7 +303,7 @@ export const homeContent = {
       ],
     },
     closing: { title: 'Ten minutes to your first task', detail: 'Compile, link, get a value back, then throw on purpose and watch the exception come home.' },
-    versionNote: 'This guide corresponds to v0.7.2. Later capabilities on master become stable promises only after their release tag.'
+    versionNote: 'This guide corresponds to v0.7.3. Later capabilities on master become stable promises only after their release tag.'
   }
 }
 

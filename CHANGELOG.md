@@ -4,7 +4,7 @@
 
 ---
 
-## [Unreleased]
+## [0.7.3] - 2026-10-29
 
 0.7.3 主体内容（roadmap §5）：堆分配优化阶段二（TaskResult 轻量
 Future + submit_v2）、返回值语义补齐（取值 CpuGpuTask +
