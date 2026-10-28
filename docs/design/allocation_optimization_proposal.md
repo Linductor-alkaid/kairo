@@ -842,10 +842,18 @@ bytes——cell 与监控记录各多一次堆分配；改 `"submit_v2"`（≤15
 - [x] 字节数：512 → **488 bytes/task**（目标 ~400-500，线内）
 - [x] `get()` 快速路径命中率：**99.7%**（submit+立即 get 形态，
       目标 > 60%）
-- [x] 配对 A/B 吞吐：submit_v2 vs submit 与全量回归见独立验证记录
-      （roadmap §5.0 验收线：不弱于 v0.7.2 ±5%）
+- [x] 配对 A/B 吞吐（独立验证，10 轮交错 ×5 万次 submit+get）：
+      单线程提交 submit_v2 中位数 3347 vs submit 6980 ns/op
+      （-52.1%，各轮 -45.5%~-83.1% 全部占优）；8 线程提交 2212 vs
+      2438 ns/op（-11.6%，中位数占优）——验收线"不弱于 -5%"两
+      场景达成且方向为正
 - [x] 向后兼容：submit 路径 7.00/512.0 与 v0.7.2 记录逐位一致；
-      全量回归（独立验证）
+      全量回归 173/175（1 失败 = §10.3 之外的 void noexcept 缺陷，
+      独立验证发现、已修复 commit 455e389；1 失败 =
+      benchmark_scheduling_paths 预存 flaky，base A/B 定性非本分支
+      引入）；新增 32 契约用例（test_task_result 19 +
+      test_valued_cpu_gpu_task 13）；TSAN 子集零新告警（预存
+      deadline race 经 base A/B 定性，单独立项）
 
 ---
 
