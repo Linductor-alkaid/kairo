@@ -115,6 +115,38 @@ double get_task_pool_hit_rate() const;
 - 对象池自动生效、无需配置；池空/池满自动回退堆分配，行为与 0.7.1
   逐位一致。自定义 `IAsyncExecutor` 后端可覆写
   `get_allocation_metrics()`（默认返回零）接入观测。
+- **0.7.3 起追加 `fast_path_get_count` / `slow_path_get_count`**：
+  TaskResult::get() 的路径命中计数（进程级，含全部 TaskResult 实例）。
+  "快速路径命中率" = fast/(fast+slow)，验收线 > 60%（submit+立即 get
+  形态实测约 99.7%）。
+
+#### 轻量提交 submit_v2（0.7.3 §5.0，opt-in）
+
+```cpp
+template<typename F, typename... Args>
+auto submit_v2(F&& f, Args&&... args)
+    -> kairo::TaskResult<typename std::invoke_result<F, Args...>::type>;
+
+auto result = executor.submit_v2([] { return 42; });
+int value = result.get();   // 任务已完成后无锁快速路径（~10-20ns 量级）
+```
+
+- `TaskResult<T>`（`<kairo/task_result.hpp>`）是 std::future 形状的单
+  消费句柄：`get()`（异常重抛、取值后句柄失效）、`wait()` /
+  `wait_for()` / `wait_until()`（返回 `std::future_status`，永不
+  deferred）、`is_ready()`、`valid()`。可移动、不可拷贝；句柄非线程
+  安全，共享状态线程安全。
+- 与 `submit()` 语义逐项同构：总量 admission（拒绝时 CapacityExhausted
+  异常就绪，不抛出）、空任务拒绝（invalid_argument）、queued soft
+  timeout（`record_task_timeout`，task_id = `"submit_v2"`）、任务异常
+  与提交拒绝的 failure 观测、admission 释放先于结果结算。
+- broken promise：提交后任务未运行即被销毁（如 `shutdown(false)` 丢弃
+  排队任务）时，`get()` 抛 `future_error(broken_promise)`，与
+  std::promise 析构行为对齐，不永久阻塞。
+- 分配：单控制块承载结算状态 + 提交上下文 + bind 结果本体，submit
+  主路径 7 → **4 allocs/task**、512 → **488 bytes**（实测
+  `benchmark_submit_allocations`）。旧 `submit()` 不受影响（0.8.0 前
+  不弃用）；设计语义见 `docs/design/scheduling_runtime.md` §16。
 
 ### 3.2 优先级提交
 
@@ -361,6 +393,7 @@ if (backpressure_drops > 0) {
 | 普通短 CPU 任务 | `submit_auto([] { return value; })` | `std::future<T>`：任务完成或异常 |
 | 普通提交（无路由语义） | `submit([] { return value; })` | `std::future<T>`：任务完成或异常；不产出路由决策 |
 | 独立 CPU/GPU 实现 | `submit_auto(cpu_gpu_task(cpu, gpu)...)` | `std::future<void>`：已接受路径的完成或异常 |
+| 独立 CPU/GPU 实现（带返回值，0.7.3） | `submit_auto(cpu_gpu_task<T>(cpu, gpu).result_adapter(...))` | `ExecutionReport<T>{result, decision}`：result 为 `TaskResult<T>`（完成值/异常），decision 为实际选择路径 |
 | 指定无锁低延迟队列 | `dispatch_auto(TaskOptions{LowLatency, ...}, task)` | `DispatchResult::accepted`：仅表示有界队列已接收 |
 | 指定实时队列 | `dispatch_auto(TaskOptions{RealtimeQueue, ...}, task)` | `DispatchResult::accepted`：仅表示后续周期已接收 |
 | 长期可中断 I/O | `start_worker(BlockingWorkerSpec{...})` | `WorkerHandle`：启动结果与生命周期控制 |
@@ -378,6 +411,22 @@ if (!admission.accepted) {
 }
 ```
 
+- **带返回值的 CPU/GPU 自动任务（0.7.3 §5.1）**：
+  `cpu_gpu_task<T>(cpu, gpu)` 的 CPU callable 需返回可转换到 `T` 的
+  值；`T` 为 void 时与既有两参形态逐位一致（返回 `std::future<void>`）。
+  `T` 非 void 且路由选中 GPU 时必须提供
+  `ResultAdapter<T>::gpu_extract`（在 GPU worker 线程、GPU callable
+  返回之后调用：async 配置 = launch 完成点、sync 配置 = 设备同步完成
+  点；设备搬运与同步责任在用户侧，`gpu_extract` 阻塞会拖住 GPU
+  worker，属显式选择）——缺失时按 fallback 提交前结构化拒绝
+  （`ExecutionReport.result` 以 runtime_error 就绪，报告即终态）或
+  `AllowCpu` 回退；不支持 stream 完成计时（`supports_completion_timing()`
+  == false，当前为 CUDA 以外的后端）的执行器同样不承接取值 GPU 路径。
+  返回的 `ExecutionReport<T>{result, decision}` 中 `decision` 恒为
+  实际执行路径（AllowCpu 回退时记录回退后最终路径，
+  `AcceptedDegraded` + `fell_back`）。GPU 结算双保险：kernel 包装主
+  结算（成功值/异常保真）+ 计时 sink 兜底（执行器侧失败全路径转入
+  result）。见 `docs/design/scheduling_runtime.md` §17。
 - `LowLatency` 与 `RealtimeQueue` 必须显式指定 `preferred_executor` 且后端已运行；不会因 deadline、priority 或队列水位自动选择。`LowLatency` 后端的注册/启动/停止见 §5.9（`register_lockfree_executor` / `start_lockfree_executor`）。
 - `dispatch_auto()` 的接收结果不是完成通知。实时任务的 drop/backpressure 继续由 `RealtimeExecutorStatus` 计数和 failure event 观察。
 - `get_last_routing_decision()`、`get_recent_routing_decisions()` 与 `set_routing_callback()` 提供独立的路由解释；`ExecutorFailureEvent` 仍用于实际拒绝和执行失败。

@@ -4,6 +4,66 @@
 
 ---
 
+## 从 0.7.2 升级到 0.7.3（无必需迁移；新增 opt-in API）
+
+0.7.3 全部为 additive：`submit()` / `submit_auto()` / 既有
+`cpu_gpu_task(cpu, gpu)` 两参拼写的语义与签名逐位不变，零迁移义务。
+新增能力均为 opt-in：
+
+### TaskResult<T> 与 submit_v2（轻量 Future，roadmap §5.0）
+
+高频短任务（提交后即取结果）可迁移到 `submit_v2` 获得更低分配与
+无锁快速路径：
+
+```cpp
+// 旧（不变，std::future 契约）
+auto future = ex.submit([] { return 42; });
+int value = future.get();
+
+// 新（opt-in，单次分配 + get() 快速路径无锁）
+auto result = ex.submit_v2([] { return 42; });
+int value = result.get();
+```
+
+语义对照：`TaskResult<T>` 与 `std::future<T>` 的 `get/wait/wait_for/
+wait_until` 逐项同构（异常重抛、单消费、取值后失效）；差异点仅两处
+——(1) `submit_v2` 的监控 task_id 为 `"submit_v2"`（submit 为
+`"facade_submit"`）；(2) broken promise 行为对齐 std::promise 析构
+（`shutdown(false)` 丢弃排队任务时 get() 抛
+`future_error(broken_promise)`）。实测：submit 主路径 7 →
+4 allocs/task、512 → 488 bytes；快速路径命中率（提交后立即 get）
+约 99.7%，验收线 > 60%（`AllocationMetrics::fast_path_get_count` /
+`slow_path_get_count` 可观测）。`submit()` 无弃用计划（0.8.0 前不
+标记）。
+
+### 取值 CpuGpuTask（roadmap §5.1）
+
+```cpp
+// 既有 void 形态（不变，逐位兼容）
+auto fut = ex.submit_auto(kairo::cpu_gpu_task(
+    [&] { run_cpu(input); }, [&](void* s) { run_gpu(input, s); })
+    .fallback(kairo::FallbackPolicy::AllowCpu));
+
+// 新：带返回值（0.7.3）
+kairo::ExecutionReport<int> report = ex.submit_auto(
+    kairo::cpu_gpu_task<int>([&] { return run_cpu(input); },
+                             [&](void* s) { run_gpu(input, s); })
+        .result_adapter(kairo::ResultAdapter<int>{
+            .gpu_extract = [&] { return fetch_gpu_result(); }})
+        .fallback(kairo::FallbackPolicy::AllowCpu));
+int value = report.result.get();          // TaskResult<int>
+auto backend = report.decision.selected_backend;  // 实际执行路径
+```
+
+关键语义：`gpu_extract` 在 GPU worker 线程、GPU callable 返回之后
+调用（async 配置 = launch 完成点）；设备搬运与同步责任在用户侧。
+R 非 void 选中 GPU 且未提供 adapter、或执行器不支持完成计时（当前
+为 CUDA 以外后端）时：`NoFallback` 提交前结构化拒绝（报告即终态）、
+`AllowCpu` 提交前回退 CPU——不会静默降级。设计见
+`docs/design/scheduling_runtime.md` §17。
+
+---
+
 ## 从 0.7.1 升级到 0.7.2：优先级语义转移到调度器（唯一破坏性变更）
 
 0.7.2 **移除了 `Executor::submit_priority`**（0.7.x 唯一破坏性变更；

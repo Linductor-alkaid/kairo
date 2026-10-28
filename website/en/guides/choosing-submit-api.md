@@ -54,6 +54,24 @@ Value capture gives the task stable input. `future.get()` is the completion and 
 
 Value capture gives the task stable input. `future.get()` is the completion and exception boundary; `get_last_routing_decision()` explains why the default Facade selected its path. For bare submissions without routing semantics use `submit()` (a 0.7.1 review evaluated a separate `submit_fast` fast path; the plain submission channel measured ~31% faster than the priority channel, so the idea converged back into `submit` and no new API was added). When intent routing, QoS mapping, or structured diagnostics matter, use `submit_auto`.
 
+## Optional for hot short tasks: `submit_v2` (0.7.3 development snapshot)
+
+For short tasks whose result is consumed right away, the 0.7.3 opt-in
+fast lane is worth considering:
+
+```cpp
+auto result = ex.submit_v2([frame] { return decode(frame); });  // TaskResult<T>
+int value = result.get();  // lock-free fast path once the task finished (~99.7% hit rate)
+```
+
+Semantics mirror `submit()` item by item (admission, soft timeout,
+exception propagation, single-consumer `get`); only the return carrier
+changes to a single-allocation `TaskResult<T>` (submit main path drops
+from 7 to 4 allocs/task). Boundary: use it only when exactly one
+consumer reads the result; keep `submit()` for shared-future-style
+multi-waiter needs or `wait_for`-driven orchestration. `submit()` has
+no deprecation plan.
+
 ## Bounded admission: `dispatch_auto()` only for known constraints
 
 `dispatch_auto()` is not an acceleration switch for ordinary work. Use it only when the application has already verified lock-free single-consumer or real-time periodic-queue semantics:

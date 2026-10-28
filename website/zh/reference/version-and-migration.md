@@ -16,6 +16,30 @@ description: 发布版本和 API 迁移的入口。
 | 选项、编译器与后端前置 | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | 当前完整签名 | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
 
+## 0.7.3（开发快照，未发布）：TaskResult 轻量 Future + 取值 CpuGpuTask
+
+以下能力在 `master` 开发分支（`feat/v073-task-result`）已落地、尚未
+包含在任何稳定 tag 中，随 0.7.3 发布转正：
+
+- **`TaskResult<T>` 与 `Executor::submit_v2`（堆分配优化阶段二，
+  opt-in）**：`submit_v2` 与 `submit` 语义逐项同构，返回单次分配的
+  轻量句柄（`<kairo/task_result.hpp>`）；`get()` 在任务已完成时走
+  无锁快速路径（实测命中率约 99.7%）。submit 主路径 **7 → 4
+  allocs/task、512 → 488 bytes**；旧 API 不变、无弃用计划。broken
+  promise 与 `std::promise` 析构行为对齐（shutdown(false) 丢弃排队
+  任务时 `get()` 抛 `future_error(broken_promise)`，不挂死）。观测：
+  `AllocationMetrics::fast_path_get_count` / `slow_path_get_count`。
+- **取值 CpuGpuTask + ResultAdapter + ExecutionReport**：
+  `cpu_gpu_task<T>(cpu, gpu)` 带返回值（两参 void 拼写逐位不变）；
+  R 非 void 选中 GPU 时必须显式提供 `ResultAdapter<T>::gpu_extract`
+  （GPU worker、callable 返回后取值，async 配置 = launch 完成点，
+  设备同步责任在用户侧），缺失或执行器不支持完成计时时提交前结构化
+  拒绝或 AllowCpu 回退（不静默降级）。`submit_auto` 对取值任务返回
+  `ExecutionReport<T>{result, decision}`，decision 恒为实际执行路径。
+  另：分主体在途份额 admission（`TaskBuilder::subject()` /
+  `set_subject_max_in_flight_tasks()`，issue #222）已随本版先行落地，
+  见 API 参考 §3.12。
+
 ## 0.7.2（2026-10-19 发布）：优先级语义转移到调度器 + 堆分配优化 + 反馈覆盖扩展 + 可靠性收尾
 
 0.7.2 是 0.7.x 系列唯一含**破坏性变更**的版本：

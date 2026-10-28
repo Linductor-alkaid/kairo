@@ -54,6 +54,21 @@ auto decoded = future.get();
 
 按值捕获 `frame` 让任务拥有稳定输入。`future.get()` 是完成和异常传播边界；`get_last_routing_decision()` 则解释默认 Facade 为什么选择该路径。完全不需要路由语义的裸提交用 `submit()`（0.7.1 评审曾评估过独立的 `submit_fast` 快速路径，实测普通提交通道本身快于优先级通道约 31%，故收敛回 `submit`，未引入新 API）。需要意图路由、QoS 映射或结构化诊断时用 `submit_auto`。
 
+## 高频短任务的可选项：`submit_v2`（0.7.3 开发快照）
+
+提交后立即取结果的短任务可以考虑 0.7.3 的 opt-in 快速通道：
+
+```cpp
+auto result = ex.submit_v2([] { return decode(frame); });  // TaskResult<T>
+int value = result.get();   // 任务已完成时无锁快速路径（实测命中率 ~99.7%）
+```
+
+与 `submit()` 语义逐项同构（admission、软超时、异常传播、单消费
+get），只是返回载体换成单次分配的 `TaskResult<T>`（submit 主路径
+7 → 4 allocs/task）。适用边界：结果消费方只有一个时才用它；需要
+`std::shared_future` 式多方等待、`wait_for` 驱动的复杂编排时继续用
+`submit()`。`submit()` 没有弃用计划。
+
 ## 何时使用显式 future API
 
 优先级（`submit_auto(TaskBuilder.priority())`，0.7.2 起；`submit_priority()` 已移除）、`submit_delayed()`、`submit_periodic()`、`submit_batch()` 和任务依赖 API 不应被自动路由猜测，因为它们表达的是业务调度语义：

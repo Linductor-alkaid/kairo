@@ -2,6 +2,7 @@
 
 #include "types.hpp"
 #include "scheduling.hpp"
+#include "task_result.hpp"
 #include "gpu/gpu_scheduler.hpp"
 
 #include <chrono>
@@ -255,6 +256,20 @@ struct DispatchResult {
 };
 
 /**
+ * @brief 带返回值的 CPU/GPU 自动任务执行报告（0.7.3 §5.1）。
+ *
+ * result 承载任务值（异常经 get() 重抛）；decision 为实际选择路径
+ * （回退时记录回退后的最终路径，decision 恒与实际执行一致）。拒绝时
+ * result 以 runtime_error 异常就绪、decision 如实反映拒绝原因——
+ * 不抛出，报告即终态。
+ */
+template<typename R>
+struct ExecutionReport {
+    TaskResult<R> result;
+    RoutingDecision decision;
+};
+
+/**
  * @brief 将 callable 与自动路由选项组合的按值 builder。
  *
  * 此类型只表达任务意图；实际投递由后续 `Executor::submit_auto()` 重载完成。
@@ -397,10 +412,12 @@ inline SubjectKey subject(std::string key) {
  * @brief CPU/GPU 自动路由任务的双路径 callable。
  *
  * CPU 与 GPU 路径彼此独立：CPU callable 不接收 stream，GPU callable 可接收
- * `void* stream` 或不接收参数。首版仅支持 `void` 返回，以避免混淆设备同步与
- * GPU callback 的返回值语义。
+ * `void* stream` 或不接收参数。`R`（0.7.3 §5.1）为返回值类型，默认 void
+ * （既有两参拼写与语义逐位不变）；R 非 void 时 CPU callable 需返回可
+ * 转换到 R 的值，GPU 路径的取值由显式 `ResultAdapter<R>` 提供（见
+ * result_adapter() 与 docs/design/scheduling_runtime.md §17.1）。
  */
-template <typename CpuFunction, typename GpuFunction>
+template <typename CpuFunction, typename GpuFunction, typename R = void>
 class CpuGpuTask {
 public:
     CpuGpuTask(CpuFunction cpu, GpuFunction gpu)
@@ -473,9 +490,32 @@ public:
         return *this;
     }
 
+    /**
+     * @brief R 非 void 时 GPU 路径的显式取值适配器（0.7.3 §5.1）。
+     *
+     * gpu_extract 在 GPU worker 线程、GPU callable 返回之后调用（async
+     * 配置 = launch 完成点，sync = 设备同步完成点）；设备搬运与同步责任
+     * 在用户侧。路由选中 GPU 且未提供适配器时提交被结构化拒绝（不静默
+     * 降级 void）。
+     */
+    CpuGpuTask& result_adapter(ResultAdapter<R> adapter) {
+        result_adapter_ = std::move(adapter);
+        return *this;
+    }
+
     const TaskOptions& options() const noexcept { return options_; }
     const gpu::TaskCharacteristics& characteristics() const noexcept { return characteristics_; }
     const gpu::GpuTaskConfig& gpu_config() const noexcept { return gpu_config_; }
+
+    /** @brief 显式取值适配器；nullopt = 未提供。 */
+    const std::optional<ResultAdapter<R>>& result_adapter() const noexcept {
+        return result_adapter_;
+    }
+
+    /** @brief 可变访问（facade 提交时 move 出适配器）。 */
+    std::optional<ResultAdapter<R>>& result_adapter() noexcept {
+        return result_adapter_;
+    }
 
     CpuFunction&& take_cpu() noexcept { return std::move(cpu_); }
     GpuFunction&& take_gpu() noexcept { return std::move(gpu_); }
@@ -486,12 +526,14 @@ private:
     TaskOptions options_;
     gpu::TaskCharacteristics characteristics_;
     gpu::GpuTaskConfig gpu_config_;
+    std::optional<ResultAdapter<R>> result_adapter_;
 };
 
-template <typename CpuFunction, typename GpuFunction>
+template <typename R = void, typename CpuFunction, typename GpuFunction>
 auto cpu_gpu_task(CpuFunction&& cpu, GpuFunction&& gpu)
-    -> CpuGpuTask<std::decay_t<CpuFunction>, std::decay_t<GpuFunction>> {
-    using CpuGpuTaskType = CpuGpuTask<std::decay_t<CpuFunction>, std::decay_t<GpuFunction>>;
+    -> CpuGpuTask<std::decay_t<CpuFunction>, std::decay_t<GpuFunction>, R> {
+    using CpuGpuTaskType =
+        CpuGpuTask<std::decay_t<CpuFunction>, std::decay_t<GpuFunction>, R>;
     return CpuGpuTaskType(std::forward<CpuFunction>(cpu), std::forward<GpuFunction>(gpu));
 }
 

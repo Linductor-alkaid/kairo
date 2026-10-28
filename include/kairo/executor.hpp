@@ -2,6 +2,7 @@
 
 #include "config.hpp"
 #include "types.hpp"
+#include "task_result.hpp"
 #include "task_options.hpp"
 #include "task_router.hpp"
 #include "scheduler.hpp"
@@ -186,6 +187,18 @@ public:
     template<typename F, typename... Args>
     auto submit(F&& f, Args&&... args)
         -> std::future<typename std::invoke_result<F, Args...>::type>;
+
+    /**
+     * @brief 提交任务并返回轻量 TaskResult（0.7.3 §5.0，opt-in）。
+     *
+     * 与 submit() 语义逐项同构（admission / 空任务拒绝 / queued soft
+     * timeout / 异常与超时观测 / 释放时序），仅返回载体从 std::future
+     * 换为单次分配的 TaskResult<T>（get() 快速路径无锁）。共享路径
+     * 语义见 docs/design/scheduling_runtime.md §16.2。
+     */
+    template<typename F, typename... Args>
+    auto submit_v2(F&& f, Args&&... args)
+        -> TaskResult<typename std::invoke_result<F, Args...>::type>;
 
     template<typename F, typename... Args>
     auto submit_with_handle(F&& f, Args&&... args)
@@ -894,9 +907,17 @@ public:
 
     /**
      * @brief 提交 CPU/GPU 双路径任务。
+     *
+     * R = void（既有形态）：返回 std::future<void>，语义与 0.7.2 逐位
+     * 一致。R 非 void（0.7.3 §5.1）：CPU callable 返回可转换到 R 的
+     * 值；GPU 路径必须提供 ResultAdapter<R>::gpu_extract（提交时拒绝
+     * 否则），返回 ExecutionReport<R> 报告实际选择路径。
      */
-    template<typename CpuFunction, typename GpuFunction>
-    std::future<void> submit_auto(CpuGpuTask<CpuFunction, GpuFunction> task);
+    template<typename CpuFunction, typename GpuFunction, typename R = void>
+    auto submit_auto(CpuGpuTask<CpuFunction, GpuFunction, R> task)
+        -> std::conditional_t<std::is_void_v<R>,
+                              std::future<void>,
+                              ExecutionReport<R>>;
 
     /**
      * @brief 更新调度器配置
@@ -2030,6 +2051,185 @@ auto Executor::submit_with_rejection_observer(
     }
 
     return future;
+}
+
+// 0.7.3 §5.0：submit_v2 —— TaskResult 载体的轻量提交。单控制块
+// SubmitV2Cell 内联结算状态（TaskResultSharedState）+ 提交上下文 +
+// bind 结果本体，一次 make_shared 覆盖 submit 路径的 SubmitCell +
+// promise 内部状态 + bind 间接层三次分配。结算仲裁、admission 释放
+// 时序、观测记录与 submit_with_rejection_observer 逐项同构（设计语义
+// 见 docs/design/scheduling_runtime.md §16）；结算状态经 shared_ptr
+// 保活（消费者句柄 + 任务包装 functor），不使用 closure_graveyard_
+// （std::promise 的跨线程析构竞态在此结构下不存在）。
+template<typename F, typename... Args>
+auto Executor::submit_v2(F&& f, Args&&... args)
+    -> TaskResult<typename std::invoke_result<F, Args...>::type> {
+    using return_type = typename std::invoke_result<F, Args...>::type;
+
+    auto executor = manager_->get_default_async_executor_snapshot();
+    const std::string executor_name = executor ? executor->get_name() : "default";
+    // task_id 有意 ≤15 字符（SSO 内，稳态零堆分配；16 字符的
+    // "facade_submit_v2" 会在 cell 与监控记录各引入一次堆分配）。
+    const std::string task_id = "submit_v2";
+    if (!executor) {
+        record_submit_rejected(
+            executor_name,
+            task_id,
+            "Async executor not initialized. Call initialize() first.");
+        throw std::runtime_error(
+            "Async executor not initialized. Call initialize() first.");
+    }
+
+    using BoundTask =
+        decltype(std::bind(std::declval<F>(), std::declval<Args>()...));
+
+    struct SubmitV2Cell : detail::TaskResultSharedState<return_type> {
+        explicit SubmitV2Cell(BoundTask&& bound_)
+            : bound(std::move(bound_)) {}
+
+        Executor* self = nullptr;
+        std::string executor_name;
+        std::string task_id;
+        std::shared_ptr<AdmissionReleaser> releaser;  // 可空（admission 未启用）
+        return_type (*invoke_bound)(SubmitV2Cell&) = nullptr;
+        BoundTask bound;  // bind 结果本体（无 shared_ptr 间接层，-1 alloc）
+        // 任务包装 functor 的活跃实例计数（broken promise 履行，§16.1）。
+        std::atomic<int> wrapper_live_count{0};
+
+        void release_admission() {
+            if (releaser) releaser->release();
+        }
+    };
+
+    // 空任务拒绝（先于 bind 的 std::function 判空，与 submit 同序）。
+    if constexpr (sizeof...(Args) == 0) {
+        if (detail::is_empty_std_function(f)) {
+            struct EmptyCell : detail::TaskResultSharedState<return_type> {};
+            auto empty_cell = std::make_shared<EmptyCell>();
+            auto exception =
+                std::make_exception_ptr(std::invalid_argument("empty task"));
+            empty_cell->settle_exception(exception);
+            record_submit_rejected(
+                executor_name,
+                task_id,
+                "Async executor rejected empty task submission",
+                exception);
+            return TaskResult<return_type>(std::move(empty_cell));
+        }
+    }
+
+    // bind 先于 cell 分配：decay-copy 抛异常时无已登记资源需展开
+    // （admission 在 bind 之后才接纳）。
+    BoundTask bound = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+    auto cell = std::make_shared<SubmitV2Cell>(std::move(bound));
+    cell->self = this;
+    cell->executor_name = executor_name;
+    cell->task_id = task_id;
+    cell->invoke_bound = [](SubmitV2Cell& c) -> return_type {
+        return std::invoke(c.bound);
+    };
+
+    TaskResult<return_type> result_handle{cell};
+
+    // 总量有界 admission：拒绝时 TaskResult 立即以拒绝异常就绪（不抛
+    // 出），failure 事件已由 try_admit_submission 记录。
+    auto admission = try_admit_submission(executor_name, task_id, "submit_v2", "");
+    if (!admission.accepted) {
+        auto exception = admission.rejection_exception
+            ? admission.rejection_exception
+            : std::make_exception_ptr(CapacityExhaustedException(
+                  "In-flight submission capacity exhausted"));
+        cell->settle_exception(exception);
+        return result_handle;
+    }
+    cell->releaser = std::move(admission.releaser);
+
+    // 任务包装：持 cell（16B shared_ptr 落入 std::function 小对象缓冲，
+    // 零分配）；on_timeout 持裸指针（零分配；存活性依据同 0.7.2 §4.1
+    // ——两者同批移入同一 Task 节点，on_timeout 触发点节点完整存活）。
+    //
+    // broken promise 履行（§16.1）：functor 以活跃实例计数结盟——每个
+    // 构造/拷贝 +1、析构 -1，最后一个实例析构且尚未结算时以
+    // future_error(broken_promise) 结算（std::promise 析构对齐，覆盖
+    // shutdown(false) 丢弃排队任务）。提交表达式的临时实例在全表达式
+    // 结束时才析构：拒绝分支的结算先于临时量触发 break，输家安全。
+    struct V2TaskFunctor {
+        explicit V2TaskFunctor(std::shared_ptr<SubmitV2Cell> c) noexcept
+            : cell(std::move(c)) {
+            cell->wrapper_live_count.fetch_add(1, std::memory_order_relaxed);
+        }
+        V2TaskFunctor(const V2TaskFunctor& other) noexcept
+            : cell(other.cell) {
+            cell->wrapper_live_count.fetch_add(1, std::memory_order_relaxed);
+        }
+        V2TaskFunctor(V2TaskFunctor&& other) noexcept
+            : cell(std::move(other.cell)) {}
+        V2TaskFunctor& operator=(const V2TaskFunctor&) = delete;
+        V2TaskFunctor& operator=(V2TaskFunctor&&) = delete;
+
+        void operator()() {
+            try {
+                if constexpr (std::is_void_v<return_type>) {
+                    cell->invoke_bound(*cell);
+                    cell->release_admission();
+                    cell->settle_value();
+                } else {
+                    auto result = cell->invoke_bound(*cell);
+                    cell->release_admission();
+                    cell->settle_value(std::move(result));
+                }
+            } catch (...) {
+                auto exception = std::current_exception();
+                cell->release_admission();
+                cell->settle_exception(exception);
+                cell->self->record_task_exception(
+                    cell->executor_name,
+                    cell->task_id,
+                    "Async task threw an exception",
+                    exception);
+                throw;
+            }
+        }
+
+        ~V2TaskFunctor() {
+            if (cell &&
+                cell->wrapper_live_count.fetch_sub(
+                    1, std::memory_order_acq_rel) == 1) {
+                cell->break_promise_if_pending();
+            }
+        }
+
+        std::shared_ptr<SubmitV2Cell> cell;
+    };
+
+    // on_timeout：与 submit 的 promise_ready CAS 仲裁同构（settled），
+    // 计数释放先于结算。
+    auto on_timeout = [keep_alive = cell.get()](std::exception_ptr exception) {
+        keep_alive->release_admission();
+        if (keep_alive->settle_exception(exception)) {
+            keep_alive->self->record_task_timeout(
+                keep_alive->executor_name,
+                keep_alive->task_id,
+                "Async task timed out before execution",
+                exception);
+        }
+    };
+
+    if (!executor->try_submit_task(V2TaskFunctor{cell}, std::move(on_timeout))) {
+        auto exception = std::make_exception_ptr(
+            std::runtime_error("Async executor rejected task submission"));
+        cell->release_admission();
+        if (cell->settle_exception(exception)) {
+            record_submit_rejected(
+                executor_name,
+                task_id,
+                "Async executor rejected task submission",
+                exception);
+        }
+        // 拒绝结算先于临时 functor 析构（全表达式末尾），break 为输家。
+    }
+
+    return result_handle;
 }
 
 template<typename F, typename... Args>
@@ -3662,12 +3862,13 @@ auto Executor::submit_auto(TaskBuilder<Function> task)
                                      std::move(function));
 }
 
-template<typename CpuFunction, typename GpuFunction>
-std::future<void> Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction> task) {
+template<typename CpuFunction, typename GpuFunction, typename R>
+auto Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction, R> task)
+    -> std::conditional_t<std::is_void_v<R>, std::future<void>, ExecutionReport<R>> {
     static_assert(requires(CpuFunction& cpu) {
-                      { cpu() } -> std::same_as<void>;
+                      { cpu() } -> std::convertible_to<R>;
                   },
-                  "CpuGpuTask CPU callable must be invocable with no arguments and return void");
+                  "CpuGpuTask CPU callable must be invocable with no arguments and return a value convertible to R");
     static_assert(requires(GpuFunction& gpu) {
                       { gpu(static_cast<void*>(nullptr)) } -> std::same_as<void>;
                   } || requires(GpuFunction& gpu) {
@@ -3684,13 +3885,65 @@ std::future<void> Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction> tas
             options, true, scheduler_.decide(task.characteristics()) == gpu::ExecutorChoice::GPU);
     }
 
-    const auto reject = [this, &task_name, &decision](const std::string& message) {
+    // 0.7.3 §5.1：R 非 void 选中 GPU 时的前提检查（先于决策记录，使
+    // 拒绝/回退以结构化状态落账，决策与实际投递一致）：
+    // - 取值适配器必须显式提供（宁拒，不静默降级 void）；
+    // - 结果结算的兜底通道是 stream 完成计时 sink（"恰一条交付"覆盖
+    //   执行器侧全部失败路径，§15.2），不支持计时的执行器不承接
+    //   非 void GPU 路径。AllowCpu 按既有契约在提交前改走 CPU。
+    if constexpr (!std::is_void_v<R>) {
+        if (decision.selected_backend == ExecutionBackend::Gpu) {
+            const bool timing_supported = [this, &decision]() {
+                auto gpu_executor = manager_->get_gpu_executor_snapshot(
+                    decision.selected_executor_name);
+                return gpu_executor && gpu_executor->supports_completion_timing();
+            }();
+            const bool adapter_present =
+                task.result_adapter().has_value() &&
+                static_cast<bool>(task.result_adapter()->gpu_extract);
+            if (!adapter_present || !timing_supported) {
+                if (options.fallback == FallbackPolicy::AllowCpu) {
+                    decision.selected_backend = ExecutionBackend::DefaultAsync;
+                    decision.selected_executor_name = "default";
+                    decision.reason = RoutingReason::FallbackPolicy;
+                    decision.status = RoutingStatus::AcceptedDegraded;
+                    decision.fell_back = true;
+                    decision.detail = !adapter_present
+                        ? "CpuGpuTask with non-void R has no ResultAdapter::gpu_extract; "
+                          "falling back to CPU"
+                        : "GPU executor does not support completion timing; "
+                          "falling back to CPU";
+                    decision.timestamp = std::chrono::steady_clock::now();
+                } else {
+                    decision.status = RoutingStatus::Rejected;
+                    decision.reason = RoutingReason::Rejected;
+                    decision.detail = !adapter_present
+                        ? "submit_auto: CpuGpuTask with non-void R selected GPU backend; "
+                          "provide ResultAdapter<R>::gpu_extract (CpuGpuTask::result_adapter)"
+                        : "submit_auto: GPU executor does not support completion timing; "
+                          "non-void CpuGpuTask requires a timing-capable executor "
+                          "(or FallbackPolicy::AllowCpu)";
+                }
+            }
+        }
+    }
+
+    const auto reject = [this, &task_name, &decision](const std::string& message)
+        -> std::conditional_t<std::is_void_v<R>, std::future<void>, ExecutionReport<R>> {
         record_submit_rejected(decision.selected_executor_name.empty()
                                    ? "gpu" : decision.selected_executor_name,
                                task_name, message);
-        std::promise<void> promise;
-        promise.set_exception(std::make_exception_ptr(std::runtime_error(message)));
-        return promise.get_future();
+        if constexpr (std::is_void_v<R>) {
+            std::promise<void> promise;
+            promise.set_exception(std::make_exception_ptr(std::runtime_error(message)));
+            return promise.get_future();
+        } else {
+            struct ReportCell : detail::TaskResultSharedState<R> {};
+            auto report_cell = std::make_shared<ReportCell>();
+            report_cell->settle_exception(
+                std::make_exception_ptr(std::runtime_error(message)));
+            return ExecutionReport<R>{TaskResult<R>(std::move(report_cell)), decision};
+        }
     };
 
     // 0.6.1：启发式选择 CPU + 非 AllowCpu fallback = 拒绝投递。该组合
@@ -3732,6 +3985,7 @@ std::future<void> Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction> tas
             : 0;
 
     if (decision.selected_backend == ExecutionBackend::DefaultAsync) {
+        if constexpr (std::is_void_v<R>) {
         if (feedback_enabled) {
             return submit(
                 [this, steady_ns_now, submit_ns, deadline_ns, qos = options.qos,
@@ -3763,8 +4017,50 @@ std::future<void> Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction> tas
                 });
         }
         return submit(std::move(task).take_cpu());
+        } else {
+            // 0.7.3 §5.1：取值 CPU 路径——submit_v2 承载（TaskResult，
+            // §16 快速路径）+ 既有反馈测量包装同字段。
+            if (feedback_enabled) {
+                return ExecutionReport<R>{submit_v2(
+                    [this, steady_ns_now, submit_ns, deadline_ns, qos = options.qos,
+                     feedback_task_id = task_name,
+                     inner = std::move(task).take_cpu()]() mutable -> R {
+                        const int64_t start_ns = steady_ns_now();
+                        SchedulingFeedback feedback;
+                        feedback.task_id = feedback_task_id;
+                        feedback.qos = qos;
+                        feedback.backend = ExecutionBackend::DefaultAsync;
+                        feedback.executor_name = "default";
+                        feedback.queue_wait_ns = start_ns - submit_ns;
+                        feedback.had_deadline = deadline_ns > 0;
+                        feedback.deadline_missed =
+                            deadline_ns > 0 && start_ns > deadline_ns;
+                        const auto finish = [&](bool success, FailureKind kind) {
+                            feedback.success = success;
+                            feedback.failure_kind = kind;
+                            feedback.execution_duration_ns = steady_ns_now() - start_ns;
+                            report_scheduling_feedback(feedback);
+                        };
+                        try {
+                            auto value = inner();
+                            finish(true, FailureKind::None);
+                            return value;
+                        } catch (...) {
+                            finish(false, FailureKind::TaskException);
+                            throw;
+                        }
+                    }), decision};
+            }
+            // 身份包装强制返回 R（CPU callable 的返回可转换到 R，但
+            // submit_v2 只能推导其原始返回类型）。
+            return ExecutionReport<R>{submit_v2(
+                [inner = std::move(task).take_cpu()]() mutable -> R {
+                    return inner();
+                }), decision};
+        }
     }
 
+    if constexpr (std::is_void_v<R>) {
     const auto& gpu_name = decision.selected_executor_name;
     try {
         auto gpu_config = task.gpu_config();
@@ -3874,6 +4170,146 @@ std::future<void> Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction> tas
             return submit(std::move(task).take_cpu());
         }
         return reject(std::string("submit_auto: GPU submission rejected: ") + error.what());
+    }
+    } else {
+    // ---- 0.7.3 §5.1：取值 GPU 路径 ----
+    // 前置已保证：adapter 存在且执行器支持 stream 完成计时。
+    // 结算通道双保险：主结算 = kernel 包装在 GPU worker 即时结算（成功
+    // 值 / kernel 异常，真实异常保真）；兜底 = 计时 sink 的"恰一条交付"
+    // 契约——校验失败、launch 失败、post-kernel 设备错误（RAII 失败
+    // 守卫交付 success==false）、停止排空（completion_ns==0）全部转入。
+    // 成功记录不重复取值（成功蕴含 kernel callable 已返回，主结算必已
+    // 发生；同一线程顺序执行，sink 结算为输家）。sink 持
+    // TaskResultSharedState 的 shared_ptr，晚于提交抵达亦安全。
+    const auto& gpu_name = decision.selected_executor_name;
+    struct GpuResultCell : detail::TaskResultSharedState<R> {};
+    auto result_cell = std::make_shared<GpuResultCell>();
+    try {
+        auto gpu_config = task.gpu_config();
+        auto extract = std::move(*std::move(task).result_adapter()).gpu_extract;
+        // 包装固定 (void*) 签名（sink 通道的 kernel_func 即
+        // std::function<void(void*)>）；callable 形态分派用函数作用域
+        // 的非依赖 if constexpr（与 submit_gpu 同款）——泛型 lambda 内
+        // 的 decltype(args)... 条件在 clang 下分支裁剪失效
+        // （CI clang 14 实证），不可用。
+        auto kernel_wrapper =
+            [extract = std::move(extract), result_cell,
+             inner = std::move(task).take_gpu()](void* stream) mutable {
+                try {
+                    if constexpr (std::is_invocable_v<GpuFunction&, void*>) {
+                        inner(stream);
+                    } else {
+                        (void)stream;
+                        inner();
+                    }
+                    result_cell->settle_value(extract());
+                } catch (...) {
+                    result_cell->settle_exception(std::current_exception());
+                    throw;
+                }
+            };
+        IGpuExecutor::KernelTimingSink timing_sink =
+            [this, result_cell, feedback_enabled, feedback_task_id = task_name,
+             executor = gpu_name, qos = options.qos, submit_ns, deadline_ns](
+                const gpu::GpuKernelTimingRecord& record) {
+                if (!record.success) {
+                    result_cell->settle_exception(std::make_exception_ptr(
+                        std::runtime_error(
+                            record.completion_ns == 0
+                                ? "CpuGpuTask GPU path failed: work not completed "
+                                  "(executor-side failure or stop)"
+                                : "CpuGpuTask GPU path failed: executor-side error")));
+                }
+                if (feedback_enabled) {
+                    SchedulingFeedback feedback;
+                    feedback.task_id = feedback_task_id;
+                    feedback.qos = qos;
+                    feedback.backend = ExecutionBackend::Gpu;
+                    feedback.executor_name = executor;
+                    feedback.queue_wait_ns =
+                        record.start_ns > 0 ? record.start_ns - submit_ns : 0;
+                    feedback.had_deadline = deadline_ns > 0;
+                    feedback.deadline_missed =
+                        deadline_ns > 0 && record.start_ns > deadline_ns;
+                    feedback.success = record.success;
+                    feedback.failure_kind =
+                        record.success ? FailureKind::None
+                                       : FailureKind::GpuFailure;
+                    feedback.execution_duration_ns =
+                        (record.success && record.completion_ns > 0 &&
+                         record.start_ns > 0)
+                            ? record.completion_ns - record.start_ns
+                            : 0;
+                    report_scheduling_feedback(feedback);
+                }
+            };
+        auto gpu_future = submit_gpu(gpu_name, std::move(kernel_wrapper),
+                                     gpu_config, std::move(timing_sink));
+        // 提交侧同步失败（校验/未运行/停止）：异常已在 future 就绪，
+        // 即时转入报告结算，不等 sink 的转交通道（可能延迟至 stop 排空）。
+        // 成功就绪（sync 任务跑得快）时不做任何事——主结算已发生。
+        if (gpu_future.wait_for(std::chrono::seconds(0)) ==
+            std::future_status::ready) {
+            try {
+                gpu_future.get();
+            } catch (...) {
+                result_cell->settle_exception(std::current_exception());
+            }
+        }
+        return ExecutionReport<R>{TaskResult<R>(std::move(result_cell)), decision};
+    } catch (const std::exception& error) {
+        if (options.fallback == FallbackPolicy::AllowCpu) {
+            RoutingDecision fallback = decision;
+            fallback.selected_backend = ExecutionBackend::DefaultAsync;
+            fallback.selected_executor_name = "default";
+            fallback.reason = RoutingReason::FallbackPolicy;
+            fallback.status = RoutingStatus::AcceptedDegraded;
+            fallback.fell_back = true;
+            fallback.detail = std::string("GPU submission rejected; falling back to CPU: ") + error.what();
+            fallback.timestamp = std::chrono::steady_clock::now();
+            record_routing_decision(std::move(fallback));
+            TaskResult<R> cpu_result = [&, this]() -> TaskResult<R> {
+                if (feedback_enabled) {
+                    return submit_v2(
+                        [this, steady_ns_now, submit_ns, deadline_ns,
+                         qos = options.qos, feedback_task_id = task_name,
+                         inner = std::move(task).take_cpu()]() mutable -> R {
+                            const int64_t start_ns = steady_ns_now();
+                            SchedulingFeedback feedback;
+                            feedback.task_id = feedback_task_id;
+                            feedback.qos = qos;
+                            feedback.backend = ExecutionBackend::DefaultAsync;
+                            feedback.executor_name = "default";
+                            feedback.queue_wait_ns = start_ns - submit_ns;
+                            feedback.had_deadline = deadline_ns > 0;
+                            feedback.deadline_missed =
+                                deadline_ns > 0 && start_ns > deadline_ns;
+                            const auto finish = [&](bool success, FailureKind kind) {
+                                feedback.success = success;
+                                feedback.failure_kind = kind;
+                                feedback.execution_duration_ns =
+                                    steady_ns_now() - start_ns;
+                                report_scheduling_feedback(feedback);
+                            };
+                            try {
+                                auto value = inner();
+                                finish(true, FailureKind::None);
+                                return value;
+                            } catch (...) {
+                                finish(false, FailureKind::TaskException);
+                                throw;
+                            }
+                        });
+                }
+                return submit_v2(
+                    [inner = std::move(task).take_cpu()]() mutable -> R {
+                        return inner();
+                    });
+            }();
+            return ExecutionReport<R>{std::move(cpu_result), std::move(fallback)};
+        }
+        return reject(std::string("submit_auto: GPU submission rejected: ") + error.what());
+    }
     }
 }
 

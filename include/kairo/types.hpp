@@ -365,6 +365,10 @@ struct Task {
 struct AllocationMetrics {
     uint64_t task_pool_hit_count = 0;   // Task 节点池命中（零堆分配）
     uint64_t task_pool_miss_count = 0;  // 节点池未命中（回退堆分配）
+    // 0.7.3 §5.0：TaskResult::get() 路径命中计数（进程级，含全部
+    // TaskResult 实例；"快速路径命中率" = fast / (fast + slow)）。
+    uint64_t fast_path_get_count = 0;   // 无锁取得（首次检查或 spin 内）
+    uint64_t slow_path_get_count = 0;   // mutex + cv 慢速等待
 };
 
 /**
