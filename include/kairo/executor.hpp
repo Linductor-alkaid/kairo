@@ -4187,16 +4187,19 @@ auto Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction, R> task)
     try {
         auto gpu_config = task.gpu_config();
         auto extract = std::move(*std::move(task).result_adapter()).gpu_extract;
+        // 包装固定 (void*) 签名（sink 通道的 kernel_func 即
+        // std::function<void(void*)>）；callable 形态分派用函数作用域
+        // 的非依赖 if constexpr（与 submit_gpu 同款）——泛型 lambda 内
+        // 的 decltype(args)... 条件在 clang 下分支裁剪失效
+        // （CI clang 14 实证），不可用。
         auto kernel_wrapper =
             [extract = std::move(extract), result_cell,
-             inner = std::move(task).take_gpu()](auto&&... args) mutable {
+             inner = std::move(task).take_gpu()](void* stream) mutable {
                 try {
-                    // 泛型转发：GPU callable 可为 (void* stream) 或无参
-                    // 形态，按其实际形态调用（与 submit_gpu 的分派一致）。
-                    if constexpr (std::is_invocable_v<GpuFunction&,
-                                                      decltype(args)...>) {
-                        inner(std::forward<decltype(args)>(args)...);
+                    if constexpr (std::is_invocable_v<GpuFunction&, void*>) {
+                        inner(stream);
                     } else {
+                        (void)stream;
                         inner();
                     }
                     result_cell->settle_value(extract());
