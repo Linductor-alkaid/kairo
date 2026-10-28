@@ -3086,11 +3086,16 @@ auto Executor::submit_priority_scheduled(
         } catch (...) {
             auto exception = std::current_exception();
             cell->release_terminal();
+            // DropIfLate 的结构化终态遵循取消类约定：不计 task-exception
+            // failure（可观测性由 deadline_dropped_count 与 future 终态
+            // 承载）。分类必须先于结算——is_deadline_drop_exception 经
+            // rethrow 访问异常对象本体，promise 发布后消费者线程可能
+            // 立即 catch 并析构该对象（TSAN 混合负载 soak 实证
+            // data race，45 份报告同根因，2026-10-29 修复）。
+            const bool deadline_drop = is_deadline_drop_exception(exception);
             cell->promise.set_exception(exception);
             cell->ready.store(true, std::memory_order_release);
-            // DropIfLate 的结构化终态遵循取消类约定：不计 task-exception
-            // failure（可观测性由 deadline_dropped_count 与 future 终态承载）。
-            if (!is_deadline_drop_exception(exception)) {
+            if (!deadline_drop) {
                 cell->self->record_task_exception(
                     cell->executor_name,
                     cell->task_id,
