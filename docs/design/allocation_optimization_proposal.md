@@ -848,12 +848,12 @@ bytes——cell 与监控记录各多一次堆分配；改 `"submit_v2"`（≤15
       2438 ns/op（-11.6%，中位数占优）——验收线"不弱于 -5%"两
       场景达成且方向为正
 - [x] 向后兼容：submit 路径 7.00/512.0 与 v0.7.2 记录逐位一致；
-      全量回归 173/175（1 失败 = §10.3 之外的 void noexcept 缺陷，
-      独立验证发现、已修复 commit 455e389；1 失败 =
-      benchmark_scheduling_paths 预存 flaky，base A/B 定性非本分支
-      引入）；新增 32 契约用例（test_task_result 19 +
-      test_valued_cpu_gpu_task 13）；TSAN 子集零新告警（预存
-      deadline race 经 base A/B 定性，单独立项）
+      全量回归 **174/175**（void noexcept 缺陷修复 455e389 后复验
+      19/19 归零；唯一失败 = benchmark_scheduling_paths 预存 flaky，
+      base A/B 定性非本分支引入）；新增 32 契约用例（test_task_result
+      19 + test_valued_cpu_gpu_task 13）全绿；TSAN 3×3 轮零告警
+      （预存 deadline race 经 base A/B 定性，单独立项）；ASAN+UBSAN
+      7/7 目标零报告（含阴性对照，见 roadmap §5.2 状态表）
 
 ---
 

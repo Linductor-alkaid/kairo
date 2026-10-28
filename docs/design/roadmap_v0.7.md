@@ -661,9 +661,9 @@ CR-116/123/125/126/134 契约注释落源码，定性结果见评审文档 §4.3
 
 | 项 | 状态 |
 |---|---|
-| 全量回归（桌面，Release） | 独立验证随 0.7.3 特性分支执行 |
-| TSAN 矩阵（CI 同款目标 + 新测试） | 独立验证随 0.7.3 特性分支执行 |
-| ASAN + UBSAN | 发布前随发布流程执行（本地矩阵见 RELEASE_CHECKLIST） |
+| 全量回归（桌面，Release） | ✅ 独立验证：174/175（1 失败 = benchmark_scheduling_paths 预存 flaky，base 78c6f55 A/B 定性非本分支引入） |
+| TSAN 矩阵（CI 同款目标 + 新测试） | ✅ 独立验证：新增两套件 3×3 轮零告警零 abort；附带定性一项预存 race（deadline policy priority-submit promise 析构路径，base 复现同签名，单独立项） |
+| ASAN + UBSAN | ✅ 独立验证（build-asan，`KAIRO_ENABLE_SANITIZERS=ON` + ASAN/UBSAN，`halt_on_error` + leak 检测）：7/7 目标零报告（含新增两套件与提交路径回归），并发敏感目标 ×5 重复共 25 轮全绿，阴性对照确认检测器生效（2026-10-28） |
 | 长时间 soak ≥ 24h（自适应开启混合负载） | 发布门禁项，随发布流程执行 |
 | Android NDK smoke / 模拟器套件 | CI 门禁项（RELEASE_CHECKLIST Android 节） |
 | Windows MinGW/MSVC | CI 门禁项（release workflow windows-static-x64） |
