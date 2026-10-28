@@ -30,8 +30,16 @@
   拒绝）。分桶拒绝消息 `Subject in-flight quota exhausted (key=…)`。
 - **测试**：`tests/test_subject_bucket_admission.cpp`（standalone）锁定
   份额互不影响、分桶/总量拒绝可区分、终态恰好一次释放、热更新/解除、
-  shutdown 与零回归锚；`tests/test_api_doc_admission_fields.cpp` 扩展
-  锁定新字段与 API.md §3.12。
+  shutdown 与零回归锚；`tests/test_subject_quota_concurrency.cpp`
+  （standalone，参与 TSAN job）锁定并发契约——热更新严格可见性与并发
+  交错弱一致、解除/重建代际隔离、stress 下无泄漏/无越权/恰好一次释放；
+  `tests/test_api_doc_admission_fields.cpp` 扩展锁定新字段与 API.md
+  §3.12。
+- **并发契约文档化（PR #223 审查）**：热更新弱一致语义（接纳快照点 =
+  注册表查表临界区；set 完成后的新提交必用新份额，交错中的已开始接纳
+  允许按旧快照完成）与代际语义（活键原位缩放同代；set(key,0) 解除即刻
+  生效、已接纳落账孤儿计数；同名重建新代从 0 起计不继承残量；查询面只
+  反映当代）。见 `docs/design/subject_bucket_admission.md` D-2/D-5。
 
 ---
 
