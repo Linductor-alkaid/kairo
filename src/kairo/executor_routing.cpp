@@ -726,7 +726,7 @@ Executor::AdmissionDecision Executor::try_admit_submission(
     // 分桶查表先于任何计数（issue #222）：未带键的提交不触碰注册表锁；
     // 未配置主体 = 仅全局约束（"未知即宽容"）。计数 shared 所有权在此
     // 取得，fetch_add 在注册表锁外。
-    std::shared_ptr<std::atomic<int64_t>> bucket_counter;
+    std::shared_ptr<detail::SubjectKeyStats> bucket_stats;
     int64_t bucket_max = 0;
     if (!subject.empty()) {
         detail::SubjectQuotaRegistry* registry = nullptr;
@@ -735,13 +735,13 @@ Executor::AdmissionDecision Executor::try_admit_submission(
             registry = subject_quotas_.get();
         }
         if (registry) {
-            bucket_counter = registry->find(subject, bucket_max);
+            bucket_stats = registry->find(subject, bucket_max);
         }
     }
 
     const int64_t max = static_cast<int64_t>(
         max_in_flight_tasks_.load(std::memory_order_acquire));
-    if (max <= 0 && !bucket_counter) {
+    if (max <= 0 && !bucket_stats) {
         return decision;  // 两维皆未启用：无计数、无释放器
     }
 
@@ -764,11 +764,11 @@ Executor::AdmissionDecision Executor::try_admit_submission(
 
     // 分桶维度：全局通过后评估；超限则回滚分桶与全局并拒绝。拒绝消息
     // 与 future 结算共用同一异常（decision.rejection_exception）。
-    if (bucket_counter) {
+    if (bucket_stats) {
         const int64_t bucket_current =
-            bucket_counter->fetch_add(1, std::memory_order_acq_rel);
+            bucket_stats->in_flight.fetch_add(1, std::memory_order_acq_rel);
         if (bucket_current >= bucket_max) {
-            bucket_counter->fetch_sub(1, std::memory_order_release);
+            bucket_stats->in_flight.fetch_sub(1, std::memory_order_release);
             if (global_counted) {
                 in_flight_submissions_.fetch_sub(1, std::memory_order_release);
             }
@@ -783,11 +783,18 @@ Executor::AdmissionDecision Executor::try_admit_submission(
             decision.rejection_exception = std::move(exception);
             return decision;
         }
+        // 接纳成功：累计接纳数（修订 R-1 诊断面，relaxed 即可——接入方
+        // 验证键确实流过接纳点，不参与任何判定）。别名 shared_ptr 与
+        // in_flight 共享 keepalive 所有权。
+        bucket_stats->admitted_total.fetch_add(1, std::memory_order_relaxed);
     }
 
     decision.releaser = std::make_shared<AdmissionReleaser>(
         global_counted ? &in_flight_submissions_ : nullptr,
-        std::move(bucket_counter));
+        bucket_stats
+            ? std::shared_ptr<std::atomic<int64_t>>(bucket_stats,
+                                                    &bucket_stats->in_flight)
+            : nullptr);
     return decision;
 }
 
@@ -825,8 +832,8 @@ size_t Executor::get_subject_max_in_flight_tasks(
         return 0;  // 未配置任何主体："未知即宽容"
     }
     int64_t max = 0;
-    const auto counter = subject_quotas_->find(subject, max);
-    return counter ? static_cast<size_t>(max) : 0;
+    const auto stats = subject_quotas_->find(subject, max);
+    return stats ? static_cast<size_t>(max) : 0;
 }
 
 size_t Executor::get_subject_in_flight_submissions(
@@ -836,11 +843,11 @@ size_t Executor::get_subject_in_flight_submissions(
         return 0;
     }
     int64_t max = 0;
-    const auto counter = subject_quotas_->find(subject, max);
-    if (!counter) {
+    const auto stats = subject_quotas_->find(subject, max);
+    if (!stats) {
         return 0;
     }
-    const int64_t current = counter->load(std::memory_order_acquire);
+    const int64_t current = stats->in_flight.load(std::memory_order_acquire);
     return current > 0 ? static_cast<size_t>(current) : 0;
 }
 

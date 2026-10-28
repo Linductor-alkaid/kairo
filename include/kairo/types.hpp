@@ -232,6 +232,10 @@ struct SubjectQuotaStatus {
     std::string subject;
     size_t max_in_flight_tasks = 0;    // 该主体的在途份额上限
     size_t in_flight_submissions = 0;  // 该主体当前在途计数
+    // 该主体当前代的累计接纳数（修订 R-1 诊断面）：接入方验证带键提交
+    // 确实流过了接纳点——份额已配置但该值停在 0 = 键未生效。键解除后
+    // 重建为新代，从 0 起计。弱一致读。
+    uint64_t admitted_total = 0;
 };
 
 /**
