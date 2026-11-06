@@ -4,6 +4,23 @@
 
 ---
 
+## [Unreleased]
+
+### 变更
+
+- **`Executor::submit_v2` 更名为 `submit_task_result`**："v2" 为时序
+  命名，无法从名字得知契约（单消费 `TaskResult` 句柄，无
+  `share()`）与适用范围（提交后即取结果的高频短任务）；更名遵循
+  提交 API 的语义命名惯例（`submit_batch` / `submit_delayed` /
+  `submit_with_handle` 同款）。`submit_v2` 保留为 `[[deprecated]]`
+  转发别名（计划 0.9.0 前不移除），行为与新名完全等价。监控口径
+  同步：task_id `"submit_v2"` → `"submit_result"`（13 字符维持
+  SSO ≤15 零堆分配约束；完整 API 名 18 字符会破坏之），admission
+  scope `"submit_v2"` → `"submit_task_result"`；依赖 task_id 过滤
+  的看板需同步。实现与分配数字（4 allocs / 488 bytes）零变化；
+  `docs/design/scheduling_runtime.md` §16 更名附注同时勘误了
+  §16.2 对照表 "facade_submit_v2" 与实现不符处。
+
 ## [0.7.3] - 2026-10-29
 
 0.7.3 主体内容（roadmap §5）：堆分配优化阶段二（TaskResult 轻量

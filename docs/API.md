@@ -120,14 +120,18 @@ double get_task_pool_hit_rate() const;
   "快速路径命中率" = fast/(fast+slow)，验收线 > 60%（submit+立即 get
   形态实测约 99.7%）。
 
-#### 轻量提交 submit_v2（0.7.3 §5.0，opt-in）
+#### 轻量提交 submit_task_result（0.7.3 §5.0，opt-in）
+
+> 命名说明：0.7.3 引入时名 `submit_v2`（时序命名，无法从名字得知
+> 契约与适用范围），发布后更名。`submit_v2` 保留为 `[[deprecated]]`
+> 转发别名（计划 0.9.0 前不移除），新代码一律使用 `submit_task_result`。
 
 ```cpp
 template<typename F, typename... Args>
-auto submit_v2(F&& f, Args&&... args)
+auto submit_task_result(F&& f, Args&&... args)
     -> kairo::TaskResult<typename std::invoke_result<F, Args...>::type>;
 
-auto result = executor.submit_v2([] { return 42; });
+auto result = executor.submit_task_result([] { return 42; });
 int value = result.get();   // 任务已完成后无锁快速路径（~10-20ns 量级）
 ```
 
@@ -136,10 +140,13 @@ int value = result.get();   // 任务已完成后无锁快速路径（~10-20ns �
   `wait_for()` / `wait_until()`（返回 `std::future_status`，永不
   deferred）、`is_ready()`、`valid()`。可移动、不可拷贝；句柄非线程
   安全，共享状态线程安全。
+- 适用范围：单消费者、提交后即取结果的高频短任务；多等待者
+  （shared_future）/编排场景仍走 `submit()` 及 batch/dependency 系列。
 - 与 `submit()` 语义逐项同构：总量 admission（拒绝时 CapacityExhausted
   异常就绪，不抛出）、空任务拒绝（invalid_argument）、queued soft
-  timeout（`record_task_timeout`，task_id = `"submit_v2"`）、任务异常
-  与提交拒绝的 failure 观测、admission 释放先于结果结算。
+  timeout（`record_task_timeout`，task_id = `"submit_result"`，13
+  字符以维持 SSO 零堆分配）、任务异常与提交拒绝的 failure 观测、
+  admission 释放先于结果结算。
 - broken promise：提交后任务未运行即被销毁（如 `shutdown(false)` 丢弃
   排队任务）时，`get()` 抛 `future_error(broken_promise)`，与
   std::promise 析构行为对齐，不永久阻塞。

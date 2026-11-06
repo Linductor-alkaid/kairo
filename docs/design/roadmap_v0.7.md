@@ -642,6 +642,12 @@ CR-116/123/125/126/134 契约注释落源码，定性结果见评审文档 §4.3
 - 0.8.0 前标记 `submit()` 为 deprecated
 - 0.9.0 完全移除旧 API
 
+> **更名附注（0.7.3 发布后）**：`submit_v2` 已更名为
+> `submit_task_result`（时序命名无法表达契约与适用范围）；
+> `submit_v2` 保留为 `[[deprecated]]` 转发别名，随旧 `submit()` 的
+> 弃用窗口一并移除。监控 task_id `"submit_v2"` → `"submit_result"`
+> （SSO ≤15 字符约束）。详见 `scheduling_runtime.md` §16 更名附注。
+
 ### 5.1 返回值语义补齐 ✅ 已落地（2026-10-28）
 
 - `CpuGpuTask<T>` 带返回值 + 显式 `ResultAdapter<T>`（`unified_facade_and_auto_routing.md`

@@ -1,4 +1,4 @@
-// 0.7.3 §5.0 TaskResult<T> / Executor::submit_v2 契约测试（独立验证代理编写，
+// 0.7.3 §5.0 TaskResult<T> / Executor::submit_task_result 契约测试（独立验证代理编写，
 // 不修改库代码）。
 //
 // 契约矩阵（docs/design/scheduling_runtime.md §16）：
@@ -9,17 +9,18 @@
 //      抛 future_error(no_state)；is_ready() == false。
 //  V4. 异常传播：任务异常经 get() 重抛且保留原异常类型（含自定义类型）。
 //  V5. 时序：wait_for/wait_until 未就绪返回 timeout，就绪返回 ready。
-//  V6. 快速路径命中率：预热后 2000 次 submit_v2 + 立即 get，差分
+//  V6. 快速路径命中率：预热后 2000 次 submit_task_result + 立即 get，差分
 //      fast/(fast+slow) > 60%（roadmap 验收线）。
 //  V7. fast/slow 计数差分：慢任务立即 get 计 slow；is_ready 轮询后 get 计 fast。
-//  V8. admission：set_max_in_flight_tasks(1) 后第二次 submit_v2 不抛出、
+//  V8. admission：set_max_in_flight_tasks(1) 后第二次 submit_task_result 不抛出、
 //      get() 得 CapacityExhaustedException；容量释放后可再提交；max 恢复 0。
 //  V9. 空 std::function 拒绝：get() 抛 invalid_argument（void 与值返回形态）。
 //  V10. queued soft timeout：排队超时经 get() 抛 TimedOutException，失败事件
-//       task_id == "submit_v2"，timeout_count 递增。
+//       task_id == "submit_result"（监控口径 13 字符 SSO 名，完整 API 名
+//       submit_task_result 为 18 字符会破坏零堆分配约束），timeout_count 递增。
 //  V11. broken promise：shutdown(false) 丢弃排队任务时 get() 有界返回——
 //       任务正常完成值或 future_error(broken_promise) 之一，不允许挂死。
-//  V12. 并发：4 线程 x 500 次 submit_v2/get 混合，无死锁、结果正确
+//  V12. 并发：4 线程 x 500 次 submit_task_result/get 混合，无死锁、结果正确
 //       （配合 TSAN 运行）。
 
 #include <gtest/gtest.h>
@@ -74,19 +75,19 @@ protected:
 // ---------------------------------------------------------------------------
 
 TEST_F(TaskResultTest, SubmitV2ReturnsValue) {
-    auto int_result = executor_.submit_v2([] { return 41 + 1; });
+    auto int_result = executor_.submit_task_result([] { return 41 + 1; });
     ASSERT_TRUE(int_result.valid());
     EXPECT_TRUE(int_result.is_ready() || !int_result.is_ready());  // 无前置约束
     EXPECT_EQ(int_result.get(), 42);
     EXPECT_FALSE(int_result.valid());
 
-    auto string_result = executor_.submit_v2(
+    auto string_result = executor_.submit_task_result(
         [] { return std::string("task-result"); });
     EXPECT_EQ(string_result.get(), "task-result");
 }
 
 TEST_F(TaskResultTest, SubmitV2ReturnsMoveOnlyValue) {
-    auto result = executor_.submit_v2(
+    auto result = executor_.submit_task_result(
         [] { return std::make_unique<int>(7); });
     ASSERT_TRUE(result.valid());
     std::unique_ptr<int> value = result.get();
@@ -97,7 +98,7 @@ TEST_F(TaskResultTest, SubmitV2ReturnsMoveOnlyValue) {
 
 TEST_F(TaskResultTest, SubmitV2VoidSpecialization) {
     std::atomic<bool> ran{false};
-    auto result = executor_.submit_v2([&ran] { ran.store(true); });
+    auto result = executor_.submit_task_result([&ran] { ran.store(true); });
     ASSERT_TRUE(result.valid());
     EXPECT_NO_THROW(result.get());
     EXPECT_TRUE(ran.load());
@@ -105,7 +106,7 @@ TEST_F(TaskResultTest, SubmitV2VoidSpecialization) {
 }
 
 TEST_F(TaskResultTest, SubmitV2BindsRuntimeArgs) {
-    auto result = executor_.submit_v2(
+    auto result = executor_.submit_task_result(
         [](int lhs, int rhs) { return lhs * rhs; }, 6, 7);
     EXPECT_EQ(result.get(), 42);
 }
@@ -115,13 +116,13 @@ TEST_F(TaskResultTest, SubmitV2BindsRuntimeArgs) {
 // ---------------------------------------------------------------------------
 
 TEST_F(TaskResultTest, MoveTransfersValidity) {
-    auto source = executor_.submit_v2([] { return 11; });
+    auto source = executor_.submit_task_result([] { return 11; });
     TaskResult<int> moved = std::move(source);
     EXPECT_FALSE(source.valid());
     ASSERT_TRUE(moved.valid());
     EXPECT_EQ(moved.get(), 11);
 
-    auto other = executor_.submit_v2([] { return 22; });
+    auto other = executor_.submit_task_result([] { return 22; });
     TaskResult<int> target;
     EXPECT_FALSE(target.valid());
     target = std::move(other);
@@ -157,7 +158,7 @@ TEST_F(TaskResultTest, InvalidHandleThrowsNoState) {
 }
 
 TEST_F(TaskResultTest, GetInvalidatesHandleAndRepeatGetThrowsNoState) {
-    auto result = executor_.submit_v2([] { return 5; });
+    auto result = executor_.submit_task_result([] { return 5; });
     EXPECT_EQ(result.get(), 5);
     EXPECT_FALSE(result.valid());
     EXPECT_FALSE(result.is_ready());
@@ -174,7 +175,7 @@ TEST_F(TaskResultTest, GetInvalidatesHandleAndRepeatGetThrowsNoState) {
 // ---------------------------------------------------------------------------
 
 TEST_F(TaskResultTest, ExceptionPropagationPreservesOriginalType) {
-    auto std_result = executor_.submit_v2(
+    auto std_result = executor_.submit_task_result(
         []() -> int { throw std::runtime_error("boom-42"); });
     try {
         (void)std_result.get();
@@ -183,7 +184,7 @@ TEST_F(TaskResultTest, ExceptionPropagationPreservesOriginalType) {
         EXPECT_STREQ(error.what(), "boom-42");
     }
 
-    auto custom_result = executor_.submit_v2(
+    auto custom_result = executor_.submit_task_result(
         []() -> int { throw CustomError("custom-payload"); });
     try {
         (void)custom_result.get();
@@ -202,7 +203,7 @@ TEST_F(TaskResultTest, ExceptionPropagationPreservesOriginalType) {
 TEST_F(TaskResultTest, WaitForTimesOutThenBecomesReady) {
     std::promise<void> gate;
     std::shared_future<void> gate_future = gate.get_future().share();
-    auto result = executor_.submit_v2([gate_future] {
+    auto result = executor_.submit_task_result([gate_future] {
         gate_future.wait();
         return 99;
     });
@@ -225,7 +226,7 @@ TEST_F(TaskResultTest, WaitForTimesOutThenBecomesReady) {
 TEST_F(TaskResultTest, WaitUntilDeadlineSemantics) {
     std::promise<void> gate;
     std::shared_future<void> gate_future = gate.get_future().share();
-    auto result = executor_.submit_v2([gate_future] {
+    auto result = executor_.submit_task_result([gate_future] {
         gate_future.wait();
         return 7;
     });
@@ -244,7 +245,7 @@ TEST_F(TaskResultTest, WaitUntilDeadlineSemantics) {
 
 TEST_F(TaskResultTest, WaitBlocksUntilReady) {
     std::atomic<bool> done{false};
-    auto result = executor_.submit_v2([&done] {
+    auto result = executor_.submit_task_result([&done] {
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
         done.store(true);
     });
@@ -260,7 +261,7 @@ TEST_F(TaskResultTest, WaitBlocksUntilReady) {
 TEST_F(TaskResultTest, FastPathHitRateAboveAcceptanceLine) {
     // 预热：worker 起来、进入稳态。
     for (int i = 0; i < 100; ++i) {
-        EXPECT_EQ(executor_.submit_v2([] { return 1; }).get(), 1);
+        EXPECT_EQ(executor_.submit_task_result([] { return 1; }).get(), 1);
     }
 
     // 测量"就绪后 get() 必走快速路径"这一机制契约：get() 前以有界
@@ -271,7 +272,7 @@ TEST_F(TaskResultTest, FastPathHitRateAboveAcceptanceLine) {
     const AllocationMetrics before = executor_.get_allocation_metrics();
     constexpr int kIterations = 2000;
     for (int i = 0; i < kIterations; ++i) {
-        auto result = executor_.submit_v2([i] { return i; });
+        auto result = executor_.submit_task_result([i] { return i; });
         int spins = 0;
         while (!result.is_ready()) {
             std::this_thread::yield();
@@ -301,14 +302,14 @@ TEST_F(TaskResultTest, FastSlowCountersDifferential) {
     AllocationMetrics before = executor_.get_allocation_metrics();
 
     // slow：任务睡眠远超 100 次 yield 的 spin 窗口，立即 get 必落慢速路径。
-    auto slow_result = executor_.submit_v2([] {
+    auto slow_result = executor_.submit_task_result([] {
         std::this_thread::sleep_for(std::chrono::milliseconds(150));
         return 1;
     });
     EXPECT_EQ(slow_result.get(), 1);
 
     // fast：is_ready() 轮询不计数；就绪后 get() 首查命中。
-    auto fast_result = executor_.submit_v2([] { return 2; });
+    auto fast_result = executor_.submit_task_result([] { return 2; });
     while (!fast_result.is_ready()) {
         std::this_thread::yield();
     }
@@ -330,10 +331,10 @@ TEST_F(TaskResultTest, AdmissionRejectionIsExceptionReadyNotThrown) {
     std::promise<void> release;
     std::shared_future<void> release_future = release.get_future().share();
     auto blocker = executor_.submit([release_future] { release_future.wait(); });
-    // 容量 1 被 blocker 占用后第二次提交必须被拒——但 submit_v2 本身
+    // 容量 1 被 blocker 占用后第二次提交必须被拒——但 submit_task_result 本身
     // 不抛出，拒绝以 TaskResult 异常就绪（异常就绪不抛出契约）。
     ASSERT_EQ(executor_.get_in_flight_submissions(), 1u);
-    auto rejected = executor_.submit_v2([] { return 1; });
+    auto rejected = executor_.submit_task_result([] { return 1; });
     EXPECT_EQ(executor_.get_in_flight_submissions(), 1u)
         << "rejected submissions must not consume admission capacity";
     EXPECT_THROW(rejected.get(), CapacityExhaustedException);
@@ -342,7 +343,7 @@ TEST_F(TaskResultTest, AdmissionRejectionIsExceptionReadyNotThrown) {
     // 释放容量后可再提交，且计数归还。
     release.set_value();
     blocker.get();
-    auto accepted = executor_.submit_v2([] { return 3; });
+    auto accepted = executor_.submit_task_result([] { return 3; });
     EXPECT_EQ(accepted.get(), 3);
     EXPECT_EQ(executor_.get_in_flight_submissions(), 0u);
 
@@ -358,7 +359,7 @@ TEST_F(TaskResultTest, AdmissionRejectionIsExceptionReadyNotThrown) {
 
 TEST_F(TaskResultTest, EmptyStdFunctionRejectedAsInvalidArgument) {
     std::function<int()> empty_int;
-    auto rejected_int = executor_.submit_v2(std::move(empty_int));
+    auto rejected_int = executor_.submit_task_result(std::move(empty_int));
     ASSERT_TRUE(rejected_int.valid());
     EXPECT_TRUE(rejected_int.is_ready())
         << "empty-task rejection settles before return";
@@ -374,13 +375,13 @@ TEST_F(TaskResultTest, EmptyStdFunctionRejectedAsInvalidArgument) {
     // get() 重抛 invalid_argument（retrieve_value noexcept 缺陷已修复，
     // commit 455e389；修复前此路径会 terminate）。
     std::function<void()> empty_void;
-    auto rejected_void = executor_.submit_v2(std::move(empty_void));
+    auto rejected_void = executor_.submit_task_result(std::move(empty_void));
     ASSERT_TRUE(rejected_void.valid());
     EXPECT_THROW(rejected_void.get(), std::invalid_argument);
 }
 
 // ---------------------------------------------------------------------------
-// V10. queued soft timeout（task_id == "submit_v2" 观测）
+// V10. queued soft timeout（监控 task_id == "submit_result" 观测）
 // ---------------------------------------------------------------------------
 
 TEST_F(TaskResultTest, QueuedSoftTimeoutSettlesTimedOutAndRecordsTaskId) {
@@ -391,11 +392,11 @@ TEST_F(TaskResultTest, QueuedSoftTimeoutSettlesTimedOutAndRecordsTaskId) {
     config.task_timeout_ms = 60;
     ASSERT_TRUE(single.initialize(config));
 
-    // blocker 占住唯一 worker；v2 任务排队至超时线后被跳过执行。
+    // blocker 占住唯一 worker；TaskResult 任务排队至超时线后被跳过执行。
     auto blocker = single.submit([] {
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
     });
-    auto timed_out = single.submit_v2([]() -> int {
+    auto timed_out = single.submit_task_result([]() -> int {
         ADD_FAILURE() << "timed-out task must be skipped, not executed";
         return 0;
     });
@@ -413,15 +414,15 @@ TEST_F(TaskResultTest, QueuedSoftTimeoutSettlesTimedOutAndRecordsTaskId) {
 
     const ExecutorFailureStatus status = single.get_failure_status();
     EXPECT_GE(status.timeout_count, 1u);
-    bool saw_submit_v2_timeout = false;
+    bool saw_submit_result_timeout = false;
     for (const auto& event : single.get_recent_failures()) {
         if (event.kind == FailureKind::TaskTimeout &&
-            event.task_id == "submit_v2") {
-            saw_submit_v2_timeout = true;
+            event.task_id == "submit_result") {
+            saw_submit_result_timeout = true;
         }
     }
-    EXPECT_TRUE(saw_submit_v2_timeout)
-        << "queued soft timeout must record task_id \"submit_v2\"";
+    EXPECT_TRUE(saw_submit_result_timeout)
+        << "queued soft timeout must record task_id \"submit_result\"";
     single.shutdown();
 }
 
@@ -436,14 +437,14 @@ TEST_F(TaskResultTest, BrokenPromiseBoundedOnShutdownWithoutDrain) {
     config.max_threads = 1;
     ASSERT_TRUE(single.initialize(config));
 
-    // blocker 占住唯一 worker，保证 v2 任务入队而非执行；随后
+    // blocker 占住唯一 worker，保证 TaskResult 任务入队而非执行；随后
     // shutdown(false) 丢弃队列 → 包装 functor 销毁 → broken_promise。
     // 与此同时任务也可能已被执行完成——契约允许两种终态，唯一不允许
     // 的是 get() 永久挂起。
     auto blocker = single.submit([] {
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
     });
-    auto result = single.submit_v2([] { return 1234; });
+    auto result = single.submit_task_result([] { return 1234; });
     single.shutdown(false);
 
     enum class Outcome { kNone, kValue, kBrokenPromise, kOther };
@@ -478,7 +479,7 @@ TEST_F(TaskResultTest, BrokenPromiseBoundedOnShutdownWithoutDrain) {
 }
 
 // ---------------------------------------------------------------------------
-// V12. 并发混合 submit_v2/get
+// V12. 并发混合 submit_task_result/get
 // ---------------------------------------------------------------------------
 
 TEST_F(TaskResultTest, ConcurrentSubmitAndGetMixed) {
@@ -492,19 +493,19 @@ TEST_F(TaskResultTest, ConcurrentSubmitAndGetMixed) {
             int64_t local = 0;
             for (int i = 0; i < kIterations && !stop_flag.load(); ++i) {
                 if ((i & 1) == 0) {
-                    auto result = this->executor_.submit_v2(
+                    auto result = this->executor_.submit_task_result(
                         [t, i] { return t * kIterations + i; });
                     local += result.get();
                 } else {
                     // void/异常/立即就绪形态混合，覆盖不同结算路径。
                     switch (i % 6) {
                     case 1: {
-                        auto r = this->executor_.submit_v2([] {});
+                        auto r = this->executor_.submit_task_result([] {});
                         r.get();
                         break;
                     }
                     case 3: {
-                        auto r = this->executor_.submit_v2(
+                        auto r = this->executor_.submit_task_result(
                             []() -> int { throw std::runtime_error("mix"); });
                         try {
                             (void)r.get();
@@ -514,7 +515,7 @@ TEST_F(TaskResultTest, ConcurrentSubmitAndGetMixed) {
                         break;
                     }
                     default: {
-                        auto r = this->executor_.submit_v2(
+                        auto r = this->executor_.submit_task_result(
                             [] { return 1; });
                         local += r.get();
                         break;
@@ -549,6 +550,32 @@ TEST_F(TaskResultTest, ConcurrentSubmitAndGetMixed) {
 }
 
 // ---------------------------------------------------------------------------
+// 0.7.3 更名别名：submit_v2 → submit_task_result 的 [[deprecated]] 转发
+// ---------------------------------------------------------------------------
+
+// 别名等价：submit_v2 仅内联转发到 submit_task_result，返回载体与结算
+// 路径与主名完全一致（含参数包转发）。本用例故意调用弃用别名以锁定
+// 转发行为；告警抑制沿用本仓库惯例（GCC diagnostic push/pop，见
+// include/kairo/feedback_aggregator.hpp），作用域仅限该调用语句。
+TEST_F(TaskResultTest, AliasForwardingEquivalentToRenamed) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    auto result = executor_.submit_v2([] { return 41 + 1; });
+#pragma GCC diagnostic pop
+    ASSERT_TRUE(result.valid());
+    EXPECT_EQ(result.get(), 42);
+    EXPECT_FALSE(result.valid());
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    auto bound_result = executor_.submit_v2(
+        [](int lhs, int rhs) { return lhs * rhs; }, 6, 7);
+#pragma GCC diagnostic pop
+    ASSERT_TRUE(bound_result.valid());
+    EXPECT_EQ(bound_result.get(), 42);
+}
+
+// ---------------------------------------------------------------------------
 // 已发现实现缺陷（独立验证代理，2026-10-28）：void 任务的异常经
 // TaskResult<void>::get() 重抛时 std::terminate。
 //
@@ -556,11 +583,11 @@ TEST_F(TaskResultTest, ConcurrentSubmitAndGetMixed) {
 // TaskResultSharedState<void>::retrieve_value() 被声明为 noexcept（非
 // void 特化无 noexcept），其函数体内的 std::rethrow_exception 在
 // noexcept 函数中触发 std::terminate。submit()（std::promise 路径）
-// 对 void 任务异常正常重抛，submit_v2 的"与 submit 异常语义同构"契约
+// 对 void 任务异常正常重抛，submit_task_result 的"与 submit 异常语义同构"契约
 // 在 void 形态被破坏。
 // 最小复现：
 //   Executor ex; /* initialize */
-//   auto r = ex.submit_v2([] { throw std::logic_error("boom"); });
+//   auto r = ex.submit_task_result([] { throw std::logic_error("boom"); });
 //   try { r.get(); } catch (...) {}   // <- terminate，而非进入 catch
 // 建议修复：移除 void 特化 retrieve_value() 的 noexcept 限定。
 // 该用例必须保持本文件最后一个：缺陷触发会 abort 整个测试进程，
@@ -568,7 +595,7 @@ TEST_F(TaskResultTest, ConcurrentSubmitAndGetMixed) {
 // ---------------------------------------------------------------------------
 
 TEST_F(TaskResultTest, VoidTaskExceptionRethrowsInsteadOfTerminate) {
-    auto void_result = executor_.submit_v2(
+    auto void_result = executor_.submit_task_result(
         [] { throw std::logic_error("void-boom"); });
     EXPECT_THROW(void_result.get(), std::logic_error);
 }

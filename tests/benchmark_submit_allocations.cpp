@@ -207,15 +207,15 @@ int main(int argc, char** argv) {
         return executor.submit([](int lhs, int rhs) { return lhs + rhs; },
                                a, 1);
     });
-    measure(config, "submit_v2 void no-args", [&](size_t) {
-        return executor.submit_v2([] {});
+    measure(config, "submit_task_result void no-args", [&](size_t) {
+        return executor.submit_task_result([] {});
     });
-    measure(config, "submit_v2 value-returning", [&](size_t) {
-        return executor.submit_v2([] { return 7; });
+    measure(config, "submit_task_result value-returning", [&](size_t) {
+        return executor.submit_task_result([] { return 7; });
     });
-    measure(config, "submit_v2 with runtime args", [&](size_t i) {
+    measure(config, "submit_task_result with runtime args", [&](size_t i) {
         const int a = static_cast<int>(i & 0xff);
-        return executor.submit_v2([](int lhs, int rhs) { return lhs + rhs; },
+        return executor.submit_task_result([](int lhs, int rhs) { return lhs + rhs; },
                                   a, 1);
     });
     measure(config, "submit_with_handle tracked no-args", [&](size_t) {

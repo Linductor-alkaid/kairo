@@ -189,16 +189,35 @@ public:
         -> std::future<typename std::invoke_result<F, Args...>::type>;
 
     /**
-     * @brief 提交任务并返回轻量 TaskResult（0.7.3 §5.0，opt-in）。
+     * @brief 提交任务并返回轻量 TaskResult（0.7.3 §5.0，opt-in；发布
+     * 后由 submit_v2 更名）。
      *
      * 与 submit() 语义逐项同构（admission / 空任务拒绝 / queued soft
      * timeout / 异常与超时观测 / 释放时序），仅返回载体从 std::future
-     * 换为单次分配的 TaskResult<T>（get() 快速路径无锁）。共享路径
-     * 语义见 docs/design/scheduling_runtime.md §16.2。
+     * 换为单次分配的 TaskResult<T>（get() 快速路径无锁）。契约要点：
+     * 单消费句柄（可移动、不可拷贝、无 share()），适用于提交后即取
+     * 结果的高频短任务；多等待者/编排场景仍走 submit() 及其
+     * shared_future 路线。共享路径语义见
+     * docs/design/scheduling_runtime.md §16.2。
      */
     template<typename F, typename... Args>
-    auto submit_v2(F&& f, Args&&... args)
+    auto submit_task_result(F&& f, Args&&... args)
         -> TaskResult<typename std::invoke_result<F, Args...>::type>;
+
+    /**
+     * @brief 已更名别名：等价于 submit_task_result()（0.7.3 引入时的
+     * 旧名）。
+     *
+     * "v2" 为时序命名，无法从名字得知契约与适用范围；更名后本别名
+     * 仅作过渡（计划 0.9.0 前不移除），新代码一律用
+     * submit_task_result()。
+     */
+    template<typename F, typename... Args>
+    [[deprecated("renamed to submit_task_result(); submit_v2 alias kept until at least 0.9.0")]]
+    auto submit_v2(F&& f, Args&&... args)
+        -> TaskResult<typename std::invoke_result<F, Args...>::type> {
+        return submit_task_result(std::forward<F>(f), std::forward<Args>(args)...);
+    }
 
     template<typename F, typename... Args>
     auto submit_with_handle(F&& f, Args&&... args)
@@ -2053,24 +2072,28 @@ auto Executor::submit_with_rejection_observer(
     return future;
 }
 
-// 0.7.3 §5.0：submit_v2 —— TaskResult 载体的轻量提交。单控制块
-// SubmitV2Cell 内联结算状态（TaskResultSharedState）+ 提交上下文 +
-// bind 结果本体，一次 make_shared 覆盖 submit 路径的 SubmitCell +
-// promise 内部状态 + bind 间接层三次分配。结算仲裁、admission 释放
-// 时序、观测记录与 submit_with_rejection_observer 逐项同构（设计语义
-// 见 docs/design/scheduling_runtime.md §16）；结算状态经 shared_ptr
-// 保活（消费者句柄 + 任务包装 functor），不使用 closure_graveyard_
-// （std::promise 的跨线程析构竞态在此结构下不存在）。
+// 0.7.3 §5.0：submit_task_result（原名 submit_v2——时序命名无法从
+// 名字得知契约与适用范围，发布后更名，submit_v2 为 [[deprecated]]
+// 转发别名）——TaskResult 载体的轻量提交。单控制块
+// SubmitTaskResultCell 内联结算状态（TaskResultSharedState）+ 提交
+// 上下文 + bind 结果本体，一次 make_shared 覆盖 submit 路径的
+// SubmitCell + promise 内部状态 + bind 间接层三次分配。结算仲裁、
+// admission 释放时序、观测记录与 submit_with_rejection_observer
+// 逐项同构（设计语义见 docs/design/scheduling_runtime.md §16）；
+// 结算状态经 shared_ptr 保活（消费者句柄 + 任务包装 functor），不
+// 使用 closure_graveyard_（std::promise 的跨线程析构竞态在此结构下
+// 不存在）。
 template<typename F, typename... Args>
-auto Executor::submit_v2(F&& f, Args&&... args)
+auto Executor::submit_task_result(F&& f, Args&&... args)
     -> TaskResult<typename std::invoke_result<F, Args...>::type> {
     using return_type = typename std::invoke_result<F, Args...>::type;
 
     auto executor = manager_->get_default_async_executor_snapshot();
     const std::string executor_name = executor ? executor->get_name() : "default";
-    // task_id 有意 ≤15 字符（SSO 内，稳态零堆分配；16 字符的
-    // "facade_submit_v2" 会在 cell 与监控记录各引入一次堆分配）。
-    const std::string task_id = "submit_v2";
+    // task_id 有意 ≤15 字符（SSO 内，稳态零堆分配）：完整 API 名
+    // "submit_task_result" 有 18 字符，会在 cell 与监控记录各引入
+    // 一次堆分配，故监控口径取 13 字符的 "submit_result"。
+    const std::string task_id = "submit_result";
     if (!executor) {
         record_submit_rejected(
             executor_name,
@@ -2083,15 +2106,15 @@ auto Executor::submit_v2(F&& f, Args&&... args)
     using BoundTask =
         decltype(std::bind(std::declval<F>(), std::declval<Args>()...));
 
-    struct SubmitV2Cell : detail::TaskResultSharedState<return_type> {
-        explicit SubmitV2Cell(BoundTask&& bound_)
+    struct SubmitTaskResultCell : detail::TaskResultSharedState<return_type> {
+        explicit SubmitTaskResultCell(BoundTask&& bound_)
             : bound(std::move(bound_)) {}
 
         Executor* self = nullptr;
         std::string executor_name;
         std::string task_id;
         std::shared_ptr<AdmissionReleaser> releaser;  // 可空（admission 未启用）
-        return_type (*invoke_bound)(SubmitV2Cell&) = nullptr;
+        return_type (*invoke_bound)(SubmitTaskResultCell&) = nullptr;
         BoundTask bound;  // bind 结果本体（无 shared_ptr 间接层，-1 alloc）
         // 任务包装 functor 的活跃实例计数（broken promise 履行，§16.1）。
         std::atomic<int> wrapper_live_count{0};
@@ -2121,11 +2144,11 @@ auto Executor::submit_v2(F&& f, Args&&... args)
     // bind 先于 cell 分配：decay-copy 抛异常时无已登记资源需展开
     // （admission 在 bind 之后才接纳）。
     BoundTask bound = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-    auto cell = std::make_shared<SubmitV2Cell>(std::move(bound));
+    auto cell = std::make_shared<SubmitTaskResultCell>(std::move(bound));
     cell->self = this;
     cell->executor_name = executor_name;
     cell->task_id = task_id;
-    cell->invoke_bound = [](SubmitV2Cell& c) -> return_type {
+    cell->invoke_bound = [](SubmitTaskResultCell& c) -> return_type {
         return std::invoke(c.bound);
     };
 
@@ -2133,7 +2156,7 @@ auto Executor::submit_v2(F&& f, Args&&... args)
 
     // 总量有界 admission：拒绝时 TaskResult 立即以拒绝异常就绪（不抛
     // 出），failure 事件已由 try_admit_submission 记录。
-    auto admission = try_admit_submission(executor_name, task_id, "submit_v2", "");
+    auto admission = try_admit_submission(executor_name, task_id, "submit_task_result", "");
     if (!admission.accepted) {
         auto exception = admission.rejection_exception
             ? admission.rejection_exception
@@ -2153,19 +2176,19 @@ auto Executor::submit_v2(F&& f, Args&&... args)
     // future_error(broken_promise) 结算（std::promise 析构对齐，覆盖
     // shutdown(false) 丢弃排队任务）。提交表达式的临时实例在全表达式
     // 结束时才析构：拒绝分支的结算先于临时量触发 break，输家安全。
-    struct V2TaskFunctor {
-        explicit V2TaskFunctor(std::shared_ptr<SubmitV2Cell> c) noexcept
+    struct TaskResultTaskFunctor {
+        explicit TaskResultTaskFunctor(std::shared_ptr<SubmitTaskResultCell> c) noexcept
             : cell(std::move(c)) {
             cell->wrapper_live_count.fetch_add(1, std::memory_order_relaxed);
         }
-        V2TaskFunctor(const V2TaskFunctor& other) noexcept
+        TaskResultTaskFunctor(const TaskResultTaskFunctor& other) noexcept
             : cell(other.cell) {
             cell->wrapper_live_count.fetch_add(1, std::memory_order_relaxed);
         }
-        V2TaskFunctor(V2TaskFunctor&& other) noexcept
+        TaskResultTaskFunctor(TaskResultTaskFunctor&& other) noexcept
             : cell(std::move(other.cell)) {}
-        V2TaskFunctor& operator=(const V2TaskFunctor&) = delete;
-        V2TaskFunctor& operator=(V2TaskFunctor&&) = delete;
+        TaskResultTaskFunctor& operator=(const TaskResultTaskFunctor&) = delete;
+        TaskResultTaskFunctor& operator=(TaskResultTaskFunctor&&) = delete;
 
         void operator()() {
             try {
@@ -2191,7 +2214,7 @@ auto Executor::submit_v2(F&& f, Args&&... args)
             }
         }
 
-        ~V2TaskFunctor() {
+        ~TaskResultTaskFunctor() {
             if (cell &&
                 cell->wrapper_live_count.fetch_sub(
                     1, std::memory_order_acq_rel) == 1) {
@@ -2199,7 +2222,7 @@ auto Executor::submit_v2(F&& f, Args&&... args)
             }
         }
 
-        std::shared_ptr<SubmitV2Cell> cell;
+        std::shared_ptr<SubmitTaskResultCell> cell;
     };
 
     // on_timeout：与 submit 的 promise_ready CAS 仲裁同构（settled），
@@ -2215,7 +2238,7 @@ auto Executor::submit_v2(F&& f, Args&&... args)
         }
     };
 
-    if (!executor->try_submit_task(V2TaskFunctor{cell}, std::move(on_timeout))) {
+    if (!executor->try_submit_task(TaskResultTaskFunctor{cell}, std::move(on_timeout))) {
         auto exception = std::make_exception_ptr(
             std::runtime_error("Async executor rejected task submission"));
         cell->release_admission();
@@ -4023,10 +4046,10 @@ auto Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction, R> task)
         }
         return submit(std::move(task).take_cpu());
         } else {
-            // 0.7.3 §5.1：取值 CPU 路径——submit_v2 承载（TaskResult，
-            // §16 快速路径）+ 既有反馈测量包装同字段。
+            // 0.7.3 §5.1：取值 CPU 路径——submit_task_result 承载
+            // （TaskResult，§16 快速路径）+ 既有反馈测量包装同字段。
             if (feedback_enabled) {
-                return ExecutionReport<R>{submit_v2(
+                return ExecutionReport<R>{submit_task_result(
                     [this, steady_ns_now, submit_ns, deadline_ns, qos = options.qos,
                      feedback_task_id = task_name,
                      inner = std::move(task).take_cpu()]() mutable -> R {
@@ -4057,8 +4080,8 @@ auto Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction, R> task)
                     }), decision};
             }
             // 身份包装强制返回 R（CPU callable 的返回可转换到 R，但
-            // submit_v2 只能推导其原始返回类型）。
-            return ExecutionReport<R>{submit_v2(
+            // submit_task_result 只能推导其原始返回类型）。
+            return ExecutionReport<R>{submit_task_result(
                 [inner = std::move(task).take_cpu()]() mutable -> R {
                     return inner();
                 }), decision};
@@ -4275,7 +4298,7 @@ auto Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction, R> task)
             record_routing_decision(std::move(fallback));
             TaskResult<R> cpu_result = [&, this]() -> TaskResult<R> {
                 if (feedback_enabled) {
-                    return submit_v2(
+                    return submit_task_result(
                         [this, steady_ns_now, submit_ns, deadline_ns,
                          qos = options.qos, feedback_task_id = task_name,
                          inner = std::move(task).take_cpu()]() mutable -> R {
@@ -4306,7 +4329,7 @@ auto Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction, R> task)
                             }
                         });
                 }
-                return submit_v2(
+                return submit_task_result(
                     [inner = std::move(task).take_cpu()]() mutable -> R {
                         return inner();
                     });
