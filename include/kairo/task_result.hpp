@@ -19,9 +19,11 @@ namespace kairo {
 /**
  * @brief 轻量单次分配的任务结果句柄（0.7.3 §5.0，roadmap 堆分配优化阶段二）。
  *
- * submit_v2 的返回载体：std::future 形状的 get/wait 语义 + 无锁快速
- * 路径（任务已完成后 get() 不再加锁）。结算协议与可观测性设计见
- * docs/design/scheduling_runtime.md §16。
+ * Executor::submit_task_result（0.7.3 引入时名 submit_v2，发布后更名）
+ * 的返回载体：std::future 形状的 get/wait 语义 + 无锁快速路径（任务
+ * 已完成后 get() 不再加锁）。单消费契约：可移动、不可拷贝、无
+ * share()；多等待者场景走 submit() + shared_future。结算协议与可观测
+ * 性设计见 docs/design/scheduling_runtime.md §16。
  */
 template<typename T>
 class TaskResult;

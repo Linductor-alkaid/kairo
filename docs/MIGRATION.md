@@ -10,10 +10,18 @@
 `cpu_gpu_task(cpu, gpu)` 两参拼写的语义与签名逐位不变，零迁移义务。
 新增能力均为 opt-in：
 
-### TaskResult<T> 与 submit_v2（轻量 Future，roadmap §5.0）
+### TaskResult<T> 与 submit_task_result（轻量 Future，roadmap §5.0）
 
-高频短任务（提交后即取结果）可迁移到 `submit_v2` 获得更低分配与
-无锁快速路径：
+> **更名说明（0.7.3 发布后）**：`submit_v2` 已更名为
+> `submit_task_result`——"v2" 是时序命名，无法从名字得知契约与适用
+> 范围。已采用 `submit_v2` 的代码无需紧急迁移：`submit_v2` 保留为
+> `[[deprecated]]` 转发别名（计划 0.9.0 前不移除），行为与
+> `submit_task_result` 完全等价，建议顺手改为新名。监控口径统一为
+> task_id `"submit_result"`（原 `"submit_v2"`，13 字符维持 SSO 零堆
+> 分配约束），依赖 task_id 过滤的看板需同步。
+
+高频短任务（提交后即取结果）可迁移到 `submit_task_result` 获得更低
+分配与无锁快速路径：
 
 ```cpp
 // 旧（不变，std::future 契约）
@@ -21,15 +29,19 @@ auto future = ex.submit([] { return 42; });
 int value = future.get();
 
 // 新（opt-in，单次分配 + get() 快速路径无锁）
-auto result = ex.submit_v2([] { return 42; });
+auto result = ex.submit_task_result([] { return 42; });
 int value = result.get();
 ```
 
+适用范围：单消费者（`TaskResult` 可移动、不可拷贝、无 `share()`）、
+提交后即取结果；多等待者（shared_future）与 batch/dependency 编排
+场景留在 `submit()` 系列。
+
 语义对照：`TaskResult<T>` 与 `std::future<T>` 的 `get/wait/wait_for/
 wait_until` 逐项同构（异常重抛、单消费、取值后失效）；差异点仅两处
-——(1) `submit_v2` 的监控 task_id 为 `"submit_v2"`（submit 为
-`"facade_submit"`）；(2) broken promise 行为对齐 std::promise 析构
-（`shutdown(false)` 丢弃排队任务时 get() 抛
+——(1) `submit_task_result` 的监控 task_id 为 `"submit_result"`
+（submit 为 `"facade_submit"`）；(2) broken promise 行为对齐
+std::promise 析构（`shutdown(false)` 丢弃排队任务时 get() 抛
 `future_error(broken_promise)`）。实测：submit 主路径 7 →
 4 allocs/task、512 → 488 bytes；快速路径命中率（提交后立即 get）
 约 99.7%，验收线 > 60%（`AllocationMetrics::fast_path_get_count` /

@@ -21,8 +21,11 @@ description: 发布版本和 API 迁移的入口。
 全部为 additive，无必需迁移（opt-in 新 API；`submit()` 等既有 API
 与 0.7.2 逐位一致）：
 
-- **`TaskResult<T>` 与 `Executor::submit_v2`（堆分配优化阶段二，
-  opt-in）**：`submit_v2` 与 `submit` 语义逐项同构，返回单次分配的
+- **`TaskResult<T>` 与 `Executor::submit_task_result`（堆分配优化
+  阶段二，opt-in；0.7.3 发布时名 `submit_v2`，发布后因时序命名无法
+  表达契约而更名；`submit_v2` 保留为 `[[deprecated]]` 别名，监控
+  task_id 改为 `"submit_result"`）**：`submit_task_result` 与
+  `submit` 语义逐项同构，返回单次分配的
   轻量句柄（`<kairo/task_result.hpp>`）；`get()` 在任务已完成时走
   无锁快速路径（实测命中率约 99.7%）。submit 主路径 **7 → 4
   allocs/task、512 → 488 bytes**；旧 API 不变、无弃用计划。broken

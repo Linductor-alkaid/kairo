@@ -21,8 +21,12 @@ The latest release record is `v0.7.3`. This site uses that stable version as its
 All changes are additive with no required migration (opt-in APIs; the
 existing `submit()` family is bit-for-bit identical to 0.7.2):
 
-- **`TaskResult<T>` and `Executor::submit_v2` (heap-allocation stage 2,
-  opt-in)**: `submit_v2` mirrors `submit` semantics item by item and
+- **`TaskResult<T>` and `Executor::submit_task_result` (heap-allocation
+  stage 2, opt-in; shipped in 0.7.3 as `submit_v2` — renamed after
+  release because a version number carries no contract; `submit_v2`
+  remains as a `[[deprecated]]` alias, monitoring task_id is now
+  `"submit_result"`)**: `submit_task_result` mirrors `submit` semantics
+  item by item and
   returns a single-allocation lightweight handle
   (`<kairo/task_result.hpp>`); `get()` takes a lock-free fast path when
   the task already finished (measured hit rate ~99.7%). Submit main path
