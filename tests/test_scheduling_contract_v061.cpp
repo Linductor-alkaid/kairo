@@ -71,11 +71,28 @@ TaskRouter::Request make_request(TaskOptions options, bool cpu_gpu_task) {
 }
 
 // 初始化带指定线程数的默认池（遵循 tests/test_scheduling_runtime.cpp 约定）。
-void init_executor(Executor& executor, size_t threads) {
+// cpu_affinity 非空时显式透传：0.8.0 起默认池不再 auto-allocate 绑核
+// （空 cpu_affinity → bound_cpus 为空 → affinity advisory 跳过），需要
+// advisory 路径的用例必须显式请求绑核。
+void init_executor(Executor& executor, size_t threads,
+                   const std::vector<int>& cpu_affinity = {}) {
     ExecutorConfig config;
     config.min_threads = threads;
     config.max_threads = threads;
+    config.cpu_affinity = cpu_affinity;
     ASSERT_TRUE(executor.initialize(config));
+}
+
+// 显式绑核用例的请求集合 {0..hw-1}；hw == 0（探测失败）时调用方应先
+// ASSERT_GT(hw, 0) 或 GTEST_SKIP。
+std::vector<int> sequential_all_cpus() {
+    const unsigned hw = std::thread::hardware_concurrency();
+    std::vector<int> cpus;
+    cpus.reserve(hw);
+    for (unsigned i = 0; i < hw; ++i) {
+        cpus.push_back(static_cast<int>(i));
+    }
+    return cpus;
 }
 
 // 有界轮询等待一个 atomic 标志（防止门控任务未启动时无限自旋）。
@@ -361,12 +378,13 @@ TEST(StructuredDecision, StatusAndReasonStableNames) {
 // ---------------------------------------------------------------------------
 
 TEST(StructuredDecisionEndToEnd, DisjointAffinitySubmitsAndRecordsDegraded) {
-    // 默认池绑核 auto-allocate 为 [0..hw-1]；hw == 0 时能力快照 bound_cpus
-    // 为空、affinity 检查跳过，本用例的前提即不成立。
+    // 0.8.0 起默认池不再 auto-allocate 绑核：空 cpu_affinity → 能力快照
+    // bound_cpus 为空、affinity 检查跳过。显式设 {0..hw-1} 使 advisory
+    // 路径被真实覆盖；hw == 0 时前提不成立，直接跳过。
     ASSERT_GT(std::thread::hardware_concurrency(), 0u);
 
     Executor executor;
-    init_executor(executor, 2);
+    init_executor(executor, 2, sequential_all_cpus());
 
     auto future = executor.submit_auto(
         task([] {}).name("e2e-affinity-far").affinity(AffinityHint{{9999}}));
@@ -449,10 +467,12 @@ TEST(SchedulingMetricsContract, ExpiredDeadlineSubmissionsCountRejected) {
 }
 
 TEST(SchedulingMetricsContract, AffinityMismatchCountsDegradedAndDiagnostics) {
+    // 同 DisjointAffinitySubmitsAndRecordsDegraded：显式绑核使 bound_cpus
+    // 非空，advisory mismatch 才会计入 degraded / affinity_mismatch 计数。
     ASSERT_GT(std::thread::hardware_concurrency(), 0u);
 
     Executor executor;
-    init_executor(executor, 2);
+    init_executor(executor, 2, sequential_all_cpus());
     const auto before = executor.get_scheduling_metrics();
 
     auto future = executor.submit_auto(

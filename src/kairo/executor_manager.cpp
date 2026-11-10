@@ -2,7 +2,6 @@
 #include "thread_pool_executor.hpp"
 #include "realtime_thread_executor.hpp"
 #include "blocking_io_executor.hpp"
-#include "util/thread_utils.hpp"
 #include "kairo/monitor/statistics_collector.hpp"
 #include "kairo/interfaces.hpp"
 #include "kairo/config.hpp"
@@ -116,25 +115,15 @@ bool ExecutorManager::initialize_async_executor(const ExecutorConfig& config) {
     pool_config.enable_priority_aging = config.enable_priority_aging;
     pool_config.priority_aging_interval_ns = config.priority_aging_interval_ns;
 
-    // auto-allocate affinity to all detected cores when user didn't specify
-    if (pool_config.cpu_affinity.empty() && pool_config.max_threads > 0) {
-#if defined(__ANDROID__)
-        // 不使用 0..hw-1 伪列表：Android App 只允许绑定到 cgroup cpuset 内的核。
-        // 当前线程 affinity 返回允许掩码；为空或调用失败时保持 OS 自由调度。
-        pool_config.cpu_affinity = util::get_current_thread_affinity();
-#else
-        unsigned hw = std::thread::hardware_concurrency();
-        if (hw > 0) {
-            pool_config.cpu_affinity.resize(hw);
-            for (unsigned i = 0; i < hw; ++i) {
-                pool_config.cpu_affinity[i] = static_cast<int>(i);
-            }
-        }
-        // hw == 0: probe failed, leave empty → OS free-schedules
-#endif
-    }
+    // cpu_affinity 保持用户原值：空 = 由 OS 自由调度（默认，0.8.0 起）。
+    // 静态按编号绑核对大小核/混合架构是系统性劣化（编号顺序与性能等级
+    // 无关，默认 min_threads 个 worker 会落在编号最小 = 常为小核的那段
+    // 核心上，且 pinned worker 永远无法被调度器迁移到空闲大核）；显式
+    // 设值仍按 per-worker 确定性映射绑核并经 status 上报应用结果。
 
-    // 记录默认池绑核集合（0.6.0：调度器 affinity 检查的能力维度）
+    // 记录默认池绑核集合（0.6.0：调度器 affinity 检查的能力维度）。
+    // 未显式绑核时为空，ExecutorCapability::bound_cpus 为空使 affinity
+    // advisory 自然跳过（无绑核集合则无 mismatch 可言）。
     default_async_bound_cpus_ = pool_config.cpu_affinity;
 
     // 创建 ThreadPoolExecutor

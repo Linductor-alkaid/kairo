@@ -101,11 +101,28 @@ TaskRouter::Request make_request(TaskOptions options, bool cpu_gpu_task) {
 }
 
 // 初始化带指定线程数的默认池（deadline 排队/错过测试需要可控并发度）。
-void init_executor(Executor& executor, size_t threads) {
+// cpu_affinity 非空时显式透传：0.8.0 起默认池不再 auto-allocate 绑核
+// （空 cpu_affinity → bound_cpus 为空 → affinity advisory 跳过），需要
+// advisory 路径的用例必须显式请求绑核。
+void init_executor(Executor& executor, size_t threads,
+                   const std::vector<int>& cpu_affinity = {}) {
     ExecutorConfig config;
     config.min_threads = threads;
     config.max_threads = threads;
+    config.cpu_affinity = cpu_affinity;
     ASSERT_TRUE(executor.initialize(config));
+}
+
+// 显式绑核用例的请求集合 {0..hw-1}；hw == 0（探测失败）时调用方应先
+// ASSERT_GT(hw, 0) 或 GTEST_SKIP。
+std::vector<int> sequential_all_cpus() {
+    const unsigned hw = std::thread::hardware_concurrency();
+    std::vector<int> cpus;
+    cpus.reserve(hw);
+    for (unsigned i = 0; i < hw; ++i) {
+        cpus.push_back(static_cast<int>(i));
+    }
+    return cpus;
 }
 
 }  // namespace
@@ -493,8 +510,11 @@ TEST(SchedulingQosEndToEnd, AllQosClassesSubmitAndExecute) {
 // ---------------------------------------------------------------------------
 
 TEST(SchedulingAffinityAdvisory, DisjointCpusAcceptedWithMismatchWarning) {
+    // 0.8.0 起默认池不再 auto-allocate 绑核（空 cpu_affinity → bound_cpus
+    // 为空 → advisory 跳过）。显式设 {0..hw-1} 才能真实覆盖 mismatch 降级路径。
+    ASSERT_GT(std::thread::hardware_concurrency(), 0u);
     Executor executor;
-    init_executor(executor, 2);  // 默认池绑核 0..hw-1（auto-allocate）
+    init_executor(executor, 2, sequential_all_cpus());  // bound_cpus = {0..hw-1}
     executor.set_recent_routing_capacity(16);
 
     auto future = executor.submit_auto(
@@ -521,8 +541,11 @@ TEST(SchedulingAffinityAdvisory, DisjointCpusAcceptedWithMismatchWarning) {
 }
 
 TEST(SchedulingAffinityAdvisory, IntersectingCpusProduceNoWarning) {
+    // 同上：显式绑核使 bound_cpus 非空，{0} 与 {0..hw-1} 相交 → 无警告。
+    // 否则默认空 bound_cpus 会 vacuous 通过（advisory 整体跳过）。
+    ASSERT_GT(std::thread::hardware_concurrency(), 0u);
     Executor executor;
-    init_executor(executor, 2);
+    init_executor(executor, 2, sequential_all_cpus());
     executor.set_recent_routing_capacity(16);
 
     auto future = executor.submit_auto(

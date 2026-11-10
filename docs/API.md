@@ -1643,7 +1643,7 @@ kairo 库遵循以下原则 (P019 三阶段 + P019C companion):
 
 - `ThreadPoolConfig.min_threads` / `max_threads` = 0（sentinel，自适应）
 - `ThreadPoolConfig.enable_work_stealing` = `true`（默认开）
-- `ThreadPoolConfig.cpu_affinity` 空 → auto-allocate [0..hw-1]；Android 使用当前线程允许 cpuset
+- `ThreadPoolConfig.cpu_affinity` 空 → 由 OS 自由调度（不绑核；显式设值按 `worker_id % size` 确定性映射绑核，应用结果经 `cpu_affinity_applied` 上报）
 - `RealtimeThreadConfig.enable_process_memory_lock` = `false`（默认不调用进程级 `mlockall`；仅在显式启用并接受其资源影响时请求）
 - `RealtimeThreadConfig.timer_slack_ns` = 1（尽力设置 1 ns；不可用或权限不足时安全回退）
 - `RealtimeThreadConfig.cpu_affinity` 空 → 通过 `g_next_rt_cpu_hint` 在当前允许 CPU 集合内 round-robin 自动选择；若可用 CPU 数量 <= 1，则不设置亲和性
@@ -1660,7 +1660,7 @@ kairo 库遵循以下原则 (P019 三阶段 + P019C companion):
 | `max_threads` | `size_t` | `0` | 0 = 自适应 sentinel；默认 hw；Android 默认上限 4；探测失败退到 (2, 4) |
 | `queue_capacity` | `size_t` | `1000` | 任务队列容量 |
 | `thread_priority` | `int` | `0` | 线程优先级（Linux SCHED_FIFO 1–99，Windows `SetThreadPriority`；Android best-effort，默认不自动提升） |
-| `cpu_affinity` | `std::vector<int>` | 空 | 空 = 自适应 sentinel；桌面 Linux 自动填 [0..hw-1]；Android 取 `sched_getaffinity` 允许 cpuset，失败则保持 OS 自由调度；显式设值保留 |
+| `cpu_affinity` | `std::vector<int>` | 空 | 空 = 由 OS 自由调度（不绑核）；显式设值按 per-worker 确定性映射绑核（`worker_id % size`，缩扩容后同 id 回到同核），best-effort：失败不致命，经 `cpu_affinity_applied` 上报 |
 | `task_timeout_ms` | `int64_t` | `0` | > 0: 软超时 (执行前 check elapsed >= timeout 则 skip + 记录 timeout_count; 暴露的 future 抛 `TimedOutException`; 不计入 fail_count; 0 = 不超时; 注意: 执行中不强制中断, C++ 无安全 kill 机制) |
 | `enable_work_stealing` | `bool` | `true` | 无锁工作窃取；`max_threads == 1` 时自动关；-10.7% 性能退化关闭 |
 | `enable_monitoring` | `bool` | `true` | 是否启用监控 |
@@ -1688,8 +1688,8 @@ kairo 库遵循以下原则 (P019 三阶段 + P019C companion):
 
 ### 7.3 状态与统计类型
 
-- **AsyncExecutorStatus**：`name`、`is_running`、`active_tasks`、`completed_tasks`、`failed_tasks`、`queue_size`、`avg_task_time_ms`。`failed_tasks` 表示底层异步执行器已执行并以失败结束的任务数；通过 `Executor` facade 提交的用户任务异常也会让 wrapper 重新抛出，因此会计入该字段，同时计入 facade 的 `ExecutorFailureStatus::task_exception_count`。执行前软超时使用独立 timeout 计数，不计入 `failed_tasks`。
-- **ThreadPoolStatus**：`include/kairo/config.hpp:90` 仍定义此结构（与 `AsyncExecutorStatus` 字段几乎重合），并且仍是底层 `ThreadPool::get_status()` 的返回类型；`ThreadPoolExecutor::get_status()` 会读取它并映射为 `AsyncExecutorStatus`。通过 `Executor` facade 或异步执行器编写的新代码优先使用 `AsyncExecutorStatus`；直接使用底层 `ThreadPool` 时仍应按 `ThreadPoolStatus` 处理。若未来要弃用或移除该类型，需要先提供替代的底层状态 API，并在声明处添加 deprecation 标记。
+- **AsyncExecutorStatus**：`name`、`is_running`、`active_tasks`、`completed_tasks`、`failed_tasks`、`queue_size`、`avg_task_time_ms`、`cpu_affinity_applied`。`failed_tasks` 表示底层异步执行器已执行并以失败结束的任务数；通过 `Executor` facade 提交的用户任务异常也会让 wrapper 重新抛出，因此会计入该字段，同时计入 facade 的 `ExecutorFailureStatus::task_exception_count`。执行前软超时使用独立 timeout 计数，不计入 `failed_tasks`。`cpu_affinity_applied` 表示显式声明的 `cpu_affinity` 是否在所有 worker 上成功应用；未请求（空 = OS 自由调度，默认）或任一 worker 绑定失败时为 `false`。
+- **ThreadPoolStatus**：`include/kairo/config.hpp:90` 仍定义此结构（与 `AsyncExecutorStatus` 字段几乎重合，含同语义的 `cpu_affinity_applied`），并且仍是底层 `ThreadPool::get_status()` 的返回类型；`ThreadPoolExecutor::get_status()` 会读取它并映射为 `AsyncExecutorStatus`。通过 `Executor` facade 或异步执行器编写的新代码优先使用 `AsyncExecutorStatus`；直接使用底层 `ThreadPool` 时仍应按 `ThreadPoolStatus` 处理。若未来要弃用或移除该类型，需要先提供替代的底层状态 API，并在声明处添加 deprecation 标记。
 - **RealtimeExecutorStatus**：
   - `name` (std::string)：执行器名称。
   - `is_running` (bool)：是否运行中。

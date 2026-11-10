@@ -382,6 +382,10 @@ struct AsyncExecutorStatus {
     size_t failed_tasks = 0;                      // 失败任务数
     size_t queue_size = 0;                        // 队列大小
     double avg_task_time_ms = 0.0;                // 平均任务执行时间（毫秒）
+    // 显式声明的 cpu_affinity 是否在所有 worker 上成功应用；未请求
+    // （空 = OS 自由调度，默认）或任一 worker 绑定失败时为 false。
+    // 与 RealtimeExecutorStatus / BlockingIoExecutorStatus 同名字段对齐。
+    bool cpu_affinity_applied = false;
 };
 
 /**
