@@ -23,7 +23,12 @@ struct ThreadPoolConfig {
     size_t max_threads = 0;              // 0 = 自适应 sentinel, ExecutorManager::initialize 时按 hw_concurrency 计算 (默认 hw)
     size_t queue_capacity = 1000;        // 任务队列容量
     int thread_priority = 0;             // 线程优先级（-20到19，Linux；Windows使用SetThreadPriority；Android best-effort）
-    std::vector<int> cpu_affinity;       // CPU亲和性（绑定到特定核心）, 空 = auto-allocate [0..hw-1]；Android 使用 cgroup 允许 cpuset
+    // CPU亲和性（绑定到特定核心）。空 = 由 OS 自由调度（默认，0.8.0 起）：
+    // 调度器具备容量感知（大小核/EAS、Intel Thread Director）、负载均衡与
+    // 缓存亲和倾向，静态按编号绑核会把 worker 永久钉在可能为小核的核心上。
+    // 显式设值时按 per-worker 确定性映射绑核（worker_id % size），应用结果
+    // 经 ThreadPoolStatus::cpu_affinity_applied 上报（best-effort，失败不致命）。
+    std::vector<int> cpu_affinity;
     int64_t task_timeout_ms = 0;         // 任务超时时间（毫秒），0表示不超时
     bool enable_work_stealing = true;    // 默认开, 无锁工作窃取 -10.7% 退化; max_threads==1 时自动关
     // CR-024（v0.7.0 M0）：可选防饿死 aging（默认关闭，语义与 0.6.x 一致）。
@@ -79,7 +84,7 @@ struct ExecutorConfig {
     size_t max_threads = 0;              // 0 = 自适应 sentinel, ExecutorManager::initialize 时按 hw_concurrency 计算 (默认 hw)
     size_t queue_capacity = 1000;        // 任务队列容量
     int thread_priority = 0;              // 线程优先级
-    std::vector<int> cpu_affinity;       // CPU亲和性, 空 = auto-allocate [0..hw-1]
+    std::vector<int> cpu_affinity;       // CPU亲和性, 空 = 由 OS 自由调度（语义同 ThreadPoolConfig::cpu_affinity）
     int64_t task_timeout_ms = 0;         // 任务超时时间（毫秒）
     bool enable_work_stealing = true;    // 默认开, 无锁工作窃取 -10.7% 退化; max_threads==1 时自动关
     bool enable_monitoring = true;       // 启用任务监控（默认开启）
@@ -123,6 +128,12 @@ struct ThreadPoolStatus {
     size_t failed_tasks = 0;             // 失败任务数
     double avg_task_time_ms = 0.0;       // 平均任务执行时间（毫秒）
     double cpu_usage_percent = 0.0;       // CPU使用率
+    // 显式声明的 cpu_affinity 是否在所有 worker 上成功应用（含 resize 扩容
+    // 的 worker）。未请求（空 = OS 自由调度）、平台不支持或任一 worker 绑定
+    // 失败（如容器 cpuset 限制、非法 cpu id）时为 false——与
+    // RealtimeExecutorStatus / BlockingIoExecutorStatus 的同名字段语义对齐，
+    // 用于把绑核降级显式上报而非静默忽略。
+    bool cpu_affinity_applied = false;
 };
 
 /**

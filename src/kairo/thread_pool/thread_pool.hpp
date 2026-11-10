@@ -453,10 +453,24 @@ private:
 
     /**
      * @brief 创建新的工作线程
-     * 
+     *
      * @param worker_id 工作线程ID
      */
     void create_worker_thread(size_t worker_id);
+
+    /**
+     * @brief 对单个 worker 应用显式声明的 CPU 亲和性（best-effort）
+     *
+     * 空 cpu_affinity（默认）不绑核，由 OS 自由调度；显式设值按
+     * per-worker 确定性映射（worker_id % size）绑核，映射随 worker_id
+     * 单调分配而在缩扩容后保持稳定（同 id 回到同核，缓存暖身可复用）。
+     * 任一 worker 应用失败仅将 cpu_affinity_applied_ 置 false 上报，
+     * 不改变初始化/扩容成败（与既有 invalid-affinity-nonfatal 契约一致）。
+     *
+     * @param thread 目标工作线程（已创建成功）
+     * @param worker_id 工作线程ID
+     */
+    void apply_worker_affinity(std::thread& thread, size_t worker_id);
 
     // 配置信息
     ThreadPoolConfig config_;
@@ -553,6 +567,12 @@ private:
 
     // 初始化标志
     std::atomic<bool> initialized_{false};
+
+    // 显式 cpu_affinity 是否在所有 worker 上成功应用（语义见
+    // ThreadPoolStatus::cpu_affinity_applied）。initialize 时空配置置 false
+    //（未请求）；显式配置先乐观置 true，任一 worker 绑定失败（含 resize
+    // 扩容新增 worker）即置 false。仅状态上报，不影响控制流。
+    std::atomic<bool> cpu_affinity_applied_{false};
 
     // 待退出的线程ID集合（用于缩容）
     mutable std::mutex exit_threads_mutex_;

@@ -8,6 +8,28 @@
 
 ### 变更
 
+- **线程池空 `cpu_affinity` 默认改为 OS 自由调度**（原为自动绑核）：
+  `ThreadPoolConfig::cpu_affinity` / `ExecutorConfig::cpu_affinity` 为空
+  （默认）时不再 auto-allocate `[0..hw-1]` 并把每个 worker 永久钉在单核上，
+  改为不绑核，交由 OS 调度器自由调度（语义与 `BlockingIoConfig::cpu_affinity`
+  对齐）。动机：按逻辑编号静态绑核与性能等级无关——大小核/混合架构
+  （ARM big.LITTLE、Intel P/E）上常见"小核编号在前"，默认 `min_threads`
+  个 worker 会系统性落在编号最小（常为小核）的核心上，且 pinned worker
+  在存在空闲大核时也无法被迁移；调度器自带的容量感知（EAS / Thread
+  Director）、负载均衡与缓存亲和倾向在多数负载下优于静态编号绑核。
+  显式设值路径不变：仍按 per-worker 确定性映射（`worker_id % size`）
+  绑核，映射随 worker_id 单调分配在缩扩容后保持稳定（同 id 回到同核，
+  缓存暖身可复用）。配套可观测性：`ThreadPoolStatus` 与
+  `AsyncExecutorStatus` 新增 `cpu_affinity_applied`（与
+  `RealtimeExecutorStatus` / `BlockingIoExecutorStatus` 同名字段对齐），
+  显式请求未应用或任一 worker 绑定失败（容器 cpuset、非法 cpu id 等
+  此前被静默忽略的路径）时为 false；绑核失败仍不致命（延续
+  invalid-affinity-nonfatal 契约）。联动：默认池未绑核时
+  `ExecutorCapability::bound_cpus` 为空，affinity advisory 检查自然跳过。
+  需要旧默认行为的用户显式传入全核列表即可（`cpu_affinity = {0..hw-1}`）；
+  实时线程（`RealtimeThreadConfig`）的 round-robin 自动绑核语义本次不变。
+  迁移与校验清单见 `docs/MIGRATION.md` §升级注意。
+
 - **`Executor::submit_v2` 更名为 `submit_task_result`**："v2" 为时序
   命名，无法从名字得知契约（单消费 `TaskResult` 句柄，无
   `share()`）与适用范围（提交后即取结果的高频短任务）；更名遵循

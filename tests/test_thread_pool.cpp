@@ -6,6 +6,7 @@
 #include <chrono>
 #include <future>
 #include <algorithm>
+#include <mutex>
 #include <unordered_set>
 
 // 包含 thread_pool 模块的头文件
@@ -16,9 +17,7 @@
 #include "kairo/thread_pool/priority_scheduler.hpp"
 #include "kairo/thread_pool/thread_pool.hpp"
 
-#ifdef __ANDROID__
 #include "kairo/util/thread_utils.hpp"
-#endif
 
 using namespace kairo;
 
@@ -357,10 +356,134 @@ bool test_thread_pool_invalid_cpu_affinity_is_nonfatal() {
                 "pool with failed affinity request should still execute tasks");
     TEST_ASSERT(pool.get_status().total_threads == 1,
                 "pool with failed affinity request should still create its worker");
+    // 降级必须可观测：显式请求了绑核但任一 worker 应用失败 → applied == false。
+    TEST_ASSERT(pool.get_status().cpu_affinity_applied == false,
+                "failed explicit affinity request must report cpu_affinity_applied == false");
     TEST_ASSERT(pool.shutdown(true) == ShutdownResult::Completed,
                 "pool with failed affinity request should shut down");
 
     std::cout << "  ThreadPool invalid cpu_affinity nonfatal: PASSED" << std::endl;
+    return true;
+}
+
+bool test_thread_pool_explicit_cpu_affinity_reports_applied() {
+    std::cout << "Testing ThreadPool explicit cpu_affinity reports applied and pins workers..." << std::endl;
+
+    // 从主线程允许掩码取第一个 cpu 作为请求目标（best-effort 风格：掩码为空
+    // 时无法构造合法请求，整体跳过；与库内 invalid-affinity-nonfatal 契约
+    // 一致，绑核失败的环境只降低观测强度，不产生硬性失败）。
+    const std::vector<int> allowed = kairo::util::get_current_thread_affinity();
+    if (allowed.empty()) {
+        std::cout << "  (no allowed cpus detectable, skipped)" << std::endl;
+        return true;
+    }
+    const int requested_cpu = allowed.front();
+    std::cout << "  requested cpu = " << requested_cpu
+              << " (main allowed mask size = " << allowed.size() << ")" << std::endl;
+
+    ThreadPool pool;
+    ThreadPoolConfig config;
+    config.min_threads = 1;
+    config.max_threads = 2;  // 覆盖 resize 扩容路径
+    config.queue_capacity = 64;
+    config.cpu_affinity = {requested_cpu};
+
+    TEST_ASSERT(pool.initialize(config),
+                "pool with explicit allowed-cpu affinity should initialize");
+    const bool applied_before = pool.get_status().cpu_affinity_applied;
+    std::cout << "  cpu_affinity_applied before resize = " << applied_before << std::endl;
+
+    // 一致性采样（resize 前，单 worker）：applied == true ⟹ 观测恰为请求 cpu；
+    // 观测恰为请求 cpu 且主掩码更宽 ⟹ applied 必须为 true（不允许漏报）。
+    {
+        std::vector<std::future<std::vector<int>>> samples;
+        for (int i = 0; i < 4; ++i) {
+            samples.push_back(pool.submit([]() noexcept {
+                return kairo::util::get_current_thread_affinity();
+            }));
+        }
+        for (auto& sample : samples) {
+            const std::vector<int> mask = sample.get();
+            if (applied_before) {
+                TEST_ASSERT(mask.size() == 1 && mask.front() == requested_cpu,
+                            "applied == true must mean workers pinned to the requested cpu");
+            }
+            if (allowed.size() >= 2 && mask.size() == 1 && mask.front() == requested_cpu) {
+                TEST_ASSERT(applied_before,
+                            "worker observed pinned to requested cpu but cpu_affinity_applied == false (under-reporting)");
+            }
+        }
+    }
+
+    // 缩扩容契约：resize 在 [min_threads, max_threads] 内
+    TEST_ASSERT(pool.resize(2), "resize from 1 to 2 (within [min,max]) should succeed");
+    const bool applied_after = pool.get_status().cpu_affinity_applied;
+    std::cout << "  cpu_affinity_applied after resize(2) = " << applied_after << std::endl;
+    // 语义上 false 不可能翻回 true（失败后无回写 true 的路径）
+    TEST_ASSERT(!(applied_before == false && applied_after == true),
+                "cpu_affinity_applied must not flip false -> true after resize");
+
+    // 扩容后并发采样：两个 worker 同核映射（worker_id % 1 == 0），观测必须
+    // 仍落在请求集合 {requested_cpu} 内。
+    {
+        std::mutex sample_mutex;
+        std::vector<std::vector<int>> masks;
+        std::unordered_set<std::thread::id> worker_ids;
+
+        // 阶段 1（会合）：两个阻塞任务各占住一个 worker，保证 resize 新建的
+        // worker 1 也被直接观测到。两个任务最多等 500ms 后自行放行——即使
+        // 分发落进同一队列也不会死锁（work stealing 默认开启时 worker 1 会
+        // 窃走仍在队列中的第二个任务，两个 worker 并发执行）。
+        std::promise<void> release_promise;
+        std::shared_future<void> release = release_promise.get_future().share();
+        std::vector<std::future<void>> rendezvous;
+        for (int i = 0; i < 2; ++i) {
+            rendezvous.push_back(pool.submit([&]() noexcept {
+                const std::vector<int> mask = kairo::util::get_current_thread_affinity();
+                release.wait_for(std::chrono::milliseconds(500));
+                std::lock_guard<std::mutex> lock(sample_mutex);
+                masks.push_back(mask);
+                worker_ids.insert(std::this_thread::get_id());
+            }));
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        release_promise.set_value();
+        for (auto& task : rendezvous) {
+            task.get();
+        }
+        std::cout << "  distinct worker threads in rendezvous = " << worker_ids.size() << std::endl;
+
+        // 阶段 2：批量快速采样（落在哪个 worker 都满足一致性断言）
+        std::vector<std::future<void>> tasks;
+        for (int i = 0; i < 16; ++i) {
+            tasks.push_back(pool.submit([&]() noexcept {
+                const std::vector<int> mask = kairo::util::get_current_thread_affinity();
+                std::lock_guard<std::mutex> lock(sample_mutex);
+                masks.push_back(mask);
+                worker_ids.insert(std::this_thread::get_id());
+            }));
+        }
+        for (auto& task : tasks) {
+            task.get();
+        }
+        std::cout << "  distinct worker threads observed total = " << worker_ids.size() << std::endl;
+        for (const auto& mask : masks) {
+            if (applied_after) {
+                TEST_ASSERT(mask.size() == 1 && mask.front() == requested_cpu,
+                            "applied == true must hold after resize with pinned observation");
+            }
+            if (allowed.size() >= 2 && mask.size() == 1 && mask.front() == requested_cpu) {
+                TEST_ASSERT(applied_after,
+                            "post-resize worker observed pinned but cpu_affinity_applied == false (under-reporting)");
+            }
+        }
+        TEST_ASSERT(masks.size() == 18, "all 18 post-resize samples must have completed");
+    }
+
+    TEST_ASSERT(pool.shutdown(true) == ShutdownResult::Completed,
+                "explicit-affinity pool should shut down");
+
+    std::cout << "  ThreadPool explicit cpu_affinity applied reporting: PASSED" << std::endl;
     return true;
 }
 
@@ -1023,60 +1146,56 @@ bool test_default_enable_work_stealing_is_true() {
     return true;
 }
 
-bool test_default_cpu_affinity_is_auto_allocated() {
-#if defined(__ANDROID__)
-    std::cout << "Testing default cpu_affinity is auto-allocated from Android cpuset..." << std::endl;
+// 两个允许掩码是否等价（作为集合比较，顺序无关）
+static bool same_allowed_cpus(std::vector<int> a, std::vector<int> b) {
+    std::sort(a.begin(), a.end());
+    std::sort(b.begin(), b.end());
+    return a == b;
+}
 
+bool test_default_cpu_affinity_is_free_scheduling() {
+    std::cout << "Testing default (empty) cpu_affinity is free scheduling (no auto-pin)..." << std::endl;
+
+    // 1. 两个配置结构体的默认 cpu_affinity 均为空（0.8.0 起：不再 auto-allocate
+    //    [0..hw-1]，也不把 worker 钉到单核；OS 自由调度）。
     ExecutorConfig config;
-    TEST_ASSERT(config.cpu_affinity.empty(), "Default cpu_affinity should be empty (auto sentinel)");
+    TEST_ASSERT(config.cpu_affinity.empty(),
+                "Default ExecutorConfig cpu_affinity should be empty (free scheduling)");
+    ThreadPoolConfig default_tc;
+    TEST_ASSERT(default_tc.cpu_affinity.empty(),
+                "Default ThreadPoolConfig cpu_affinity should be empty (free scheduling)");
 
-    const std::vector<int> auto_affinity = kairo::util::get_current_thread_affinity();
-    std::cout << "  Android allowed-cpuset affinity size = " << auto_affinity.size() << std::endl;
-    // cgroup cpuset 因设备而异，甚至可能为空；不校验具体 0..hw-1 内容。
-    for (int cpu : auto_affinity) {
-        TEST_ASSERT(cpu >= 0, "allowed cpu id must not be negative");
-    }
-    return true;
-#else
-    std::cout << "Testing default cpu_affinity is auto-allocated [0..hw-1]..." << std::endl;
+    // 2. 空配置初始化池：worker 应保留主线程的完整允许掩码（未钉核），
+    //    且 cpu_affinity_applied == false（未请求绑核）。
+    const std::vector<int> main_allowed = kairo::util::get_current_thread_affinity();
+    std::cout << "  main thread allowed cpus = " << main_allowed.size() << std::endl;
 
-    // 1. Default config has empty cpu_affinity
-    ExecutorConfig config;
-    TEST_ASSERT(config.cpu_affinity.empty(), "Default cpu_affinity should be empty (auto sentinel)");
+    ThreadPool pool;
+    ThreadPoolConfig pool_config;
+    pool_config.min_threads = 1;
+    pool_config.max_threads = 1;
+    TEST_ASSERT(pool.initialize(pool_config), "default-config pool should initialize");
+    TEST_ASSERT(pool.get_status().cpu_affinity_applied == false,
+                "empty cpu_affinity must report cpu_affinity_applied == false");
 
-    // 2. Simulate executor_manager auto-allocation logic
-    unsigned hw = std::thread::hardware_concurrency();
-    std::cout << "  hw_concurrency = " << hw << std::endl;
+    auto observed = pool.submit([]() noexcept {
+        return kairo::util::get_current_thread_affinity();
+    }).get();
 
-    std::vector<int> auto_affinity;
-    if (hw > 0) {
-        auto_affinity.resize(hw);
-        for (unsigned i = 0; i < hw; ++i) {
-            auto_affinity[i] = static_cast<int>(i);
-        }
-    }
-
-    if (hw > 0) {
-        TEST_ASSERT(!auto_affinity.empty(), "auto-affinity should be non-empty when hw > 0");
-        TEST_ASSERT(static_cast<unsigned>(auto_affinity.size()) == hw,
-                    "auto-affinity size should equal hw_concurrency");
-        // Contents should be [0, 1, 2, ..., hw-1]
-        for (unsigned i = 0; i < hw; ++i) {
-            TEST_ASSERT(auto_affinity[i] == static_cast<int>(i),
-                        "auto-affinity entry should match core index");
-        }
-        if (hw >= 2) {
-            TEST_ASSERT(auto_affinity.size() >= 2, "auto-affinity should have >= 2 entries when hw >= 2");
-        }
+    // 主线程允许掩码只有 1 个 cpu（或探测失败为空）时，"未钉核"无法通过
+    // 观测区分（钉核结果相同），观测断言降级跳过，applied == false 仍成立。
+    if (main_allowed.size() >= 2) {
+        TEST_ASSERT(same_allowed_cpus(observed, main_allowed),
+                    "worker must keep the caller's full allowed mask (not pinned to a single cpu)");
     } else {
-        // Probe failed (rare in CI), affinity stays empty → OS free-schedules
-        TEST_ASSERT(auto_affinity.empty(), "auto-affinity should stay empty when hw == 0");
-        std::cout << "  (hw == 0, probe failed, skipped)" << std::endl;
+        std::cout << "  (allowed mask has <= 1 cpu, pin-free observation is not discriminating, skipped)" << std::endl;
     }
 
-    std::cout << "  auto-affinity size = " << auto_affinity.size() << std::endl;
+    TEST_ASSERT(pool.shutdown(true) == ShutdownResult::Completed,
+                "default-config pool should shut down");
+
+    std::cout << "  default cpu_affinity free scheduling: PASSED" << std::endl;
     return true;
-#endif
 }
 
 int main() {
@@ -1124,7 +1243,8 @@ int main() {
     std::cout << "--- Default Value Tests ---" << std::endl;
     all_passed &= test_default_thread_count_is_adaptive_sentinel();
     all_passed &= test_default_enable_work_stealing_is_true();
-    all_passed &= test_default_cpu_affinity_is_auto_allocated();
+    all_passed &= test_default_cpu_affinity_is_free_scheduling();
+    all_passed &= test_thread_pool_explicit_cpu_affinity_reports_applied();
     std::cout << std::endl;
 
     // 总结

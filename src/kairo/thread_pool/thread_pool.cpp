@@ -48,6 +48,11 @@ bool ThreadPool::initialize(const ThreadPoolConfig& config) {
         config_.task_timeout_ms = kMaxTaskTimeoutMs;
     }
 
+    // 绑核应用状态初值：空配置 = 未请求（false，OS 自由调度）；显式配置
+    // 乐观置 true，此后任一 worker 绑定失败由 apply_worker_affinity 置回。
+    cpu_affinity_applied_.store(!config_.cpu_affinity.empty(),
+                                std::memory_order_release);
+
     try {
         stop_.store(false);
         resize_monitor_stop_.store(false);
@@ -502,6 +507,8 @@ ThreadPoolStatus ThreadPool::get_status() const {
     status.total_tasks = total_tasks_.load(std::memory_order_relaxed);
     status.completed_tasks = completed_tasks_.load(std::memory_order_relaxed);
     status.failed_tasks = failed_tasks_.load(std::memory_order_relaxed);
+    status.cpu_affinity_applied =
+        cpu_affinity_applied_.load(std::memory_order_relaxed);
 
     // 计算平均任务执行时间
     size_t completed = completed_tasks_.load(std::memory_order_relaxed);
@@ -743,11 +750,7 @@ bool ThreadPool::resize(size_t new_size) {
                     util::set_thread_priority(new_threads.back().native_handle(),
                                               config_.thread_priority);
                 }
-                if (!config_.cpu_affinity.empty()) {
-                    const int cpu_id = config_.cpu_affinity[
-                        worker_id % config_.cpu_affinity.size()];
-                    util::set_cpu_affinity(new_threads.back().native_handle(), {cpu_id});
-                }
+                apply_worker_affinity(new_threads.back(), worker_id);
             }
         } catch (...) {
             rollback_created();
@@ -1087,10 +1090,20 @@ void ThreadPool::create_worker_thread(size_t worker_id) {
                                  config_.thread_priority);
     }
 
-    // 设置CPU亲和性
-    if (!config_.cpu_affinity.empty()) {
-        int cpu_id = config_.cpu_affinity[worker_id % config_.cpu_affinity.size()];
-        util::set_cpu_affinity(workers_.back().native_handle(), {cpu_id});
+    // 设置CPU亲和性（空 = OS 自由调度；显式设值 best-effort + 状态上报）
+    apply_worker_affinity(workers_.back(), worker_id);
+}
+
+void ThreadPool::apply_worker_affinity(std::thread& thread, size_t worker_id) {
+    if (config_.cpu_affinity.empty()) {
+        return;  // 空 = 由 OS 自由调度（默认；调度器容量/负载感知优于静态编号绑核）
+    }
+    const int cpu_id = config_.cpu_affinity[worker_id % config_.cpu_affinity.size()];
+    if (!util::set_cpu_affinity(thread.native_handle(), {cpu_id})) {
+        // best-effort：不致命（保持 invalid-affinity-nonfatal 契约），
+        // 但降级必须可观测（容器 cpuset、非法 cpu id 等静默失败是
+        // "绑核不稳"类问题的头号来源）。
+        cpu_affinity_applied_.store(false, std::memory_order_release);
     }
 }
 

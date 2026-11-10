@@ -4,6 +4,56 @@
 
 ---
 
+## 从 0.7.3 升级到 Unreleased：线程池默认绑核移除（行为变更）
+
+`ThreadPoolConfig::cpu_affinity` / `ExecutorConfig::cpu_affinity` 为空
+（默认）的语义从"自动填充 `[0..hw-1]` 并把每个 worker 绑定到单一核心"
+改为"**由 OS 自由调度（不绑核）**"，与 `BlockingIoConfig::cpu_affinity`
+既有语义对齐。未显式设值的代码升级后 worker 不再被钉核。
+
+动机：按逻辑编号静态绑核与核心性能等级无关。大小核/混合架构
+（ARM big.LITTLE、Intel P/E）上小核常编号在前，默认配置下初始
+`min_threads` 个 worker 会系统性落在编号最小的核心上；pinned worker
+在存在空闲大核时也无法被调度器迁移。OS 调度器自带的容量感知
+（EAS / Intel Thread Director）、负载均衡与缓存亲和倾向在多数负载下
+优于静态编号绑核。多实时线程的 round-robin 自动绑核
+（`RealtimeThreadConfig`）语义**本次不变**。
+
+### 需要迁移的场景
+
+- **依赖默认绑核行为**（缓存暖身、避免跨核迁移的确定性）：
+  显式传入全核列表即可逐位恢复旧行为：
+
+  ```cpp
+  kairo::ExecutorConfig config;
+  const unsigned hw = std::thread::hardware_concurrency();
+  for (unsigned i = 0; i < hw; ++i) {
+      config.cpu_affinity.push_back(static_cast<int>(i));
+  }
+  ```
+
+  显式设值路径语义不变：per-worker 确定性映射（`worker_id % size`），
+  缩扩容后同 id 回到同核。
+
+- **显式设值但从未核验是否真的绑上了**：`ThreadPoolStatus` /
+  `AsyncExecutorStatus` 新增 `cpu_affinity_applied`（与
+  `RealtimeExecutorStatus` / `BlockingIoExecutorStatus` 同名字段对齐）。
+  未请求、平台不支持或任一 worker 绑定失败（容器 cpuset、非法 cpu id
+  等此前被静默忽略的路径）时为 `false`；绑核失败仍不致命。建议在启动
+  自检中读取该字段。
+
+- **依赖默认池 `bound_cpus` 非空的 affinity advisory 断言**：默认池未
+  绑核后 `ExecutorCapability::bound_cpus` 为空，advisory 检查自然跳过
+  （无 mismatch 可言）；需要该诊断的测试改为显式绑核配置。
+
+### 升级检查清单
+
+- [ ] 零配置使用线程池且依赖"每 worker 固定单核"行为的：按上文显式传入 `cpu_affinity`。
+- [ ] 显式绑核的：启动后检查 `cpu_affinity_applied`，确认绑定真实生效。
+- [ ] 大小核/混合架构设备：重新压测吞吐与尾延迟——默认（自由调度）预期持平或改善。
+
+---
+
 ## 从 0.7.2 升级到 0.7.3（无必需迁移；新增 opt-in API）
 
 0.7.3 全部为 additive：`submit()` / `submit_auto()` / 既有

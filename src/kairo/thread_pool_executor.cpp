@@ -45,6 +45,7 @@ AsyncExecutorStatus ThreadPoolExecutor::get_status() const {
     status.failed_tasks = pool_status.failed_tasks;
     status.queue_size = pool_status.queue_size;
     status.avg_task_time_ms = pool_status.avg_task_time_ms;
+    status.cpu_affinity_applied = pool_status.cpu_affinity_applied;
     
     return status;
 }
