@@ -141,7 +141,9 @@ MPSC soak。解释时注意：
 
 - 普通 App 拿不到 `CAP_SYS_NICE` / `CAP_IPC_LOCK`；priority、affinity、memory lock
   为 false 是预期降级，不是注册失败。
-- 默认线程池在 Android 上最多 4 个 worker；自动 affinity 只从 cgroup 允许 cpuset 选择。
+- 默认线程池在 Android 上最多 4 个 worker；0.7.4 起空 `cpu_affinity`（默认）
+  不绑核，由 OS 自由调度；显式设值按 per-worker 申请，实际结果经
+  `cpu_affinity_applied` 上报。
 - 短周期实时线程不会自动申请 `SCHED_FIFO`。确有权限时应显式设置 `thread_priority`，
   再检查 `priority_applied`。
 - Android 一期不启用 CUDA/OpenCL；GPU API 返回 `BackendUnavailable`。

@@ -5,14 +5,14 @@ description: 公开 API 的模块入口与稳定性边界。
 
 # API 参考
 
-本站以 `v0.7.3` 为稳定版本基线，包含统一自动路由、等待、通信、任务图和诊断能力；后续 `master` 的未发布能力不构成稳定承诺。完整签名、默认值、错误码和兼容语义只在仓库的 [`docs/API.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) 维护，避免网站内容和仓库文档出现两套说法。
+本站以 `v0.7.4` 为稳定版本基线，包含统一自动路由、等待、通信、任务图和诊断能力；后续 `master` 的未发布能力不构成稳定承诺。完整签名、默认值、错误码和兼容语义只在仓库的 [`docs/API.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) 维护，避免网站内容和仓库文档出现两套说法。
 
 ## 先按模块定位
 
 | 模块 | Facade / 类型 | 学习入口 | 完整 API 文档 |
 | --- | --- | --- | --- |
 | 生命周期 | `instance`、独立实例、`initialize[_ex]`、`shutdown` | [初始化与关闭](/zh/quick-start/lifecycle) | `docs/API.md` 的生命周期与配置章节。 |
-| 普通任务与路由 | `submit_auto`、`TaskOptions`、`RoutingDecision`、`submit`、`submit_task_result`/`TaskResult`（0.7.3，原名 `submit_v2`，弃用别名） | [执行模型与路由边界](/zh/guides/execution-models-and-routing)、[任务输入与所有权](/zh/quick-start/task-inputs-and-ownership) | `Executor` 模板 API。 |
+| 普通任务与路由 | `submit_auto`、`TaskOptions`、`RoutingDecision`、`submit`、`submit_task_result`/`TaskResult`（0.7.4 正名，0.7.3 原名 `submit_v2`，弃用别名） | [执行模型与路由边界](/zh/guides/execution-models-and-routing)、[任务输入与所有权](/zh/quick-start/task-inputs-and-ownership) | `Executor` 模板 API。 |
 | 周期与批量 | `submit_periodic`、`TimerHandle::cancel`、周期状态、三种 batch | [延迟与周期](/zh/tutorial/delayed-and-periodic)、[批量](/zh/tutorial/batch) | Facade 定时与批量章节。 |
 | 任务图 | `submit_with_handle`、`submit_after[_with_handle]`、`when_all` | [任务依赖](/zh/tutorial/dependencies) | 任务依赖章节。 |
 | 失败与等待 | failure callback/status、recent failures、`wait_for_completion[_ex]`、完成状态 | [失败可观察性](/zh/reliability/failure-observability)、[有界等待](/zh/tutorial/waiting-and-status) | 失败、等待与类型章节。 |

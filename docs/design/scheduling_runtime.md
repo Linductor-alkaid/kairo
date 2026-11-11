@@ -790,7 +790,9 @@ tests/test_gpu_timing_feedback.cpp、tests/test_cuda_timing_failure_paths.cpp）
 > `[[deprecated]]` 转发别名，计划 0.9.0 前不移除）。监控 task_id
 > 相应由 `"submit_v2"` 改为 `"submit_result"`（13 字符，维持下文
 > SSO ≤15 零堆分配约束）；admission scope 改为
-> `"submit_task_result"`。另勘误：§16.2 对照表中
+> `"submit_task_result"`——scope 参数以 `std::string_view` 直传
+> 字面量（若按 `std::string` 传参，18 字符会在每次提交引入一次堆
+> 临时分配，仅在拒绝消息拼接时落串）。另勘误：§16.2 对照表中
 > "facade_submit_v2" 与实现不符——实现为 `"submit_v2"`（现
 > `"submit_result"`），libstdc++ SSO 上限 15 字符，16 字符的
 > `facade_submit_v2` 会破坏零分配约束。本节以下文字按 0.7.3 发布

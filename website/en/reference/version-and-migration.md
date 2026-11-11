@@ -7,7 +7,7 @@ description: Entry points for releases and API migration.
 
 ## Current scope
 
-The latest release record is `v0.7.3`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
+The latest release record is `v0.7.4`. This site uses that stable version as its baseline while following later `master` development; capabilities without a stable tag are not version promises. This first English edition does not maintain historical versioned sites.
 
 | What to check | Source of truth |
 | --- | --- |
@@ -15,6 +15,44 @@ The latest release record is `v0.7.3`. This site uses that stable version as its
 | Recommended migrations from older APIs | [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) |
 | Build options, compilers, and backends | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | Complete current signatures | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
+
+## 0.7.4 (released 2026-11-11): default thread-pool pinning removed (behavior change) + `submit_task_result` naming
+
+Two changes: one behavior change (default CPU pinning removed — work
+through the upgrade checklist) and one API renaming (zero behavior
+change):
+
+- **Empty `cpu_affinity` now means OS free scheduling (behavior
+  change)**: an empty (default) `ThreadPoolConfig::cpu_affinity` /
+  `ExecutorConfig::cpu_affinity` no longer auto-allocates `[0..hw-1]`
+  and pins each worker to a single core; workers are left unbound,
+  matching the existing `BlockingIoConfig::cpu_affinity` semantics.
+  Rationale: static pinning by logical number is unrelated to core
+  performance class — on hybrid/big.LITTLE SOCs the lowest numbers are
+  often little cores, so default workers systematically landed there
+  and pinned workers cannot migrate even when big cores sit idle. Code
+  relying on the old default recovers it bit-for-bit by passing the
+  full core list explicitly; the explicit path is unchanged
+  (deterministic per-worker mapping `worker_id % size`, the same id
+  returns to the same core across resize). `RealtimeThreadConfig`
+  round-robin auto-pinning is unchanged in this release. See the 0.7.4
+  section of `docs/MIGRATION.md` for migration scenarios and the
+  upgrade checklist.
+- **Companion observability (additive)**: `ThreadPoolStatus` /
+  `AsyncExecutorStatus` gain `cpu_affinity_applied` (aligned with the
+  same-named fields on `RealtimeExecutorStatus` /
+  `BlockingIoExecutorStatus`); it is false when nothing was requested,
+  the platform lacks support, or any worker failed to bind (container
+  cpuset, invalid cpu id — paths previously silenced); binding failure
+  stays non-fatal. With the default pool unbound,
+  `ExecutorCapability::bound_cpus` is empty and affinity advisory
+  checks are skipped naturally.
+- **`Executor::submit_v2` renamed to `submit_task_result`** (shipped in
+  0.7.3 as `submit_v2`): behavior and allocation numbers unchanged;
+  `submit_v2` remains a `[[deprecated]]` forwarding alias (not removed
+  before 0.9.0). Monitoring task_id changes `"submit_v2"` →
+  `"submit_result"` (admission scope renamed likewise); dashboards
+  filtering by task_id must be updated.
 
 ## 0.7.3 (released 2026-10-29): TaskResult lightweight future + valued CpuGpuTask
 

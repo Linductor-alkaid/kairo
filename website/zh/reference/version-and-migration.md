@@ -7,7 +7,7 @@ description: 发布版本和 API 迁移的入口。
 
 ## 当前版本说明
 
-项目 CMake 与最新发布记录的版本均为 `v0.7.3`。本站以该稳定版为基线，同时跟随 `master` 的后续开发；未在稳定 tag 中发布的能力不构成版本承诺。首发不维护历史版本站点；发布时应以 tag 重新核对页面。
+项目 CMake 与最新发布记录的版本均为 `v0.7.4`。本站以该稳定版为基线，同时跟随 `master` 的后续开发；未在稳定 tag 中发布的能力不构成版本承诺。首发不维护历史版本站点；发布时应以 tag 重新核对页面。
 
 | 需要确认什么 | 入口 |
 | --- | --- |
@@ -15,6 +15,34 @@ description: 发布版本和 API 迁移的入口。
 | 从旧 API 的推荐迁移路径 | [MIGRATION.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/MIGRATION.md) |
 | 选项、编译器与后端前置 | [BUILD.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/BUILD.md) |
 | 当前完整签名 | [API.md](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md) |
+
+## 0.7.4（2026-11-11 发布）：线程池默认绑核移除（行为变更）+ `submit_task_result` 正名
+
+两项变更：一项行为变更（默认绑核移除，建议按升级检查清单核对），
+一项 API 正名（行为零变化）：
+
+- **线程池空 `cpu_affinity` 默认改为 OS 自由调度（行为变更）**：
+  `ThreadPoolConfig::cpu_affinity` / `ExecutorConfig::cpu_affinity`
+  为空（默认）时不再 auto-allocate `[0..hw-1]` 把每个 worker 钉在
+  单核上，改为不绑核（语义与 `BlockingIoConfig::cpu_affinity` 对
+  齐）。动机：按逻辑编号静态绑核与核心性能等级无关——大小核/混合
+  架构上小核常编号在前，默认 worker 会系统性落在小核且无法被迁移。
+  依赖旧行为的代码显式传入全核列表即可逐位恢复；显式设值路径不变
+  （per-worker 确定性映射 `worker_id % size`，缩扩容后同 id 回到同
+  核）。`RealtimeThreadConfig` 的 round-robin 自动绑核本次不变。
+  迁移场景与升级检查清单见 `docs/MIGRATION.md` 0.7.4 节。
+- **配套可观测性（additive）**：`ThreadPoolStatus` /
+  `AsyncExecutorStatus` 新增 `cpu_affinity_applied`（与
+  `RealtimeExecutorStatus` / `BlockingIoExecutorStatus` 同名字段对
+  齐）；未请求、平台不支持或任一 worker 绑定失败（容器 cpuset、
+  非法 cpu id 等此前被静默忽略的路径）时为 false，绑核失败仍不致
+  命。默认池未绑核时 `ExecutorCapability::bound_cpus` 为空，affinity
+  advisory 检查自然跳过。
+- **`Executor::submit_v2` 正名为 `submit_task_result`**（0.7.3 发布
+  时名 `submit_v2`）：行为与分配数字零变化；`submit_v2` 保留为
+  `[[deprecated]]` 转发别名（计划 0.9.0 前不移除）。监控口径
+  task_id `"submit_v2"` → `"submit_result"`、admission scope 同步
+  更名，依赖 task_id 过滤的看板需同步。
 
 ## 0.7.3（2026-10-29 发布）：TaskResult 轻量 Future + 取值 CpuGpuTask
 

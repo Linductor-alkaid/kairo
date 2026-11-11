@@ -4,7 +4,12 @@
 
 ---
 
-## [Unreleased]
+## [0.7.4] - 2026-11-11
+
+0.7.4 是 0.7.3 后的收尾版本，共两项：`submit_v2` 正名为
+`submit_task_result`（含 deprecated 别名，行为零变化），以及线程池空
+`cpu_affinity` 默认从"自动绑核"改为"OS 自由调度"（唯一行为变更，
+显式设值路径不变，回退与校验清单见 `docs/MIGRATION.md`）。
 
 ### 变更
 
@@ -39,7 +44,11 @@
   同步：task_id `"submit_v2"` → `"submit_result"`（13 字符维持
   SSO ≤15 零堆分配约束；完整 API 名 18 字符会破坏之），admission
   scope `"submit_v2"` → `"submit_task_result"`；依赖 task_id 过滤
-  的看板需同步。实现与分配数字（4 allocs / 488 bytes）零变化；
+  的看板需同步。实现与分配数字（4 allocs / 488 bytes）零变化：
+  admission scope 完整 API 名有 18 字符，按 `std::string` 传参会
+  在每次提交引入一次堆临时分配（发布验证曾捕获此回归），故
+  `try_admit_submission` 的 scope 参数改为 `std::string_view` 字面量
+  直传，拒绝消息中的 scope 口径与分配数字均与 0.7.3 一致；
   `docs/design/scheduling_runtime.md` §16 更名附注同时勘误了
   §16.2 对照表 "facade_submit_v2" 与实现不符处。
 

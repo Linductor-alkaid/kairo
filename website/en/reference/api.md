@@ -5,14 +5,14 @@ description: Module entry points and stability boundaries for the public API.
 
 # API Reference
 
-This site anchors on `v0.7.3` as its stable baseline, covering unified auto-routing, waiting, communication, task graphs and diagnostics; unreleased capabilities on `master` do not constitute a stability commitment. Complete signatures, defaults, error codes and compatibility semantics are maintained only in the repository's [`docs/API.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md), so the site and the repository never carry two competing versions of the truth.
+This site anchors on `v0.7.4` as its stable baseline, covering unified auto-routing, waiting, communication, task graphs and diagnostics; unreleased capabilities on `master` do not constitute a stability commitment. Complete signatures, defaults, error codes and compatibility semantics are maintained only in the repository's [`docs/API.md`](https://github.com/Linductor-alkaid/kairo/blob/master/docs/API.md), so the site and the repository never carry two competing versions of the truth.
 
 ## Locate by module first
 
 | Module | Facade / types | Learning entry | Full API docs |
 | --- | --- | --- | --- |
 | Lifecycle | `instance`, standalone instances, `initialize[_ex]`, `shutdown` | [Lifecycle](/en/quick-start/lifecycle) | Lifecycle and configuration chapters of `docs/API.md`. |
-| Regular tasks and routing | `submit_auto`, `TaskOptions`, `RoutingDecision`, `submit`, `submit_task_result`/`TaskResult` (0.7.3; shipped as `submit_v2`, deprecated alias) | [Execution Models and Routing Boundaries](/en/guides/execution-models-and-routing), [Task Inputs and Ownership](/en/quick-start/task-inputs-and-ownership) | `Executor` template API. |
+| Regular tasks and routing | `submit_auto`, `TaskOptions`, `RoutingDecision`, `submit`, `submit_task_result`/`TaskResult` (named in 0.7.4; shipped as `submit_v2` in 0.7.3, deprecated alias) | [Execution Models and Routing Boundaries](/en/guides/execution-models-and-routing), [Task Inputs and Ownership](/en/quick-start/task-inputs-and-ownership) | `Executor` template API. |
 | Periodic and batch | `submit_periodic`, `TimerHandle::cancel`, periodic status, three batch flavors | [Delayed and Periodic](/en/tutorial/delayed-and-periodic), [Batch](/en/tutorial/batch) | Facade timer and batch chapters. |
 | Task graphs | `submit_with_handle`, `submit_after[_with_handle]`, `when_all` | [Task Dependencies](/en/tutorial/dependencies) | Task dependency chapter. |
 | Failure and waiting | failure callback/status, recent failures, `wait_for_completion[_ex]`, completion status | [Failure Observability](/en/reliability/failure-observability), [Bounded Waiting](/en/tutorial/waiting-and-status) | Failure, waiting and type chapters. |

@@ -109,8 +109,9 @@ Interpretation notes:
 
 - Ordinary apps lack `CAP_SYS_NICE` / `CAP_IPC_LOCK`; false priority/affinity/memory-lock
   fields are expected fallback, not registration failure.
-- The default thread pool is capped at four workers on Android; automatic affinity uses
-  only the cgroup-allowed cpuset.
+- The default thread pool is capped at four workers on Android; since 0.7.4 an empty
+  `cpu_affinity` (the default) means no binding — the OS schedules freely; explicit
+  values are requested per worker and reported through `cpu_affinity_applied`.
 - Short-period realtime threads do not auto-request `SCHED_FIFO`. If the device grants
   permission, set `thread_priority` explicitly and verify `priority_applied`.
 - Android in this stage is CPU-only; GPU APIs return `BackendUnavailable`.

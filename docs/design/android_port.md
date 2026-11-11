@@ -230,6 +230,10 @@ hw = std::min(hw, kAndroidDefaultMaxThreads);
 
 自动 affinity 优先使用 `util::get_current_thread_affinity()` 返回的允许掩码；为空时保持 OS 自由调度，不伪造 `0..hw-1`。
 
+> 附注（0.7.4 起）：空 `cpu_affinity`（默认）已统一为"不绑核、OS 自由调度"，
+> 不再从允许 cpuset 自动填充；显式设值仍按 per-worker 映射申请，并经
+> `cpu_affinity_applied` 上报实际结果（见 `docs/MIGRATION.md` 0.7.4 节）。
+
 ### 4.5 实时调度的 Android 语义
 
 - `SCHED_FIFO`：普通 App 通常 EPERM。`RealtimeThreadExecutor` 继续尝试并写入 `priority_applied=false`，不因调优失败拒绝任务。

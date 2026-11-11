@@ -66,7 +66,7 @@ config.max_in_flight_tasks = 256;   // total accepted-but-unsettled submissions
 
 Alert handling follows the same discipline as communication components: determine whether the cause is excess input, slow consumption, or a leak (in-flight count that never drops), then throttle, scale, or shed load. Do not hide consumer stalls by raising `max_in_flight_tasks`.
 
-### Per-subject in-flight quotas (master, unreleased)
+### Per-subject in-flight quotas (0.7.3)
 
 When multiple subjects (tenants / sessions / pipelines) share one Executor, `max_in_flight_tasks` keeps only a single global ledger: one subject can consume the entire in-flight budget, and other subjects are rejected globally even though their own share was never touched. Per-subject in-flight quotas add an **optional bucket dimension** at the same admission point: every configured subject counts its in-flight submissions independently under its own quota, **in effect together with** the global bound. Runtime API only (no `ExecutorConfig` mapping):
 

@@ -4,7 +4,7 @@
 
 ---
 
-## 从 0.7.3 升级到 Unreleased：线程池默认绑核移除（行为变更）
+## 从 0.7.3 升级到 0.7.4：线程池默认绑核移除（行为变更）
 
 `ThreadPoolConfig::cpu_affinity` / `ExecutorConfig::cpu_affinity` 为空
 （默认）的语义从"自动填充 `[0..hw-1]` 并把每个 worker 绑定到单一核心"
