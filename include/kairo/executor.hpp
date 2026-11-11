@@ -19,6 +19,7 @@
 #include <future>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
@@ -1374,7 +1375,10 @@ private:
     AdmissionDecision try_admit_submission(
         const std::string& executor_name,
         const std::string& task_id,
-        const std::string& scope,
+        // scope 为字面量直传（string_view）：热路径不构造 std::string
+        // 临时对象（>15 字符的 API 名会触发堆分配，见
+        // submit_task_result 调用点注记）；仅在拒绝消息拼接时落串。
+        std::string_view scope,
         const std::string& subject);
 
     void record_capacity_exhausted(const std::string& executor_name,
@@ -2092,7 +2096,10 @@ auto Executor::submit_task_result(F&& f, Args&&... args)
     const std::string executor_name = executor ? executor->get_name() : "default";
     // task_id 有意 ≤15 字符（SSO 内，稳态零堆分配）：完整 API 名
     // "submit_task_result" 有 18 字符，会在 cell 与监控记录各引入
-    // 一次堆分配，故监控口径取 13 字符的 "submit_result"。
+    // 一次堆分配，故监控口径取 13 字符的 "submit_result"。admission
+    // scope 保留完整 API 名（拒绝消息里的观测口径与文档一致），但
+    // try_admit_submission 以 string_view 直传字面量，不在热路径上
+    // 为它构造 std::string 临时对象（保持 4 allocs / 488 bytes 口径）。
     const std::string task_id = "submit_result";
     if (!executor) {
         record_submit_rejected(

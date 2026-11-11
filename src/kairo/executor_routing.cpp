@@ -719,7 +719,8 @@ void Executor::record_subject_quota_exhausted(
 Executor::AdmissionDecision Executor::try_admit_submission(
     const std::string& executor_name,
     const std::string& task_id,
-    const std::string& scope,
+    // 字面量直传（见 executor.hpp 声明处注记）：热路径零构造。
+    std::string_view scope,
     const std::string& subject) {
     AdmissionDecision decision;
 
@@ -754,8 +755,9 @@ Executor::AdmissionDecision Executor::try_admit_submission(
             in_flight_submissions_.fetch_sub(1, std::memory_order_release);
             record_capacity_exhausted(
                 executor_name, task_id,
-                "In-flight submission capacity exhausted (" + scope + "); "
-                "max_in_flight_tasks=" + std::to_string(max));
+                "In-flight submission capacity exhausted ("
+                    + std::string(scope) + "); "
+                    "max_in_flight_tasks=" + std::to_string(max));
             decision.accepted = false;
             return decision;
         }
