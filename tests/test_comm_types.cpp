@@ -3,7 +3,6 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
-#include <concepts>
 #include <string>
 #include <type_traits>
 
@@ -13,9 +12,12 @@ using namespace kairo::comm;
 
 template <class Primitive>
 void expect_lock_free_contract(const Primitive& primitive) {
-    static_assert(requires(const Primitive& candidate) {
-        { candidate.is_synchronization_lock_free() } -> std::convertible_to<bool>;
-    });
+    // （requires 表达式的 C++17 等价写法，GCC 9 兼容：const 成员函数
+    // 返回值可转换为 bool。）
+    static_assert(
+        std::is_invocable_r_v<bool, decltype(&Primitive::is_synchronization_lock_free),
+                              const Primitive&>,
+        "comm primitive must expose const is_synchronization_lock_free() convertible to bool");
     EXPECT_TRUE(primitive.is_synchronization_lock_free());
 }
 

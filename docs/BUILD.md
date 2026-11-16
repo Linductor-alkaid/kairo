@@ -6,7 +6,9 @@
 
 ## 1. 环境要求
 
-- **C++20** 编译器（GCC 10+、Clang 10+ 等）
+- **C++20** 编译器（**GCC 9+**、Clang 10+、MSVC 2019 16.9+ 等）。GCC 9/10
+  的 libstdc++ 没有 `std::atomic::wait` 与 `<stop_token>`/`std::jthread`，
+  库内建兼容层自动兜底（futex 驻停 / 自带 StopToken 实现），GCC 11+ 行为不变
 - **CMake** 3.16 或更高
 - **Linux**：`pthread`、`rt`（一般系统已提供）
 - **Android**：NDK r26c / r28b（交叉编译建议 CMake 3.28+），一期为 CPU-only

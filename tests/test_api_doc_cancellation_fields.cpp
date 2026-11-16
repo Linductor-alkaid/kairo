@@ -23,6 +23,33 @@ using namespace kairo;
 
 namespace {
 
+// ---- requires 表达式的 C++17 替身（GCC 9 兼容）----
+// 成员存在性探测：KAIRO_DOC_FIELD_PROBE(member) 生成一对重载，
+// probe_<member><Struct>() 经 decltype(&Struct::member) 的默认模板参
+// SFINAE——成员存在时 int 重载精确匹配胜出，否则回落 long 返回 false。
+#define KAIRO_DOC_FIELD_PROBE(member)                                          \
+    template <typename Struct>                                                 \
+    constexpr bool probe_##member(long) noexcept { return false; }             \
+    template <typename Struct, typename = decltype(&Struct::member)>           \
+    constexpr bool probe_##member(int) noexcept { return true; }
+
+KAIRO_DOC_FIELD_PROBE(request_count)
+KAIRO_DOC_FIELD_PROBE(queued_cancelled_count)
+KAIRO_DOC_FIELD_PROBE(running_request_count)
+KAIRO_DOC_FIELD_PROBE(completed_after_request_count)
+KAIRO_DOC_FIELD_PROBE(pending_count)
+KAIRO_DOC_FIELD_PROBE(executed_count)
+KAIRO_DOC_FIELD_PROBE(cancelled_count)
+KAIRO_DOC_FIELD_PROBE(timer_id)
+KAIRO_DOC_FIELD_PROBE(state)
+KAIRO_DOC_FIELD_PROBE(periodic)
+KAIRO_DOC_FIELD_PROBE(execution_count)
+KAIRO_DOC_FIELD_PROBE(active_callback_count)
+KAIRO_DOC_FIELD_PROBE(cancellation_count)
+KAIRO_DOC_FIELD_PROBE(next_execute_time)
+
+#undef KAIRO_DOC_FIELD_PROBE
+
 std::string read_api_md() {
     // 测试二进制位于 build/tests/，docs 位于仓库根 docs/。
     const char* candidates[] = {
@@ -51,16 +78,16 @@ std::string read_api_md() {
 // 与文档提取集合比对防止只改一侧）。
 std::set<std::string> actual_cancellation_status_fields() {
     std::set<std::string> fields;
-    if constexpr (requires { &CancellationStatus::request_count; }) {
+    if constexpr (probe_request_count<CancellationStatus>(0)) {
         fields.insert("request_count");
     }
-    if constexpr (requires { &CancellationStatus::queued_cancelled_count; }) {
+    if constexpr (probe_queued_cancelled_count<CancellationStatus>(0)) {
         fields.insert("queued_cancelled_count");
     }
-    if constexpr (requires { &CancellationStatus::running_request_count; }) {
+    if constexpr (probe_running_request_count<CancellationStatus>(0)) {
         fields.insert("running_request_count");
     }
-    if constexpr (requires { &CancellationStatus::completed_after_request_count; }) {
+    if constexpr (probe_completed_after_request_count<CancellationStatus>(0)) {
         fields.insert("completed_after_request_count");
     }
     return fields;
@@ -68,13 +95,13 @@ std::set<std::string> actual_cancellation_status_fields() {
 
 std::set<std::string> actual_timer_summary_fields() {
     std::set<std::string> fields;
-    if constexpr (requires { &TimerStatusSummary::pending_count; }) {
+    if constexpr (probe_pending_count<TimerStatusSummary>(0)) {
         fields.insert("pending_count");
     }
-    if constexpr (requires { &TimerStatusSummary::executed_count; }) {
+    if constexpr (probe_executed_count<TimerStatusSummary>(0)) {
         fields.insert("executed_count");
     }
-    if constexpr (requires { &TimerStatusSummary::cancelled_count; }) {
+    if constexpr (probe_cancelled_count<TimerStatusSummary>(0)) {
         fields.insert("cancelled_count");
     }
     return fields;
@@ -82,25 +109,25 @@ std::set<std::string> actual_timer_summary_fields() {
 
 std::set<std::string> actual_timer_status_fields() {
     std::set<std::string> fields;
-    if constexpr (requires { &TimerStatus::timer_id; }) {
+    if constexpr (probe_timer_id<TimerStatus>(0)) {
         fields.insert("timer_id");
     }
-    if constexpr (requires { &TimerStatus::state; }) {
+    if constexpr (probe_state<TimerStatus>(0)) {
         fields.insert("state");
     }
-    if constexpr (requires { &TimerStatus::periodic; }) {
+    if constexpr (probe_periodic<TimerStatus>(0)) {
         fields.insert("periodic");
     }
-    if constexpr (requires { &TimerStatus::execution_count; }) {
+    if constexpr (probe_execution_count<TimerStatus>(0)) {
         fields.insert("execution_count");
     }
-    if constexpr (requires { &TimerStatus::active_callback_count; }) {
+    if constexpr (probe_active_callback_count<TimerStatus>(0)) {
         fields.insert("active_callback_count");
     }
-    if constexpr (requires { &TimerStatus::cancellation_count; }) {
+    if constexpr (probe_cancellation_count<TimerStatus>(0)) {
         fields.insert("cancellation_count");
     }
-    if constexpr (requires { &TimerStatus::next_execute_time; }) {
+    if constexpr (probe_next_execute_time<TimerStatus>(0)) {
         fields.insert("next_execute_time");
     }
     return fields;

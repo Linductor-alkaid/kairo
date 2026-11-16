@@ -31,8 +31,8 @@ public:
     explicit DoubleBuffer(T initial, std::string name = {})
         : name_(std::move(name)), store_(std::move(initial)), stats_(true) {}
 
-    template <class U = T>
-    requires std::is_default_constructible_v<U>
+    template <class U = T,
+              std::enable_if_t<std::is_default_constructible_v<U>, int> = 0>
     explicit DoubleBuffer(std::string name = {})
         : DoubleBuffer(T{}, std::move(name)) {}
 

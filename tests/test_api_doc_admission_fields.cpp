@@ -13,10 +13,70 @@
 #include <cstdio>
 #include <set>
 #include <string>
+#include <type_traits>
 
 using namespace kairo;
 
 namespace {
+
+// ---- requires 表达式的 C++17 替身（GCC 9 兼容）----
+// 成员存在性探测：KAIRO_DOC_FIELD_PROBE(member) 生成一对重载，
+// probe_<member><Struct>() 经 decltype(&Struct::member) 的默认模板参
+// SFINAE——成员存在时 int 重载精确匹配胜出，否则回落 long 返回 false。
+#define KAIRO_DOC_FIELD_PROBE(member)                                          \
+    template <typename Struct>                                                 \
+    constexpr bool probe_##member(long) noexcept { return false; }             \
+    template <typename Struct, typename = decltype(&Struct::member)>           \
+    constexpr bool probe_##member(int) noexcept { return true; }
+
+KAIRO_DOC_FIELD_PROBE(task_exception_count)
+KAIRO_DOC_FIELD_PROBE(submit_rejected_count)
+KAIRO_DOC_FIELD_PROBE(timeout_count)
+KAIRO_DOC_FIELD_PROBE(realtime_drop_count)
+KAIRO_DOC_FIELD_PROBE(gpu_failure_count)
+KAIRO_DOC_FIELD_PROBE(wait_timeout_count)
+KAIRO_DOC_FIELD_PROBE(tuning_fallback_count)
+KAIRO_DOC_FIELD_PROBE(capacity_exhausted_count)
+KAIRO_DOC_FIELD_PROBE(total_count)
+KAIRO_DOC_FIELD_PROBE(subject_quota_exhausted_count)
+KAIRO_DOC_FIELD_PROBE(subject)
+KAIRO_DOC_FIELD_PROBE(max_in_flight_tasks)
+KAIRO_DOC_FIELD_PROBE(in_flight_submissions)
+
+#undef KAIRO_DOC_FIELD_PROBE
+
+// 表达式序列探测：把待检表达式放进仿函数 operator()（永不调用，
+// 仅参与编译期 SFINAE），随库签名漂移即编译失败。
+template <typename Probe, typename = void>
+struct ExprCompiles : std::false_type {};
+template <typename Probe>
+struct ExprCompiles<Probe, std::void_t<decltype(std::declval<Probe&>()())>>
+    : std::true_type {};
+
+// ExecutorConfig{}.max_in_flight_tasks 可编译。
+struct ProbeConfigMaxInFlight {
+    void operator()() { (void)ExecutorConfig{}.max_in_flight_tasks; }
+};
+
+// Executor 观测 API（const 语境）。
+struct ProbeAdmissionObservers {
+    void operator()() {
+        const Executor& ex = *static_cast<const Executor*>(nullptr);
+        (void)ex.get_in_flight_submissions();
+        (void)ex.get_max_in_flight_tasks();
+    }
+};
+
+// Executor 分主体配额 API（可变语境）。
+struct ProbeSubjectQuotaApi {
+    void operator()() {
+        Executor& ex = *static_cast<Executor*>(nullptr);
+        ex.set_subject_max_in_flight_tasks("A", 1);
+        ex.get_subject_max_in_flight_tasks("A");
+        ex.get_subject_in_flight_submissions("A");
+        (void)ex.get_subject_quota_status();
+    }
+};
 
 std::string read_api_md() {
     const char* candidates[] = {
@@ -66,31 +126,31 @@ std::string read_readme_md() {
 
 std::set<std::string> actual_failure_status_fields() {
     std::set<std::string> fields;
-    if constexpr (requires { &ExecutorFailureStatus::task_exception_count; }) {
+    if constexpr (probe_task_exception_count<ExecutorFailureStatus>(0)) {
         fields.insert("task_exception_count");
     }
-    if constexpr (requires { &ExecutorFailureStatus::submit_rejected_count; }) {
+    if constexpr (probe_submit_rejected_count<ExecutorFailureStatus>(0)) {
         fields.insert("submit_rejected_count");
     }
-    if constexpr (requires { &ExecutorFailureStatus::timeout_count; }) {
+    if constexpr (probe_timeout_count<ExecutorFailureStatus>(0)) {
         fields.insert("timeout_count");
     }
-    if constexpr (requires { &ExecutorFailureStatus::realtime_drop_count; }) {
+    if constexpr (probe_realtime_drop_count<ExecutorFailureStatus>(0)) {
         fields.insert("realtime_drop_count");
     }
-    if constexpr (requires { &ExecutorFailureStatus::gpu_failure_count; }) {
+    if constexpr (probe_gpu_failure_count<ExecutorFailureStatus>(0)) {
         fields.insert("gpu_failure_count");
     }
-    if constexpr (requires { &ExecutorFailureStatus::wait_timeout_count; }) {
+    if constexpr (probe_wait_timeout_count<ExecutorFailureStatus>(0)) {
         fields.insert("wait_timeout_count");
     }
-    if constexpr (requires { &ExecutorFailureStatus::tuning_fallback_count; }) {
+    if constexpr (probe_tuning_fallback_count<ExecutorFailureStatus>(0)) {
         fields.insert("tuning_fallback_count");
     }
-    if constexpr (requires { &ExecutorFailureStatus::capacity_exhausted_count; }) {
+    if constexpr (probe_capacity_exhausted_count<ExecutorFailureStatus>(0)) {
         fields.insert("capacity_exhausted_count");
     }
-    if constexpr (requires { &ExecutorFailureStatus::total_count; }) {
+    if constexpr (probe_total_count<ExecutorFailureStatus>(0)) {
         fields.insert("total_count");
     }
     return fields;
@@ -172,14 +232,12 @@ TEST(ApiDocAdmissionFields, AdmissionSectionAndConfigDocumented) {
         << "API.md config table must document max_in_flight_tasks";
     EXPECT_NE(config_line.find("queue_capacity"), std::string::npos)
         << "config doc must contrast max_in_flight_tasks with queue_capacity";
-    static_assert(requires { ExecutorConfig{}.max_in_flight_tasks; },
+    static_assert(ExprCompiles<ProbeConfigMaxInFlight>::value,
                   "ExecutorConfig must expose max_in_flight_tasks");
 
     // 观测 API 存在。
-    static_assert(requires(const Executor& ex) {
-        ex.get_in_flight_submissions();
-        ex.get_max_in_flight_tasks();
-    }, "Executor must expose admission observers");
+    static_assert(ExprCompiles<ProbeAdmissionObservers>::value,
+                  "Executor must expose admission observers");
 }
 
 TEST(ApiDocAdmissionFields, SerialDispatchSemanticsDocumented) {
@@ -223,22 +281,15 @@ TEST(ApiDocAdmissionFields, SubjectBucketAdmissionDocumented) {
         << "API.md must document the SubjectQuotaStatus snapshot type";
 
     // types.hpp 新字段与新结构真实存在（编译期锁，随库签名漂移即编译失败）。
-    static_assert(requires { &ExecutorFailureStatus::subject_quota_exhausted_count; },
+    static_assert(probe_subject_quota_exhausted_count<ExecutorFailureStatus>(0),
                   "ExecutorFailureStatus must expose subject_quota_exhausted_count");
-    static_assert(requires { &ExecutorFailureEvent::subject; },
+    static_assert(probe_subject<ExecutorFailureEvent>(0),
                   "ExecutorFailureEvent must expose the subject field");
-    static_assert(requires {
-                      &SubjectQuotaStatus::subject;
-                      &SubjectQuotaStatus::max_in_flight_tasks;
-                      &SubjectQuotaStatus::in_flight_submissions;
-                  },
+    static_assert(probe_subject<SubjectQuotaStatus>(0) &&
+                      probe_max_in_flight_tasks<SubjectQuotaStatus>(0) &&
+                      probe_in_flight_submissions<SubjectQuotaStatus>(0),
                   "SubjectQuotaStatus must expose subject/max/in_flight fields");
-    static_assert(requires(Executor& ex) {
-                      ex.set_subject_max_in_flight_tasks("A", 1);
-                      ex.get_subject_max_in_flight_tasks("A");
-                      ex.get_subject_in_flight_submissions("A");
-                      ex.get_subject_quota_status();
-                  },
+    static_assert(ExprCompiles<ProbeSubjectQuotaApi>::value,
                   "Executor must expose the subject quota API surface");
 
     // 观测面语义宣称：§3.12 记载事件 subject 携带分桶键（空 = 总量拒绝）

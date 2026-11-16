@@ -36,7 +36,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-Kairo requires C++20 and CMake 3.16+. Linux and Windows are supported. Android CPU-only support is available through the NDK toolchain; see [PACKAGE_ANDROID.md](docs/packaging/PACKAGE_ANDROID.md). GPU backends are optional and do not affect the ordinary CPU path when no GPU is available.
+Kairo requires C++20 and CMake 3.16+; GCC 9+, Clang 10+, and MSVC are supported (GCC 9/10 go through built-in compatibility shims for atomic wait / `std::stop_token`, behavior unchanged on GCC 11+). Linux and Windows are supported. Android CPU-only support is available through the NDK toolchain; see [PACKAGE_ANDROID.md](docs/packaging/PACKAGE_ANDROID.md). GPU backends are optional and do not affect the ordinary CPU path when no GPU is available.
 
 ### Submit your first task
 

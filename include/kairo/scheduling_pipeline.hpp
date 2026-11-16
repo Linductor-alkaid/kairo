@@ -6,6 +6,7 @@
 #include <new>
 #include <optional>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 namespace kairo::detail {
@@ -138,9 +139,11 @@ template <typename... Filters>
 class ConstraintFilterChain {
 public:
     ConstraintFilterChain() = default;
-    // 空包时与默认构造冲突，requires 子句禁用（组合链至少一个过滤器）。
+    // 空包时与默认构造冲突，enable_if 禁用（组合链至少一个过滤器）。
+    // （requires 子句的 C++17 等价写法，GCC 9 兼容。）
+    template <bool HasFilters = (sizeof...(Filters) > 0),
+              std::enable_if_t<HasFilters, int> = 0>
     explicit ConstraintFilterChain(Filters... filters)
-        requires (sizeof...(Filters) > 0)
         : filters_(std::move(filters)...) {}
 
     KAIRO_SCHED_HOT bool apply(const TaskRouter::Request& request,

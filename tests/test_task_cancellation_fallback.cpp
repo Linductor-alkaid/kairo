@@ -18,9 +18,18 @@
 #include <kairo/executor.hpp>
 #include <kairo/stop_token.hpp>
 
+#include <type_traits>
+
 #if defined(KAIRO_STOP_TOKEN_FORCE_FALLBACK)
+#if defined(__cpp_lib_jthread)
 static_assert(!std::is_same_v<kairo::StopToken, std::stop_token>,
               "forced fallback must instantiate executor's own StopToken");
+#else
+// 无 std::stop_token 的工具链（libstdc++ 9/10）：强制 fallback 即唯一
+// 路径，断言走的是自有类类型（stop_token.hpp 的特性宏已保证）。
+static_assert(std::is_class_v<kairo::StopToken>,
+              "forced fallback must use executor's own StopToken class");
+#endif
 #endif
 
 using namespace kairo;

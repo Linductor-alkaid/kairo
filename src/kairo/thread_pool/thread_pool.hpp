@@ -513,11 +513,12 @@ private:
     // （调度器入队 / 本地队列搬运 / resize 迁移）以及 stop_/缩容退出
     // 集变化，都必须 fetch_add(release) 后 notify_one/notify_all。
     // worker 侧在完整空扫描【之前】acquire 采样 seen，然后
-    // wake_seq_.wait(seen)：若代次在采样后变化（扫描期间或驻停前有
-    // 新任务落位），wait 在阻塞前的原子复核立即返回；若在阻塞后变化，
-    // notify 唤醒。两个方向的丢失唤醒窗口都不存在——这是 C++20
+    // util::atomic_wait(wake_seq_, seen)：若代次在采样后变化（扫描期间
+    // 或驻停前有新任务落位），wait 在阻塞前的原子复核立即返回；若在阻塞
+    // 后变化，notify 唤醒。两个方向的丢失唤醒窗口都不存在——这是 C++20
     // atomic wait 相比 condition_variable+mutex 的根本优势
-    // （check-and-block 相对原子值原子）。
+    // （check-and-block 相对原子值原子）。GCC 9/10 无 std atomic wait，
+    // 由 util/atomic_wait.hpp 提供同语义的 futex 兜底。
     // 独占缓存行：所有 worker 驻停/唤醒都 RMW 这个字（PA-12 关联）。
     alignas(64) std::atomic<uint32_t> wake_seq_{0};
 

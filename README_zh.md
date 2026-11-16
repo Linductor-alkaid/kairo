@@ -36,7 +36,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-要求 C++20 和 CMake 3.16+。支持 Linux 与 Windows；Android 提供 CPU-only 支持，可通过 NDK 工具链构建，见 [PACKAGE_ANDROID.md](docs/packaging/PACKAGE_ANDROID.md)。GPU 后端是可选能力，没有可用 GPU 时不影响普通 CPU 路径。
+要求 C++20 和 CMake 3.16+；支持 GCC 9+、Clang 10+ 与 MSVC（GCC 9/10 经内建兼容层兜底 atomic wait / `std::stop_token`，GCC 11+ 行为不变）。支持 Linux 与 Windows；Android 提供 CPU-only 支持，可通过 NDK 工具链构建，见 [PACKAGE_ANDROID.md](docs/packaging/PACKAGE_ANDROID.md)。GPU 后端是可选能力，没有可用 GPU 时不影响普通 CPU 路径。
 
 ### 提交第一个任务
 

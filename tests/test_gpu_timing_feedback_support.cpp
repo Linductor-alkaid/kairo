@@ -5,7 +5,6 @@
 // （如 sstream 的 __xfer_bufptrs "redeclared with different access"）。
 #include <atomic>
 #include <chrono>
-#include <concepts>
 #include <condition_variable>
 #include <exception>
 #include <functional>

@@ -6,9 +6,19 @@
 #include <kairo/stop_token.hpp>
 
 #if defined(KAIRO_STOP_TOKEN_FORCE_FALLBACK)
+#if defined(__cpp_lib_jthread)
 static_assert(!std::is_same_v<kairo::StopToken, std::stop_token>,
               "forced fallback must instantiate executor's own StopToken implementation");
-#elif !defined(__ANDROID__) || defined(__cpp_lib_jthread)
+#else
+// 无 std::stop_token 的工具链：强制 fallback 即唯一路径，断言自有类类型。
+static_assert(std::is_class_v<kairo::StopToken>,
+              "forced fallback without std::jthread must use executor's own StopToken class");
+#endif
+#elif !defined(__cpp_lib_jthread)
+// GCC 9/10 等无 std::jthread 的桌面工具链：StopToken 走自有 fallback 类。
+static_assert(std::is_class_v<kairo::StopToken>,
+              "StopToken must be the executor's own class when std::jthread is unavailable");
+#else
 static_assert(std::is_same_v<kairo::StopToken, std::stop_token>,
               "kairo::StopToken must alias std::stop_token on desktop/standard-lib path");
 #endif

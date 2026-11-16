@@ -1,5 +1,6 @@
 #include "kairo/lockfree_task_executor.hpp"
 #include "util/admission_gate.hpp"
+#include "util/atomic_wait.hpp"
 #include "util/cpu_pause.hpp"
 #include "util/lockfree_queue.hpp"
 #include "util/object_pool.hpp"
@@ -89,7 +90,7 @@ bool LockFreeTaskExecutor::stop_and_join() {
         // PA-8: 唤醒可能驻停在 futex 上的 worker，否则 join 会一直等待。
         // fetch_add(2) 保留 bit0 驻停位语义。
         wake_seq_.fetch_add(2, std::memory_order_release);
-        wake_seq_.notify_all();
+        util::atomic_notify_all(wake_seq_);
         if (worker_.joinable()) {
             joiner = std::move(worker_);
         }
@@ -598,10 +599,11 @@ size_t LockFreeTaskExecutor::park_worker(TaskWrapper** batch, size_t batch_size)
         wake_seq_.fetch_and(~kParkedBit, std::memory_order_release);
         return popped;
     }
-    // (3) futex 驻停（32 位 wake_seq_ 走 libstdc++ futex 直达路径）。
+    // (3) futex 驻停（32 位 wake_seq_ 经 util::atomic_wait 兼容层：
+    // 有 atomic wait 的工具链直发 std，GCC 9/10 走同机制的自研 futex）。
     // 停滞生产者的恢复（scan-ahead 取消未决预留）不经过 push 成功路径，
     // 由 set_before_publish_hook 的 trampoline 在进入停滞窗口前定向唤醒。
-    wake_seq_.wait(parked_value, std::memory_order_acquire);
+    util::atomic_wait(wake_seq_, parked_value, std::memory_order_acquire);
     wake_seq_.fetch_and(~kParkedBit, std::memory_order_release);
     return 0;
 }
@@ -611,7 +613,7 @@ void LockFreeTaskExecutor::wake_worker_if_parking() {
     // 重排打穿）。仅当返回值带驻停位才发 futex notify：忙碌路径零 syscall。
     const uint32_t previous = wake_seq_.fetch_add(2, std::memory_order_release);
     if (previous & kParkedBit) {
-        wake_seq_.notify_one();
+        util::atomic_notify_one(wake_seq_);
     }
 }
 

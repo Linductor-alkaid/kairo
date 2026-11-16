@@ -27,6 +27,8 @@ jobs:
         build_type: [Release, Debug]
         compiler:
           - { name: gcc, version: 11 }
+          - { name: gcc, version: 9 }   # 最低支持口径：GCC 9（libstdc++ 9 无
+                                        # atomic wait/jthread，走兼容层）
           - { name: clang, version: 14 }
         exclude:
           # Windows 只用 MSVC
