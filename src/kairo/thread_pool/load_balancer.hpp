@@ -30,7 +30,9 @@ public:
      * @brief 工作线程负载信息
      */
     struct WorkerLoad {
-        constexpr WorkerLoad() noexcept = default;
+        // 不能标 noexcept：libstdc++ 9 的 steady_clock::time_point 默认
+        // 构造非 noexcept，noexcept 失配会把 defaulted 默认构造 deleted。
+        constexpr WorkerLoad() = default;
         size_t queue_size = 0;           // 本地队列大小
         size_t active_tasks = 0;          // 正在执行的任务数
         std::chrono::steady_clock::time_point last_update;  // 最后更新时间

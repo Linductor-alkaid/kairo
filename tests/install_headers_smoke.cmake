@@ -40,9 +40,24 @@ foreach(header IN LISTS installed_headers)
 endforeach()
 file(APPEND "${probe}" "\nint main() { return 0; }\n")
 
+# GCC 9/10 只接受 -std=c++2a 拼写（GCC 11 起才认识 -std=c++20）；Clang 对
+# 两种拼写都接受。按 __GNUC__ 主版本选择（Clang 的 GNU 兼容宏为主版本号，
+# 走 c++2a 分支同样安全）。
+set(std_flag "-std=c++20")
+execute_process(
+    COMMAND "${CXX_COMPILER}" "-dM" "-E" "-x" "c++" "/dev/null"
+    OUTPUT_VARIABLE probe_compiler_macros
+    RESULT_VARIABLE probe_compiler_result
+    ERROR_QUIET)
+if(probe_compiler_result EQUAL 0 AND probe_compiler_macros MATCHES "#define __GNUC__ ([0-9]+)")
+    if(CMAKE_MATCH_1 LESS 10)
+        set(std_flag "-std=c++2a")
+    endif()
+endif()
+
 execute_process(
     # 消费者契约：-I<prefix>/include 后 #include <kairo/...> 可用
-    COMMAND "${CXX_COMPILER}" -std=c++20 -fsyntax-only
+    COMMAND "${CXX_COMPILER}" ${std_flag} -fsyntax-only
             "-I${prefix}/include" "${probe}"
     RESULT_VARIABLE compile_result
     OUTPUT_VARIABLE compile_output

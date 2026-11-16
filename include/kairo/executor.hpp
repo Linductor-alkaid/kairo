@@ -28,7 +28,6 @@
 #include <atomic>
 #include <thread>
 #include <chrono>
-#include <concepts>
 #include <type_traits>
 #include <tuple>
 #include <map>
@@ -3900,15 +3899,12 @@ auto Executor::submit_auto(TaskBuilder<Function> task)
 template<typename CpuFunction, typename GpuFunction, typename R>
 auto Executor::submit_auto(CpuGpuTask<CpuFunction, GpuFunction, R> task)
     -> std::conditional_t<std::is_void_v<R>, std::future<void>, ExecutionReport<R>> {
-    static_assert(requires(CpuFunction& cpu) {
-                      { cpu() } -> std::convertible_to<R>;
-                  },
+    // （requires 表达式的 C++17 等价写法，GCC 9 兼容：invocable_r 对
+    // void 返回类型同时覆盖 convertible_to 与 same_as 语义。）
+    static_assert(std::is_invocable_r_v<R, CpuFunction&>,
                   "CpuGpuTask CPU callable must be invocable with no arguments and return a value convertible to R");
-    static_assert(requires(GpuFunction& gpu) {
-                      { gpu(static_cast<void*>(nullptr)) } -> std::same_as<void>;
-                  } || requires(GpuFunction& gpu) {
-                      { gpu() } -> std::same_as<void>;
-                  },
+    static_assert(std::is_invocable_r_v<void, GpuFunction&, void*> ||
+                      std::is_invocable_r_v<void, GpuFunction&>,
                   "CpuGpuTask GPU callable must be invocable with void* stream or no arguments and return void");
 
     const auto& options = task.options();

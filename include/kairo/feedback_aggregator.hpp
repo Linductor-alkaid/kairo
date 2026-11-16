@@ -64,7 +64,11 @@ struct FeedbackKey {
     std::string executor_name;  // 例："default"
     QosClass qos = QosClass::Standard;
 
-    friend bool operator==(const FeedbackKey&, const FeedbackKey&) = default;
+    // （C++20 比较运算符 default 化是 GCC 10+ 特性，显式实现保 GCC 9。）
+    friend bool operator==(const FeedbackKey& lhs, const FeedbackKey& rhs) noexcept {
+        return lhs.backend == rhs.backend &&
+               lhs.executor_name == rhs.executor_name && lhs.qos == rhs.qos;
+    }
 };
 
 /** @brief 单键聚合结果（分片合并后的诊断视图）。 */

@@ -2,7 +2,6 @@
 #include <condition_variable>
 #include <functional>
 #include <iostream>
-#include <latch>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -29,9 +28,38 @@ using namespace kairo;
 
 namespace {
 
+// GCC 9 无 <latch>（libstdc++ 11 才有）：本测试只用单次闸门的
+// count_down/wait，mutex+cv 等价实现即可。
+class Latch {
+public:
+    explicit Latch(std::ptrdiff_t expected) : remaining_(expected) {}
+
+    void count_down(std::ptrdiff_t update = 1) {
+        bool ready = false;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            remaining_ -= update;
+            ready = remaining_ <= 0;
+        }
+        if (ready) {
+            cv_.notify_all();
+        }
+    }
+
+    void wait() const {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(lock, [this] { return remaining_ <= 0; });
+    }
+
+private:
+    mutable std::mutex mutex_;
+    mutable std::condition_variable cv_;
+    std::ptrdiff_t remaining_;
+};
+
 struct WorkerState {
-    std::latch entered{1};
-    std::latch exited{1};
+    Latch entered{1};
+    Latch exited{1};
     std::mutex mutex;
     std::condition_variable cv;
     bool woken = false;
@@ -67,7 +95,7 @@ private:
 
 class ThrowingWorker final : public IBlockingIoWorker {
 public:
-    explicit ThrowingWorker(std::shared_ptr<std::latch> failed)
+    explicit ThrowingWorker(std::shared_ptr<Latch> failed)
         : failed_(std::move(failed)) {}
 
     void run(StopToken) override {
@@ -78,12 +106,12 @@ public:
     void wakeup() noexcept override {}
 
 private:
-    std::shared_ptr<std::latch> failed_;
+    std::shared_ptr<Latch> failed_;
 };
 
 class SelfStoppingWorker final : public IBlockingIoWorker {
 public:
-    explicit SelfStoppingWorker(std::shared_ptr<std::latch> stopped)
+    explicit SelfStoppingWorker(std::shared_ptr<Latch> stopped)
         : stopped_(std::move(stopped)) {}
 
     void set_executor(BlockingIoExecutor* executor) {
@@ -99,12 +127,12 @@ public:
 
 private:
     BlockingIoExecutor* executor_ = nullptr;
-    std::shared_ptr<std::latch> stopped_;
+    std::shared_ptr<Latch> stopped_;
 };
 
 class ReturningWorker final : public IBlockingIoWorker {
 public:
-    explicit ReturningWorker(std::shared_ptr<std::latch> returned)
+    explicit ReturningWorker(std::shared_ptr<Latch> returned)
         : returned_(std::move(returned)) {}
 
     void run(StopToken) override {
@@ -114,7 +142,7 @@ public:
     void wakeup() noexcept override {}
 
 private:
-    std::shared_ptr<std::latch> returned_;
+    std::shared_ptr<Latch> returned_;
 };
 
 BlockingIoConfig valid_config() {
@@ -169,7 +197,7 @@ bool test_registration_validation_and_worker_failure() {
     Executor executor;
     BlockingIoConfig invalid;
     invalid.thread_name = "";
-    auto invalid_failed = std::make_shared<std::latch>(1);
+    auto invalid_failed = std::make_shared<Latch>(1);
     auto invalid_result = executor.register_blocking_io_worker(
         "invalid", invalid, std::make_unique<ThrowingWorker>(invalid_failed));
     TEST_ASSERT(!invalid_result.ok && invalid_result.error_code == ExecutorErrorCode::InvalidConfig,
@@ -182,7 +210,7 @@ bool test_registration_validation_and_worker_failure() {
     TEST_ASSERT(executor.get_blocking_io_worker_status("missing_io").name == "missing_io",
                 "missing I/O worker status should retain the requested name");
 
-    auto failed = std::make_shared<std::latch>(1);
+    auto failed = std::make_shared<Latch>(1);
     auto result = executor.register_blocking_io_worker(
         "throwing", valid_config(), std::make_unique<ThrowingWorker>(failed));
     TEST_ASSERT(result.ok, "throwing worker should register");
@@ -294,7 +322,7 @@ bool test_start_failure_and_timeout_rollback() {
 bool test_worker_self_stop_defers_join() {
     std::cout << "Testing blocking I/O worker self-stop...\n";
 
-    auto stopped = std::make_shared<std::latch>(1);
+    auto stopped = std::make_shared<Latch>(1);
     auto worker = std::make_unique<SelfStoppingWorker>(stopped);
     auto* worker_ptr = worker.get();
     BlockingIoExecutor executor("self_stop", valid_config(), std::move(worker));
@@ -314,7 +342,7 @@ bool test_unrequested_worker_return_is_observable() {
     std::cout << "Testing blocking I/O unexpected worker return...\n";
 
     Executor executor;
-    auto returned = std::make_shared<std::latch>(1);
+    auto returned = std::make_shared<Latch>(1);
     TEST_ASSERT(executor.register_blocking_io_worker(
                     "returning", valid_config(), std::make_unique<ReturningWorker>(returned)),
                 "returning worker registration should succeed");

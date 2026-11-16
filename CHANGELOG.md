@@ -4,6 +4,32 @@
 
 ---
 
+## [Unreleased]
+
+### 兼容性
+
+- **新增 GCC 9（g++-9 系列）编译支持**，最低支持口径从 GCC 10 下调到 GCC 9
+  （libstdc++ 9 无 `std::atomic::wait`/`<stop_token>`/`std::jthread`，也无
+  requires 表达式与比较运算符 default 化）：
+  - 新增 `kairo::util::atomic_wait/notify_one/notify_all` 兼容层
+    （`src/kairo/util/atomic_wait.hpp`）：GCC 11+/MSVC 直发 std（行为零变化），
+    Linux 上 GCC 9/10 走同机制的自研 futex（FUTEX_WAIT/WAKE_PRIVATE），
+    其余平台 mutex+cv 兜底；两处 worker 空闲驻停（lockfree_task_executor、
+    thread_pool 代次驻停）的 8 个调用点改经此层，协议与语义不变。
+  - `stop_token.hpp` 分支条件由 Android 专用改为 `__cpp_lib_jthread` 特性宏
+    检测：GCC 9/10 自动落入自带 StopToken/StopSource/JThread fallback。
+  - requires 表达式/子句与 `<concepts>` 的 4 处库头用法改写为 C++17 等价
+    （enable_if 惯用法、detection idiom、`std::is_invocable_r_v`）；
+    `FeedbackKey` 比较运算符由 `= default` 改显式实现。
+  - 公开 API、线程池/无锁执行器的运行时行为在 GCC 11+ 上零变化。
+- 测试侧同步：`test_blocking_io_executor` 以本地 mini-Latch 替代 `<latch>`
+  （GCC 11+ 才有）；api_doc 字段锁测试改用 C++17 成员探测替身；
+  `install_headers_smoke` 按 `__GNUC__` 主版本选择 `-std=c++20`/`-std=c++2a`
+  拼写。
+- CI：`c-cpp.yml` 编译器矩阵新增 `gcc-9`（ubuntu-22.04）。
+
+---
+
 ## [0.7.4] - 2026-11-11
 
 0.7.4 是 0.7.3 后的收尾版本，共两项：`submit_v2` 正名为

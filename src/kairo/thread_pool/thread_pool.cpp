@@ -1,5 +1,6 @@
 #include "thread_pool.hpp"
 #include "../task/task.hpp"
+#include "../util/atomic_wait.hpp"
 #include <stdexcept>
 #include <algorithm>
 #include <cstdio>
@@ -310,8 +311,9 @@ void ThreadPool::worker_thread(size_t worker_id) {
                 break;
             }
 
-            // PA-2: 代次驻停（futex）。醒来后回到循环顶部重新采样+扫描。
-            wake_seq_.wait(seen, std::memory_order_acquire);
+            // PA-2: 代次驻停（经 util::atomic_wait，见线程池头注释）。
+            // 醒来后回到循环顶部重新采样+扫描。
+            util::atomic_wait(wake_seq_, seen, std::memory_order_acquire);
             continue;
         }
 
@@ -933,9 +935,9 @@ void ThreadPool::signal_work_added(bool wake_all) {
     // notify，单任务 notify_one、批次/停止/缩容 notify_all。
     wake_seq_.fetch_add(1, std::memory_order_release);
     if (wake_all) {
-        wake_seq_.notify_all();
+        util::atomic_notify_all(wake_seq_);
     } else {
-        wake_seq_.notify_one();
+        util::atomic_notify_one(wake_seq_);
     }
 }
 

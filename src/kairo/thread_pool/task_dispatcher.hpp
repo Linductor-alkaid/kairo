@@ -3,6 +3,7 @@
 #include "load_balancer.hpp"
 #include "priority_scheduler.hpp"
 #include "../task/task.hpp"
+#include "../util/atomic_wait.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
@@ -375,9 +376,9 @@ private:
         if (!wake_seq_) return;
         wake_seq_->fetch_add(1, std::memory_order_release);
         if (wake_all) {
-            wake_seq_->notify_all();
+            util::atomic_notify_all(*wake_seq_);
         } else {
-            wake_seq_->notify_one();
+            util::atomic_notify_one(*wake_seq_);
         }
     }
 

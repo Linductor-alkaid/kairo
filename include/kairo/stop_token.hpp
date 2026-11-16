@@ -7,14 +7,13 @@
 #include <type_traits>
 #include <utility>
 
-#if defined(__ANDROID__)
 #include <version>
-#endif
 
 // KAIRO_STOP_TOKEN_FORCE_FALLBACK 仅用于测试：在桌面编译时强制实例化
-// Android fallback 实现，验证 StopSource / StopToken / JThread 的运行时语义。
-#if defined(KAIRO_STOP_TOKEN_FORCE_FALLBACK) || \
-    (defined(__ANDROID__) && !defined(__cpp_lib_jthread))
+// fallback 实现，验证 StopSource / StopToken / JThread 的运行时语义。
+// 特性宏检测（而非按平台）：libstdc++ 9/10 没有 <stop_token>/std::jthread，
+// 自动落入 fallback；GCC 10+ / MSVC 走 std 别名，行为不变。
+#if defined(KAIRO_STOP_TOKEN_FORCE_FALLBACK) || !defined(__cpp_lib_jthread)
 
 namespace kairo {
 
@@ -27,10 +26,11 @@ class JThread;
 } // namespace detail
 
 /**
- * @brief Android 下替代 std::stop_token 的最小停止请求令牌。
+ * @brief 无 std::stop_token 的工具链（Android NDK、libstdc++ 9/10）下的
+ * 最小停止请求令牌。
  *
- * 只表达“已请求停止”这一状态；不会中断任何底层阻塞调用。桌面平台使用
- * std::stop_token 别名，不经过此实现。
+ * 只表达“已请求停止”这一状态；不会中断任何底层阻塞调用。提供
+ * std::jthread/stop_token 的平台使用 std::stop_token 别名，不经过此实现。
  */
 class StopToken {
 public:
@@ -94,7 +94,9 @@ namespace detail {
 
 class JThread {
 public:
-    JThread() noexcept = default;
+    // 不能标 noexcept：StopSource() 会分配内存（noexcept 失配在 GCC 9 的
+    // C++17 规则下会把 defaulted 默认构造直接 deleted）。
+    JThread() = default;
 
     template <typename F, typename... Args>
     explicit JThread(F&& function, Args&&... args)

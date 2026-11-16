@@ -246,6 +246,20 @@ private:
     std::atomic<uint64_t> let_states_[2]{{kLetEmpty}, {kLetEmpty}};
 };
 
+namespace detail {
+
+// handler 是否可接受左值 item（C++17 detection idiom，替代 requires 表达式，
+// GCC 9 兼容）：可接受左值时回调按引用传递保留原值，否则 move 传入。
+template <typename Fn, typename Item, typename = void>
+struct accepts_lvalue_item : std::false_type {};
+
+template <typename Fn, typename Item>
+struct accepts_lvalue_item<
+    Fn, Item, std::void_t<decltype(std::declval<Fn&>()(std::declval<Item&>()))>>
+    : std::true_type {};
+
+} // namespace detail
+
 template <class T>
 class RealtimeChannel {
 public:
@@ -320,7 +334,7 @@ private:
 
     template <class Fn>
     static void invoke_handler(Fn& handler, T& item) {
-        if constexpr (requires { handler(item); }) {
+        if constexpr (detail::accepts_lvalue_item<Fn, T>::value) {
             handler(item);
         } else {
             handler(std::move(item));
