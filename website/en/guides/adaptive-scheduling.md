@@ -1,6 +1,6 @@
 ---
 title: When to Use AdaptiveScheduler
-description: "Adaptive scheduling in 0.7.0: when feedback-driven CPU/GPU selection, QoS load shedding, and priority promotion apply, and the boundaries of oscillation, cold start, and non-reproducibility."
+description: "Adaptive scheduling in 0.7.0: when feedback-driven CPU/GPU selection, QoS load shedding, and priority promotion apply, and the boundaries of oscillation, cold start, and non-reproducibility. Also covers the 0.7.1 opt-in task auto-inference (advisory) and executor auto-selection."
 ---
 
 # When to Use AdaptiveScheduler
@@ -66,6 +66,32 @@ Two runs of the same program can produce different decision sequences: sample ar
 - Shedding coexists with `max_in_flight_tasks`: the hard cap is the last total admission valve; shedding is the earlier, more discriminating one.
 - The embedded aggregator is independent of the `Executor::get_feedback_snapshot()` diagnostics aggregator; for the diagnostics entry points see [Monitoring and Sampling](/en/reliability/monitoring) and the `scheduling_feedback.*` section of `get_snapshot_text()`.
 
+## Task Auto-Inference and Executor Auto-Selection (0.7.1, opt-in)
+
+> **New in 0.7.1**: nothing in this section is part of 0.7.0; with the corresponding switches off, none of it applies and behavior matches 0.7.0.
+
+0.7.1 extends "acting on observation" to `submit_auto` routing. The two opt-in mechanisms differ: **task auto-inference** follows an executor config switch and works under `DefaultScheduler` too; **executor auto-selection** follows `AdaptiveScheduler` injection.
+
+### Task auto-inference: suggest, never switch
+
+Enabled via `ExecutorConfig::enable_auto_inference` (off by default; adjustable at runtime through `set_auto_inference_enabled()`). When enabled, `submit_auto` produces **advisory annotations** from two deterministic signals; routing itself never changes:
+
+- **Name patterns**: a task name containing `_io_` / `_read_` / `_write_` suggests blocking I/O (advises migrating to `start_worker`); `_realtime_` / `_control_` suggests low latency (advises `dispatch_auto(LowLatency)`). The name pattern alone triggers — a false positive costs one noisy suggestion.
+- **Regular completion intervals**: ≥4 recorded intervals for the same task name with σ/μ < 10% suggests a periodic task (advises `submit_periodic`).
+
+Not changing routing is a contract constraint, not an implementation shortcut: `submit_auto` returns a `std::future`, and only the default pool can fulfill that contract (lockfree/realtime are bounded dispatch semantics without a future channel). On a hit the inference does exactly three things — annotates the decision with the `AutoInferredIntent` diagnostics bit, explains itself in `RoutingDecision::inferred_reason`, and puts a migration suggestion in `detail` — leaving the "should I switch APIs" decision to you.
+
+- An explicit intent (≠ Auto) skips inference; when inference had something to say but was overridden by an explicit setting it counts in `auto_inference_rejected_count`, and produced suggestions count in `auto_inferred_count` (both in `get_scheduling_metrics()`).
+- Cost: enabling attaches measurement wrappers (same cost class as `wants_feedback()`); history is a bounded 64-key table keyed by task name, and once full, new names are dropped.
+
+**When not to enable it**: services with irregular task naming, or whose name key space exceeds 64 — inference never learns a stable history and you are left with only the measurement overhead. `set_auto_inference_enabled(false)` takes effect immediately to return to pure intent routing.
+
+### Executor auto-selection: follows AdaptiveScheduler injection
+
+When `dispatch_auto(LowLatency)` is called without an explicit `preferred_executor`, an injected `AdaptiveScheduler` picks the least-loaded lockfree executor by **instantaneous queue load** from the capability snapshot (via the TTL cache): ties break by name for determinism, unstarted and full candidates are filtered, and with no available candidate it falls back to the structured rejection. The decision carries the `AutoExecutorSelection` diagnostics bit and counts in `auto_executor_selected_count`. Selection uses snapshot load, not execution history — the lockfree feedback channel only arrives in 0.7.2, so history-based load is deliberately absent here (cold start is safe by construction). The `RealtimeQueue` intent gets no load-based selection (periodic semantics).
+
+Under `DefaultScheduler` the consultation returns empty and multi-lockfree scenarios keep the structured rejection — this capability follows scheduler injection, not the inference switch.
+
 ## Next steps
 
-For the scheduling model basics see [Declare Deadlines, Priorities, and Resources](/en/tutorial/scheduling-runtime); for CPU/GPU submission and fallback see [CPU/GPU Automatic Selection](/en/gpu/automatic-scheduling); for design semantics and acceptance data see `docs/design/scheduling_runtime.md` §8 and `docs/performance/m3_adaptive_scheduler_results.md`.
+For the scheduling model basics see [Declare Deadlines, Priorities, and Resources](/en/tutorial/scheduling-runtime); for CPU/GPU submission and fallback see [CPU/GPU Automatic Selection](/en/gpu/automatic-scheduling); for design semantics and acceptance data: adaptive scheduling in `docs/design/scheduling_runtime.md` §8 and `docs/performance/m3_adaptive_scheduler_results.md`, auto-inference and executor auto-selection in §13 of the same document.

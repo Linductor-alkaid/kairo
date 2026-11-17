@@ -458,11 +458,14 @@ submit_priority(p, [&]{ ... })  →  submit_auto(TaskBuilder([&]{ ... }).priorit
 
 - [x] facade 层 8 处测试调用迁移完成，零 deprecated 警告（rc1，2026-10-19）
 - [x] 4 处示例代码更新，文档同步（rc1，2026-10-19）
-- [ ] 配对 A/B 基准：迁移前后端到端吞吐 ±2% 内
-- [ ] 契约测试：优先级 + EDF 排序、aging、effective_priority_for 咨询逻辑不变
+- [x] 配对 A/B 基准：迁移前后端到端吞吐 ±2% 内（ABBA 24 对中位数 -1.72%，
+      点估计 -1.7%~+4.0%；8529150 独立验证记录，checkbox 2026-11-17 回填）
+- [x] 契约测试：优先级 + EDF 排序、aging、effective_priority_for 咨询逻辑不变
+      （迁移相关 4 测试单独运行全过 + 全量回归；两条路径同一
+      `submit_priority_scheduled` 实现，顺序与 0.7.1 逐位一致；8529150）
 - [x] `docs/API.md` §3.2 改写为弃用注记 + TaskBuilder 优先级示例（rc1）
 - [x] website 教程页（priority.md）全面改写，中英版本页新增 0.7.2 开发快照（rc1）
-- [ ] `scripts/check_docs_drift.sh` 通过（随 rc1 提交验证）
+- [x] `scripts/check_docs_drift.sh` 通过（rc1 提交验证通过，8529150；checkbox 2026-11-17 回填）
 
 **风险与边界**：
 - 这是 0.7.x **唯一的破坏性变更**（与 roadmap §1 "0.7.2 additive + 修复"
@@ -781,10 +784,15 @@ struct RoutingDecision {
 **文档更新清单**（随 3.0.x 各阶段落地）：
 - [x] `docs/API.md` §3.7：submit_fast 经评审移除，未新增（submit 承载）
 - [x] `website/{zh,en}/guides/choosing-submit-api.md`：评审结论（submit_fast 移除）已同步
-- [ ] `website/{zh,en}/guides/adaptive-scheduling.md`：补充自动推断章节，说明 opt-in 机制
-- [ ] `docs/design/scheduling_runtime.md` §9：追加能力缓存设计语义
-- [ ] `docs/skill/kairo-integration/references/scheduling.md`：同步新 API 和诊断位
-- [ ] `MIGRATION.md` 0.7.1 节：确认无破坏性变更，记录新增 opt-in 行为
+- [x] `website/{zh,en}/guides/adaptive-scheduling.md`：补充自动推断章节，说明 opt-in 机制
+      （2026-11-17 补齐：中英各新增"任务特征自动推断与执行器自动选择"节，
+      覆盖建议优先于切换的契约约束、64 键有界表、开销与不适用场景）
+- [x] `docs/design/scheduling_runtime.md`：能力缓存设计语义已入档（落地为
+      §10，编号与规划时引用的 §9 不同——勘误，非缺项）
+- [x] `docs/skill/kairo-integration/references/scheduling.md`：同步新 API 和诊断位
+      （"Auto Inference and Executor Auto-Selection" 节已在，2026-11-17 回填核实）
+- [x] `docs/MIGRATION.md` 0.7.1 节：确认无破坏性变更，记录新增 opt-in 行为
+      （"从 0.7.0 升级到 0.7.1" 节已在，2026-11-17 回填核实）
 
 **基准与验证**：
 - 配对 A/B 基准矩阵：submit vs submit_auto（纯策略/缓存/自适应）
