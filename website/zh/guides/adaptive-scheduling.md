@@ -1,6 +1,6 @@
 ---
 title: 何时使用 AdaptiveScheduler
-description: 0.7.0 自适应调度：反馈驱动的 CPU/GPU 选择、QoS 降载与优先级提升的适用条件，以及震荡、冷启动与不可复现性三类风险的边界。
+description: 0.7.0 自适应调度：反馈驱动的 CPU/GPU 选择、QoS 降载与优先级提升的适用条件，以及震荡、冷启动与不可复现性三类风险的边界；含 0.7.1 任务特征自动推断（opt-in 建议）与执行器自动选择的边界。
 ---
 
 # 何时使用 AdaptiveScheduler
@@ -66,6 +66,32 @@ CPU/GPU 切换要求挑战侧 EWMA 低于在用侧 `(1 - hysteresis_margin)`（�
 - 降载与 `max_in_flight_tasks` 共存：硬上界是最后的总量阀门，降载是更早、更有区分度的那道。
 - 内嵌聚合器与 `Executor::get_feedback_snapshot()` 的诊断聚合器相互独立；诊断入口见[监控与采样](/zh/reliability/monitoring)与 `get_snapshot_text()` 的 `scheduling_feedback.*` 段。
 
+## 任务特征自动推断与执行器自动选择（0.7.1，opt-in）
+
+> **随 0.7.1 发布的新能力**：本节内容不在 0.7.0 范围内；不开启对应开关时全部不适用，行为与 0.7.0 一致。
+
+0.7.1 把"利用观测"延伸到 `submit_auto` 路由。两者的 opt-in 机制不同：**任务推断**跟随执行器配置开关，`DefaultScheduler` 下同样可用；**执行器自动选择**跟随 `AdaptiveScheduler` 注入。
+
+### 任务特征自动推断：只建议，不切换
+
+`ExecutorConfig::enable_auto_inference` 开启（默认关闭；运行期 `set_auto_inference_enabled()` 可调）。开启后 `submit_auto` 依据两类确定性信号产出**建议性注解**，路由本身不变：
+
+- **名称模式**：任务名含 `_io_` / `_read_` / `_write_` → 疑似阻塞 I/O，建议改走 `start_worker`；含 `_realtime_` / `_control_` → 疑似低延迟，建议 `dispatch_auto(LowLatency)`。纯名称模式即命中——误报的代价只是一条噪音建议。
+- **完成间隔规律**：同名任务积累 ≥4 个完成间隔且 σ/μ < 10% → 疑似周期任务，建议 `submit_periodic`。
+
+路由不被改变是契约约束而非实现取舍：`submit_auto` 返回 `std::future`，只有默认池能履行该契约（lockfree/realtime 是有界 dispatch 语义，没有 future 通道）。推断命中时只做三件事——决策注解 `AutoInferredIntent` 诊断位、`RoutingDecision::inferred_reason` 说明依据、`detail` 给出迁移建议——"要不要换 API"的决定留给你。
+
+- 用户显式 intent（≠ Auto）时推断跳过；推断有话可说但被显式设置覆盖，计 `auto_inference_rejected_count`；产出建议计 `auto_inferred_count`（均见 `get_scheduling_metrics()`）。
+- 开销：开启即附加测量包装（与 `wants_feedback()` 同级）；历史是按任务名的 64 键有界表，键满后丢弃新名称。
+
+**何时不该开**：任务命名不规律、或同名键空间会超过 64 的服务——推断学不到稳定历史，只余测量开销。想要关闭回到纯意图路由，`set_auto_inference_enabled(false)` 即时生效。
+
+### 执行器自动选择：跟随 AdaptiveScheduler 注入
+
+`dispatch_auto(LowLatency)` 且未显式指定 `preferred_executor` 时，注入的 `AdaptiveScheduler` 会按能力快照（经 TTL 缓存）的**瞬时队列负载**选最空闲的 lockfree 执行器：并列取名字序保证确定性，未启动/已满候选被过滤，无可用候选回落结构化拒绝。决策带 `AutoExecutorSelection` 诊断位，计数 `auto_executor_selected_count`。选择依据是快照负载而非执行期历史——lockfree 后端的反馈通道在 0.7.2 才接入，这里刻意不做历史负载（冷启动即安全）。`RealtimeQueue` 意图不做负载选择（周期语义）。
+
+`DefaultScheduler` 下该咨询返回空，多 lockfree 场景仍是结构化拒绝——这项能力跟调度器注入走，不跟推断开关走。
+
 ## 下一步阅读
 
-调度模型基础见[声明任务的期限、优先级与资源](/zh/tutorial/scheduling-runtime)；CPU/GPU 提交与降级路径见[CPU/GPU 自动选择](/zh/gpu/automatic-scheduling)；设计语义与验收数据见 `docs/design/scheduling_runtime.md` §8 与 `docs/performance/m3_adaptive_scheduler_results.md`。
+调度模型基础见[声明任务的期限、优先级与资源](/zh/tutorial/scheduling-runtime)；CPU/GPU 提交与降级路径见[CPU/GPU 自动选择](/zh/gpu/automatic-scheduling)；设计语义与验收数据：自适应调度见 `docs/design/scheduling_runtime.md` §8 与 `docs/performance/m3_adaptive_scheduler_results.md`，自动推断与执行器自动选择见同文档 §13。
